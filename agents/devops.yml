@@ -15,12 +15,14 @@ agent:
 dependencies:
   tasks:
     - create-doc-from-template
-    - infra/create-platform-infrastructure
     - infra/review-infrastructure
     - infra/validate-infrastructure
   templates:
     - infrastructure-architecture-tmpl
+    - infrastructure-platform-from-arch-tmpl
   checklists:
     - infrastructure-checklist
   data:
     - technical-preferences
+  utils:
+    - template-format
