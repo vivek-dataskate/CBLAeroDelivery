@@ -10,7 +10,7 @@
 `personas`: `bmad-core/personas/`
 `workflows`: `bmad-core/workflows/`
 `knowledge-base`: `bmad-core/data/bmad-kb.md`
-`create-doc`: `taskroot/create-doc-from-template`
+`create-doc`: `taskroot/create-doc`
 
 ## Persona
 
