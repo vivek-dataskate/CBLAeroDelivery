@@ -71,7 +71,7 @@ Agent: Available IDE agents:
 6. sm
 
 Please select an agent by specifying: <agent-name>
-```
+```text
 
 ### Example Loading an Agent
 
@@ -93,7 +93,7 @@ Agent: Could not find IDE agent 'designer'. Available agents:
 6. sm
 
 Please select an agent by specifying: <agent-name>
-```
+```text
 
 ### Example Task Outside Agent Scope
 

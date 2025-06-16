@@ -73,7 +73,7 @@ In Progress:
     - Create PRD (John) - awaiting input
 
 Next: Technical Architecture
-```
+```text
 
 ### /workflow-resume
 
@@ -185,7 +185,7 @@ Sally: I see we're in the Product Planning stage of the greenfield-fullstack wor
 
        Let's create the UX strategy and UI specifications. First, let me review
        the PRD to understand the features we're designing for...
-```
+```text
 
 ## Multi-Path Workflows
 
