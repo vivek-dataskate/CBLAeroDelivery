@@ -1,7 +1,7 @@
 ---
 stepsCompleted: [1, 2]
 inputDocuments:
-  - docs/aviation-product-brief.md
+  - docs/planning_artifacts/source-inputs/aviation-product-brief.md
   - docs/planning_artifacts/prd.md
 ---
 
@@ -93,7 +93,16 @@ System makes promises to candidates (Mike calls at 2pm Monday). When Mike doesn'
 ### Design Opportunities
 
 **1. "Morning Briefing" → "Action Stream"**
-Not a database query — a prioritized action list. "Call Today (3)" + "Review Later (2)" ranked by motivation intensity. Rich cards with: match reasons, qualification transcript, what questions to ask, auto-booked call slot. Scales from 5 candidates (Tier 1 manual) to 50 candidates (Tier 2 scraper) via progressive disclosure.
+Not a database query — a prioritized action list. "Call Today (3)" + "Review Later (2)" ranked by motivation intensity. Rich cards with: match reasons, qualification transcript, what questions to ask, auto-booked call slot. Scales from 5 candidates (Tier 1 manual) to 50 candidates (Tier 2 scraper) via progressive disclosure. At 1M+ record scale, the action stream is driven by pre-computed index slices — not live full-table queries — so load time remains <2s regardless of database size.
+
+**7. Data Import and Sync Console (Admin / Recruiter)**
+The platform starts with 1M existing candidate records and grows via three ongoing ingestion paths:
+
+- **Bulk CSV upload** (recruiters, daily/weekly): drag-and-drop interface, column mapping wizard, live validation preview (duplicate detection, missing required fields), per-row error report download, and a progress tracker showing records imported/skipped/errors. Max 10,000 records per recruiter upload; initial 1M-record migration is admin-supervised one-time flow with rollback capability.
+- **ATS connector sync** (automated, Tier 2): read-only polling of connected ATS system; new and updated records are upserted via the standard deduplication pipeline. Admin console shows last-sync timestamp, records synced, and error rate. Sync failures alert the admin; never silently skip records.
+- **Email inbox parsing** (automated, Tier 2): Microsoft Graph scans designated recruiter inboxes for forwarded resumes and candidate reply threads; extracted candidate stubs are queued for enrichment with source attribution ("from: recruiter email"). Recruiter reviews parsed batch before records are activated.
+
+Design constraint: at 1M+ records, candidate search and list views must use cursor-based pagination and indexed pre-filters (by availability status, location, cert type) — never an unfiltered full-scan. The UI must not offer a "show all" control on unfiltered candidate tables.
 
 **2. "See-Before-Share" → "Do Not Disturb Control Panel"**
 Sarah's portal is less job board, more preference enforcer. She sets exact criteria (role, pay, type rating, contact window). System promise: "We only contact you when it's near-perfect, max once per week." Transparency: shows her contact history, who has her data, how to revoke.

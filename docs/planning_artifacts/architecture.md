@@ -69,23 +69,53 @@ Runtimes: Node.js v24 LTS · Next.js 16.x · PostgreSQL 18. TypeScript-first, Ap
 ### Data Architecture
 
 - Primary OLTP database: Supabase Postgres (PostgreSQL 18-compatible target).
+- **Record scale:** 1M existing candidate records at launch; projected 3M+ by Year 1 via ongoing recruiter uploads and automated ATS/email sync. All queries, indexes, and pagination strategies must be designed for 1M+ rows from day one — no deferred scaling assumptions.
 - Data strategy:
   - Relational core for transactional consistency
   - Event outbox for reliable asynchronous publication
   - Materialized read models for dashboards and SLA views
+  - Cursor-based pagination enforced on all candidate list endpoints (no offset pagination at scale)
+  - Composite partial indexes on `(tenant_id, availability_status)`, `(tenant_id, location)`, `(tenant_id, cert_type)` to keep filtered queries sub-second at 1M+ rows
 - Canonical entities:
   - `tenant`, `user`, `role_assignment`
   - `candidate`, `candidate_identity_link`, `candidate_availability_signal`
   - `job_requirement`, `job_intake_question`, `candidate_match`
   - `outreach_message`, `consent_record`, `delivery_attempt`
   - `interaction_event`, `audit_event`, `teams_notification`
+  - `import_batch`, `import_row_error` (tracks all bulk upload and sync jobs with per-row error audit)
 - Dedupe strategy:
   - Deterministic identity confidence thresholds per PRD
   - Manual review queue for uncertain merges
+  - Dedupe runs asynchronously post-import; records are created in `pending_dedup` state before promotion to active
 - Retention/deletion:
   - Policy-driven lifecycle with legal hold support
   - GDPR erase workflow as first-class background process
   - Voice call recordings and transcripts retained in Supabase for 3 years
+
+### Candidate Data Ingestion Architecture
+
+Three ingestion paths are supported; all funnel through the same deduplication and enrichment pipeline.
+
+**Path 1 — Initial bulk load (one-time, admin-supervised):**
+- 1M existing records loaded via a Python migration script (not the live web app).
+- Runs as a rate-limited batch against the Supabase service role from a Render one-off job.
+- Chunks of 1,000 rows per transaction; progress written to `import_batch` table.
+- Rollback capability: if error rate exceeds 5% within a chunk, the job pauses and alerts admin.
+- Post-load: async deduplication worker runs over the full batch to collapse identity matches.
+- Enrichment of the initial 1M runs as an overnight batch job at 100 candidates/sec; not a real-time process.
+
+**Path 2 — Recruiter CSV uploads (daily/weekly, ongoing):**
+- Web UI: drag-and-drop CSV with column mapping wizard and live validation preview.
+- Max 10,000 records per recruiter upload; larger batches must be split or handled via admin migration path.
+- Validated rows are written to `import_batch` table; a background worker processes the batch.
+- Per-row error report available for download after processing (missing required fields, failed dedup rules, invalid format).
+- Imported records enter `pending_enrichment` state; enrichment worker picks them up via outbox.
+
+**Path 3 — ATS connector and email inbox sync (automated, Tier 2):**
+- ATS connector: read-only polling of configured ATS API at scheduled intervals (minimum 15-minute interval per connector). New and updated records are upserted via standard deduplication pipeline with `source: ats_sync` attribution.
+- Email inbox parsing: Microsoft Graph polls designated recruiter inboxes; forwarded resumes and candidate reply threads are parsed to extract candidate stubs. Parsed stubs are queued for recruiter review before activation (not auto-activated).
+- Both paths write to `import_batch` with source attribution; sync errors alert the admin and never silently discard records.
+- Admin console shows per-connector: last sync timestamp, records synced/skipped/errored, and error rate trend.
 
 ### Authentication and Security
 
@@ -539,6 +569,96 @@ sequenceDiagram
   PY->>PY: Merge, deduplicate, score completeness
   PY->>DB: Upsert enriched candidate profile (versioned)
   PY->>Q: Emit enrichment.complete event (triggers scoring)
+```
+
+### Sequence: Bulk CSV Candidate Import (Recruiter Upload)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant R as Recruiter
+  participant W as Web App
+  participant DB as Supabase Postgres
+  participant Q as Outbox/Queue
+  participant PY as Import Worker
+  participant ENR as Enrichment Worker
+
+  R->>W: Upload CSV (up to 10,000 rows)
+  W->>W: Column mapping wizard + live validation preview
+  W->>DB: Create import_batch record (status: validating)
+  W-->>R: Show validation preview (errors highlighted)
+  R->>W: Confirm import
+  W->>Q: Enqueue import_batch job
+  Q->>PY: Dispatch import worker
+  loop Per chunk of 1,000 rows
+    PY->>DB: Upsert candidates (pending_dedup state)
+    PY->>DB: Write per-row errors to import_row_error
+    PY->>DB: Update import_batch progress counter
+  end
+  PY->>DB: Mark import_batch complete (imported/skipped/errors)
+  PY->>Q: Emit deduplication job for batch
+  PY->>Q: Emit enrichment job for new records
+  ENR->>DB: Process enrichment (rate-limited overnight batch)
+  W-->>R: Import complete — downloadable error report available
+```
+
+### Sequence: ATS Connector Sync (Automated, Tier 2)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant SCH as Scheduler (15-min interval)
+  participant PY as ATS Sync Worker
+  participant ATS as ATS System (read-only API)
+  participant DB as Supabase Postgres
+  participant Q as Outbox/Queue
+  participant ADM as Admin Console
+
+  SCH->>PY: Trigger scheduled sync for connector
+  PY->>DB: Read last_sync_cursor for this connector
+  PY->>ATS: Fetch records updated since cursor (paginated)
+  ATS-->>PY: Updated candidate records (batch)
+  loop Per record
+    PY->>DB: Check dedup (match by email/phone)
+    alt New record
+      PY->>DB: Insert candidate (source: ats_sync, state: pending_enrichment)
+    else Existing record — merge update
+      PY->>DB: Upsert changed fields with source attribution
+    end
+  end
+  PY->>DB: Update last_sync_cursor
+  PY->>DB: Write import_batch summary (synced/skipped/errored)
+  alt Error rate > threshold
+    PY->>ADM: Alert admin (sync health degraded)
+  end
+  PY->>Q: Emit enrichment jobs for new/updated records
+```
+
+### Sequence: Email Inbox Parsing to Candidate Stub (Tier 2)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant SCH as Scheduler
+  participant PY as Email Parse Worker
+  participant G as Microsoft Graph (Recruiter Inbox)
+  participant DB as Supabase Postgres
+  participant W as Web App
+  participant R as Recruiter
+
+  SCH->>PY: Trigger inbox scan for recruiter
+  PY->>G: Fetch unread messages in designated folder
+  G-->>PY: Email threads + attachments
+  loop Per message
+    PY->>PY: Extract candidate signals (name, phone, email, role mention)
+    PY->>DB: Create candidate stub (source: email_parse, state: pending_review)
+    PY->>DB: Store raw email reference (for audit trail)
+    PY->>G: Mark message as processed
+  end
+  PY->>DB: Write import_batch summary for recruiter
+  W-->>R: "12 candidate stubs from email — review before activating"
+  R->>W: Review parsed stubs, confirm or discard each
+  W->>DB: Activate confirmed stubs (enter dedup + enrichment pipeline)
 ```
 
 ### Sequence: Manual FAA Verification Workflow

@@ -109,7 +109,7 @@ The product’s core insight is that **availability is the primary signal**; can
 - **Match confidence:** Maintain ≥95 % via self-testing; validate via conversion funnel by bucket; re-calibrate monthly.
 - **Continuous engagement:** Daily scraping/outreach regardless of events.
 - **Performance metrics:** Notification delivery <1 min; dataset refresh every 4 hrs; 99.5 % uptime (excludes maintenance).
-- **Scale:** MVP: 50k records; Month 6: 500k; Year 1: 5M records + 10k recruiters.
+- **Scale:** Launch: 1M existing records (initial load); ongoing: daily/weekly recruiter uploads + ATS/email auto-sync; Year 1: 3M+ records.
 - **Quality gate:** Each candidate includes human-readable match reason (e.g., "FAA cert + 5yr exp + location").
 
 ### Measurable Outcomes
@@ -156,7 +156,7 @@ The product’s core insight is that **availability is the primary signal**; can
 - Public, unauthenticated product pages and search-engine growth features.
 - Non-USA data residency or international deployment.
 - Automated ITAR/export-control screening and foreign-national adjudication.
-- Full ATS/HRIS bidirectional sync beyond structured export and controlled API access.
+- Full ATS/HRIS bidirectional write-back sync (read-only ATS ingestion is in scope from Tier 2).
 - Fully automated background check and drug-testing orchestration across all providers.
 - Advanced candidate self-service features beyond status visibility, availability updates, and document access.
 
@@ -447,7 +447,7 @@ The product’s core insight is that **availability is the primary signal**; can
 - Candidate enrichment: under 10 seconds p95 for synchronous workflow path.
 - Notification dispatch: under 1 minute from scoring completion.
 - Uptime target: 99.5% excluding planned maintenance.
-- Scale path: 50k records (MVP), 500k records (month 6), 5M records (year 1).
+- Scale path: 1M records at launch (initial bulk load); 3M+ records year 1 via ongoing recruiter uploads and automated ATS/email sync.
 
 ### Pre-Launch Quality Gates
 
@@ -683,8 +683,9 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 
 ### Candidate Management
 
-- **FR1 [MVP Tier 1]:** System can ingest candidate records from manual import (CSV upload or direct entry) during Tier 1
-- **FR2 [MVP Tier 2]:** System can ingest candidate data from configured external sources through provider-agnostic connectors, with source onboarding completed in Tier 2 (Weeks 5-6)
+- **FR1 [MVP Tier 1]:** System can ingest candidate records from bulk CSV upload (up to 1M records initial load, then daily/weekly recruiter uploads of 100–10,000 records); upload must validate, deduplicate, and report import errors per row with a downloadable error report
+- **FR1a [MVP Tier 1]:** System can perform initial bulk load of up to 1M existing candidate records via a one-time admin-supervised migration pipeline; load must complete within a time-bounded batch window with progress tracking and rollback capability
+- **FR2 [MVP Tier 2]:** System can ingest candidate data automatically from configured ATS system connectors (read-only API polling or webhook) and recruiter email inboxes (Microsoft Graph mail parsing); new or updated records are upserted via the standard deduplication pipeline with source attribution
 - **FR3 [MVP Tier 1]:** System can store and index candidate profiles with core attributes (name, phone, email, location, skills, certifications, experience, availability status)
 - **FR4 [MVP Tier 1]:** System can deduplicate candidate records (detect same person across multiple sources; prevent duplicate outreach) with deterministic merge policy: auto-merge at >=95% identity confidence, manual-review queue at 70-94%, keep separate below 70% ⚠️
 - **FR5 [MVP Tier 1]:** System can track candidate availability status (active, passive, unavailable) using self-reported status plus engagement events from the previous 90 days (response, click, call outcome)
@@ -702,7 +703,7 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 - **FR14 [MVP Tier 1]:** System can enforce opt-out compliance (TCPA regulations) for SMS and email campaigns; maintain audit trail of all outreach
 - **FR15 [MVP Tier 2]:** System can retry failed outreach with bounded policy (maximum 3 retries, escalating delay, then terminal `undeliverable` status with admin alert)
 - **FR16 [MVP Tier 1]:** Candidate can register for the platform via SMS/email link with one-time token validation (15-min expiry)
-- **FR17 [MVP Tier 2]:** System can launch bulk outreach campaigns for batch sizes between 50 and 1,000 candidates with per-batch completion reporting ⚠️
+- **FR17 [MVP Tier 2]:** System can launch bulk outreach campaigns for batch sizes between 50 and 5,000 candidates with per-batch completion reporting; at 1M+ record scale, campaign targeting uses pre-computed index slices rather than full-table scans ⚠️
 
 ### Recruiter Workflow
 
@@ -857,7 +858,7 @@ Design, architecture, and engineering teams should treat this section as the can
 
 **Throughput & Concurrency:**
 
-- **NFR6 [MVP Tier 2]:** Concurrent candidate enrichment: **100 candidates/sec sustained** (5-minute load test without performance degradation)
+- **NFR6 [MVP Tier 2]:** Concurrent candidate enrichment: **100 candidates/sec sustained** (5-minute load test without performance degradation); initial 1M-record bulk enrichment runs as a rate-limited overnight batch job, not a real-time process
 - **NFR7 [MVP Tier 2]:** SMS delivery throughput: **1,000 SMS/minute** peak capacity (10k SMS/day = 7/sec average, 150/sec peak during morning sends)
 - **NFR8 [MVP Tier 1]:** Concurrent recruiter connections: **100 recruiters simultaneously** while maintaining candidate-list response **<2 seconds p95**
 
