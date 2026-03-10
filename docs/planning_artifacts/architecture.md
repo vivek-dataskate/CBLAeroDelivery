@@ -158,6 +158,8 @@ This implementation uses a goal-driven multi-agent execution model, not just bac
 - Orchestrator decisions are auditable and stored in append-only event history.
 - High-impact actions (bulk changes, exports, compliance overrides) require human-in-the-loop confirmation.
 - If worker outputs disagree, Orchestrator uses deterministic arbitration policy and logs rationale.
+- Every goal has a hard `max_iterations` and `max_consecutive_failures` budget; breach triggers human-in-the-loop pause — see _Architecture Resilience Decisions §1_.
+- Cold-start tenants (< 10 placements) operate in bootstrap mode with global anonymized baselines — see _Architecture Resilience Decisions §2_.
 
 ### Agentic Architecture Diagram (Control Plane)
 
@@ -704,6 +706,100 @@ sequenceDiagram
 - `docs/planning_artifacts/adr/0003-mcp-tool-access-control.md`
 - `docs/planning_artifacts/adr/0004-supabase-access-for-python-workers.md`
 - `docs/planning_artifacts/adr/0005-transport-and-tls-standards.md`
+
+## Architecture Resilience Decisions
+
+Closed decisions for 8 operational risk areas identified during architecture review.
+
+### 1. Agentic Loop Prevention and Human-in-the-Loop Circuit Breaker
+
+**Decision:** Every active goal has a hard execution budget attached at creation time.
+
+- `max_iterations`: the Orchestrator may attempt at most N replanning cycles per goal (default 5).
+- `max_consecutive_failures`: if any single worker fails ≥ 3 consecutive tasks within one goal run, the Orchestrator pauses the goal and creates a human-review task (Teams card + DB `goal_review_required` flag) before spending any further API budget.
+- `escalation_timeout`: if a paused goal is not reviewed within 30 minutes, the Goal Manager auto-escalates to the delivery head's Teams channel.
+- All circuit-breaker state transitions (pause, escalate, resume, abandon) are stored as append-only events with `correlation_id`, `tenant_id`, and `cost_at_trigger`.
+- The Coaching Agent must not apply policy changes until the human reviewer approves the resumed goal — no unsupervised replan loops.
+
+**Runaway cost guard:** The Cost Guardrail Worker (see item 8) enforces a hard stop on API spend regardless of goal state. Circuit breaker and cost stop are independent — either can halt execution independently.
+
+### 2. Cold-Start Behavior for New Tenants
+
+**Decision:** The Sourcing and Matching workers operate in explicit bootstrap mode when `tenant.placement_count < 10`.
+
+- Scoring weights fall back to global anonymized aggregate baselines (computed from all tenants, fully anonymized, stored in a read-only `global_signal_defaults` table — never from another tenant's raw data).
+- Enrichment weighting is increased in bootstrap mode (heavier reliance on external enrichment vs. internal historical signal) since there is no interaction history to calibrate against.
+- The Coaching Agent does not apply tenant-specific policy tuning until the tenant exits bootstrap mode. Bootstrap threshold (10 placements) is configurable per tenant by admin.
+- The UI shows a "New account — improving with each placement" indicator on scoring explanations while in bootstrap mode so recruiters understand why explanation detail is lower.
+
+### 3. Enrichment Pipeline Tenant PII Isolation
+
+**Decision:** Supabase RLS is the DB boundary; the enrichment connector layer is the API boundary. Both must enforce tenant isolation independently.
+
+- Every enrichment request from Clay or RapidAPI is tagged with `tenant_id` at the point of outbound call construction.
+- Enrichment results are stored immediately under `candidate_enrichment` rows with `tenant_id` as a non-nullable partition key. No enrichment result is ever written without a tenant ID.
+- **No shared enrichment cache.** There is no cross-tenant cache layer in MVP. Each tenant's enrichment queries are independent calls. Caching (if introduced) must be scoped to `(tenant_id, candidate_id, source_id)` with explicit eviction on erasure requests.
+- The Python connector module enforces: if the `tenant_id` derived from the job context does not match the `tenant_id` on the candidate being enriched, the call is rejected and a `security.tenant_mismatch` audit event is emitted.
+
+### 4. Partial Erasure Under Legal Hold
+
+**Decision:** The Compliance Worker produces a structured erasure receipt on every erasure request regardless of hold status.
+
+Erasure receipt fields:
+- `erased_fields`: list of field names nulled/pseudonymized (e.g. `name`, `phone`, `email`, `address`)
+- `retained_fields`: list of field names retained and the legal basis (e.g. `audit_event_skeleton` retained under `legal_hold_id`)
+- `hold_reference`: hold ID, hold type, estimated hold expiry date (if known)
+- `erasure_status`: `COMPLETE` | `PARTIAL_HOLD` | `DEFERRED`
+
+The Web App surfaces this receipt as a two-panel compliance summary:
+- Left: "Deleted" (green) — personal identifiers removed
+- Right: "Retained" (amber) — retained data with the legal basis and estimated hold duration
+
+The recruiter/admin cannot dismiss this view without acknowledging it; the acknowledgement is itself written as an audit event.
+
+### 5. Teams API Timeout Strategy
+
+**Decision:** Microsoft Teams notifications are a secondary async event that must never block the primary DB write.
+
+- The worker writes the DB update (the primary state transition) first, unconditionally.
+- The Teams notification call is issued with a **5-second timeout**.
+- On timeout or non-2xx response: the failed notification is written to the `outbox` table as a `teams_notification.pending` event with retry metadata (attempt count, next retry time using exponential backoff, max 3 retries).
+- After 3 failed retries, the record is moved to dead-letter state and a `teams_notification.dead_letter` audit event is emitted. The delivery lead is alerted via the fallback path (email via Microsoft Graph) if a notification has been dead-lettered.
+- Workers never `await` a Teams call in the critical path of an outreach or scoring job.
+
+### 6. Consent Synchronization Latency (SMS Opt-Out → Kills Pending Email)
+
+**Decision:** Consent revocation is a synchronous, highest-priority operation — it must complete before the Telnyx webhook response is returned.
+
+Processing order on inbound opt-out:
+1. Telnyx webhook received by webhook receiver worker.
+2. **Synchronously** within the request handler: write `consent_record` revocation row to DB with `revoked_at`, `channel`, and `source_message_id`. This write must commit before the 200 OK is returned to Telnyx.
+3. The outbox relay's dispatch step checks `consent_record` status on every job dequeue — if revoked, the job is cancelled before any API call is made. This means even tasks already in the queue will not execute.
+4. Any Instantly campaigns with this candidate in an active sequence: the relay cancel logic cancels the pending outbox row AND calls `Instantly API: remove from sequence` within the same transaction-like flow. Target latency from Telnyx webhook receipt to all pending tasks cancelled: **< 5 seconds**.
+5. A `compliance.consent.revoked` audit event is emitted and a Teams notification is sent to the recruiter (async, non-blocking).
+
+**Anti-pattern explicitly prohibited:** checking consent only at enqueue time. Consent must be checked at enqueue AND at dequeue.
+
+### 7. Webhook Burst Handling (Instantly / Telnyx at Scale)
+
+**Decision:** The webhook receiver is a thin, stateless ingestion layer that decouples ingest rate from processing rate.
+
+- Webhook endpoints (`POST /webhooks/telnyx`, `POST /webhooks/instantly`) do exactly one thing: validate the request signature, write a raw event row to `webhook_events` table, return `200 OK`. No business logic in the handler. Target response time < 100ms.
+- A separate outbox relay worker drains `webhook_events` rows and performs the business logic (consent checks, scoring updates, delivery tracking). This worker scales horizontally on Render background workers.
+- Render background workers scale horizontally within the plan limits. For MVP, configure minimum 2 replicas for the webhook processing worker to handle concurrent bursts.
+- An unprocessed `webhook_events` queue depth alert is configured: if depth > 200 for > 60 seconds, alert the delivery lead. This is the early warning before processing falls behind.
+- Idempotency: the `webhook_events` table has a unique constraint on `(source, message_id)` — duplicate webhook deliveries are deduplicated at insert.
+
+### 8. Cost Guardrail Granularity
+
+**Decision:** Costs are tracked via real-time atomic DB counters, not batch/daily sync.
+
+- A `cost_counter` table has one row per `(tenant_id, counter_type, billing_period)` with an atomic `amount_cents` column.
+- Every outreach dispatch (SMS send, email send, enrichment API call) performs an `UPDATE cost_counter SET amount_cents = amount_cents + $cost WHERE tenant_id = $tid AND counter_type = $type AND billing_period = $period RETURNING amount_cents` inside the same DB transaction as the outbox job claim.
+- If `RETURNING amount_cents` exceeds the threshold for that `counter_type`, the job is aborted before the external API call is made. No API request is issued for an over-budget tenant.
+- The Cost Guardrail Worker also runs a 1-minute polling loop as a macro check across all tenants (catches accumulated small increments that might slip past per-request checks during concurrent bursts).
+- Thresholds: API `$1,000/month` (hard stop at `$950` + alert delivery lead), SMS `$200/placement` (hard stop at `$180` + alert recruiter).
+- All budget stops are written as `cost.threshold.exceeded` audit events and surface in the operations console.
 
 ## Implementation Patterns and Consistency Rules
 
