@@ -29,38 +29,9 @@ _This document captures collaborative architecture decisions for CBLAero and is 
 
 ### Requirements Overview
 
-**Functional Requirements:**
-
-- `prd.md` defines 75 FRs across 3 tiers.
-- Core capability domains are:
-  - Candidate management (ingestion, profile, dedupe, retention)
-  - Outreach and engagement (SMS/email orchestration, preferences, opt-outs)
-  - Recruiter workflow (job posting, ranked candidates, interaction logging, exports)
-  - Match and scoring (opportunity score, signal validation, confidence logic)
-  - Delivery operations and analytics (dashboards, SLA tracking, forecasting)
-  - Compliance and governance (audit, tenant controls, access and retention)
-- Architecture implication: this is not a single CRUD app. It is an event-rich workflow system with strict data boundaries and high observability needs.
-
-**Non-Functional Requirements:**
-
-- 99.5% uptime target
-- 24-hour delivery SLA for 5 prioritized candidates
-- Notification latency under 1 minute and periodic refresh windows
-- Strict tenant isolation and adversarial pre-launch verification
-- Immutable/tamper-evident audit requirements
-- GDPR/CCPA/TCPA and SOC 2 trajectory support
-- Architecture implication: security, data lineage, and operational reliability are first-order design concerns, not add-ons.
-
-**Scale and Complexity:**
-
-- Primary domain: multi-tenant web platform with workflow orchestration and asynchronous communication
-- Complexity level: high
-- Architectural component estimate: 12-16 bounded components/services
-- Complexity drivers:
-  - Multi-channel communication with fallback behavior
-  - Role-based multi-persona workflows (recruiter, candidate, delivery lead, admin, executive)
-  - Compliance and immutable audit requirements
-  - Tiered rollout with go/no-go gates and evolving confidence model
+- 75 FRs across 3 tiers: candidate management, outreach/engagement, recruiter workflow, scoring/matching, delivery analytics, compliance/governance.
+- NFRs: 99.5% uptime, 24-hour delivery SLA for 5 candidates, <1-minute notification latency, GDPR/CCPA/TCPA, SOC 2 trajectory, tamper-evident audit.
+- Architecture classification: event-rich workflow system with strict multi-tenant data boundaries, 12–16 bounded components, compliance as a first-order design concern.
 
 ### Technical Constraints and Dependencies
 
@@ -81,82 +52,19 @@ _This document captures collaborative architecture decisions for CBLAero and is 
 - Explainability of scoring and rejection rationale to preserve recruiter trust
 - Cost guardrails and per-tenant metering readiness
 
-## Starter Template Evaluation
-
-### Primary Technology Domain
-
-Full-stack web application with async worker processes and integration adapters.
-
-### Starter Options Considered
-
-1. `create-next-app` App Router baseline
-- Strong fit for recruiter/admin web surface, API routes, and modern full-stack patterns.
-- Fast bootstrap for typed UI + API.
-
-2. `create-next-app` + separate backend framework at start
-- Adds early complexity before Tier 1 learning is complete.
-- Better deferred until clear scaling trigger.
-
-3. API-first backend starter with separate SPA
-- More control for long-term decomposition.
-- Slower Tier 1 execution and higher coordination overhead.
+## Technology Stack
 
 ### Selected Starter: Next.js App Router Baseline
-
-**Rationale for Selection:**
-
-- Fastest path to Tier 1 validation while preserving future modular decomposition.
-- Supports server rendering, route handlers, and strong TypeScript workflow in one codebase.
-- Reduces integration surface area early while leaving room for extraction of workers/services later.
-
-**Initialization Command:**
 
 ```bash
 npx create-next-app@latest cblaero --typescript --eslint --tailwind --src-dir --app --import-alias "@/*"
 ```
 
-**Version and runtime references used in this decision:**
+Runtimes: Node.js v24 LTS · Next.js 16.x · PostgreSQL 18. TypeScript-first, App Router, ESLint, `src/` layout. Fastest path to Tier 1 validation while preserving future extraction of worker services.
 
-- Node.js: v24 Active LTS line (Node releases page)
-- Next.js docs indicate latest series in use: `16.x` (`16.1.6` shown)
-- PostgreSQL docs indicate current major: `18`
-
-**Architectural Decisions Provided by Starter:**
-
-- TypeScript-first project baseline
-- App Router structure for feature composition
-- ESLint and modern build defaults
-- Source directory conventions (`src/`)
-- Frontend and API boundary co-located for early phase speed
-
-**Note:**
-
-- First implementation story should initialize this baseline and immediately add architecture guardrails (module boundaries, API contracts, auth/tenant middleware, audit envelope).
+**First story:** initialize baseline then add auth/tenant middleware, module boundaries, and audit envelope before any feature implementation.
 
 ## Core Architectural Decisions
-
-### Decision Priority Analysis
-
-**Critical Decisions (implementation-blocking):**
-
-- Multi-tenant boundary model and object-level authorization
-- Candidate and recruiter identity/security model
-- Event/audit architecture and immutable audit envelope
-- Communication orchestration pattern with retry/idempotency
-- Data model partitioning for tenant, candidate, job, outreach, and event streams
-
-**Important Decisions (shape architecture):**
-
-- Scoring and explainability model (deterministic + calibrated)
-- Teams integration adapter pattern with fallback channels
-- Observability stack and alerting thresholds
-- Data retention lifecycle and deletion workflows
-
-**Deferred Decisions (post-MVP):**
-
-- Advanced ML confidence serving infrastructure
-- Multi-region active-active failover architecture
-- Dedicated stream platform beyond relational/event-outbox pattern
 
 ### Data Architecture
 
@@ -203,6 +111,117 @@ npx create-next-app@latest cblaero --typescript --eslint --tailwind --src-dir --
   - Outreach scheduling and notification sends require idempotency keys.
 - Retry behavior:
   - Bounded retries with escalating delay and dead-letter classification.
+
+### Agentic Control Plane and Worker Model
+
+This implementation uses a goal-driven multi-agent execution model, not just background jobs.
+
+**Control-plane agents:**
+
+- Orchestrator Agent:
+  - Receives incoming objectives (for example, deliver 5 qualified candidates in 24 hours).
+  - Selects the execution plan and worker sequence.
+  - Resolves conflicts between worker outputs and chooses final action set.
+  - Aggregates partial results into one decision package for recruiter-facing delivery.
+- Goal Manager Agent:
+  - Tracks active goals, sub-goals, deadlines, and completion criteria.
+  - Monitors whether current worker execution is moving toward KPI targets.
+  - Replans worker assignments when progress stalls or constraints change.
+  - Enforces stop/retry/escalate policy for failed goal paths.
+
+**Execution workers (specialized agents):**
+
+- Sourcing Worker: candidate discovery and enrichment through internal DB, Clay, and RapidAPI connectors.
+- Matching Worker: scoring, rank generation, and explanation payloads.
+- Outreach Worker: SMS/email campaign and ad hoc communication tasks.
+- Scheduling Worker: Teams scheduling/task creation and recruiter action orchestration.
+- Compliance Worker: consent checks, audit events, FAA/manual verification routing.
+- Cost Guardrail Worker: threshold checks (`API`, `SMS`, KPI alerts) and budget-triggered recommendations.
+
+**Learning and adaptation loop:**
+
+- Reporting Agent:
+  - Produces progress reports for each active goal (status, risk, blockers, confidence).
+  - Feeds structured feedback signals back to Orchestrator and Goal Manager.
+- Worker Coaching and Policy Tuning Agent:
+  - Uses historical execution outcomes to tune routing rules, prompt templates, and thresholds.
+  - Updates worker playbooks and run-time policies after approval gates.
+  - Does not perform unsupervised model fine-tuning in MVP; learning is policy-level and auditable.
+
+**Decision governance rules:**
+
+- All agent decisions must be traceable via correlation ID and tenant ID.
+- Orchestrator decisions are auditable and stored in append-only event history.
+- High-impact actions (bulk changes, exports, compliance overrides) require human-in-the-loop confirmation.
+- If worker outputs disagree, Orchestrator uses deterministic arbitration policy and logs rationale.
+
+### Agentic Architecture Diagram (Control Plane)
+
+```mermaid
+flowchart TB
+  Goal[Business Goal Input]
+  Orchestrator[Orchestrator Agent]
+  GoalMgr[Goal Manager Agent]
+  Reporter[Reporting Agent]
+  Coach[Worker Coaching and Policy Tuning Agent]
+
+  subgraph Workers[Specialist Worker Agents]
+    S1[Sourcing Worker]
+    S2[Matching Worker]
+    S3[Outreach Worker]
+    S4[Scheduling Worker]
+    S5[Compliance Worker]
+    S6[Cost Guardrail Worker]
+  end
+
+  Goal --> GoalMgr
+  GoalMgr --> Orchestrator
+  Orchestrator --> S1
+  Orchestrator --> S2
+  Orchestrator --> S3
+  Orchestrator --> S4
+  Orchestrator --> S5
+  Orchestrator --> S6
+
+  S1 --> Reporter
+  S2 --> Reporter
+  S3 --> Reporter
+  S4 --> Reporter
+  S5 --> Reporter
+  S6 --> Reporter
+
+  Reporter --> GoalMgr
+  Reporter --> Orchestrator
+  Reporter --> Coach
+  Coach --> Orchestrator
+  Coach --> GoalMgr
+```
+
+### Agentic Execution Sequence (Goal to Aggregated Result)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant G as Goal Manager
+  participant O as Orchestrator
+  participant W1 as Sourcing Worker
+  participant W2 as Matching Worker
+  participant W3 as Outreach Worker
+  participant R as Reporting Agent
+  participant C as Coaching Agent
+
+  G->>O: Open goal with KPI target and constraints
+  O->>W1: Run sourcing/enrichment tasks
+  W1-->>O: Candidate pool + quality metadata
+  O->>W2: Run ranking and explanation generation
+  W2-->>O: Ranked candidates + rationale
+  O->>W3: Run outreach and scheduling actions
+  W3-->>O: Delivery outcomes + response signals
+  O->>R: Send aggregated execution package
+  R-->>G: Progress report, risk flags, next-step advice
+  R-->>C: Structured feedback from outcomes
+  C-->>O: Updated routing/policy guidance
+```
 
 ### Frontend Architecture
 
@@ -258,39 +277,6 @@ npx create-next-app@latest cblaero --typescript --eslint --tailwind --src-dir --
 | Audit immutability | DB append-only + hash chain | Tamper-evidence implemented in audit model |
 | Document/file storage | SharePoint folder | `https://cblsolution-my.sharepoint.com/:f:/g/personal/vivek_cblsolutions_com/IgDKIFYS0joSSbhgfpiY6XA_AbVtySkMKVQAIZwkiyZblTg?e=QTy2dU` |
 | Analytics/BI | In-app only | External BI warehouse/tools deferred |
-
-### Architecture Diagram (MVP)
-
-```mermaid
-flowchart LR
-  R[Recruiter] --> W[CBLAero Web App\nNext.js on Render]
-  C[Candidate] --> W
-  D[Delivery Head/Admin] --> W
-
-  W --> IDP[Microsoft Entra ID\nInternal SSO]
-  W --> DB[(Supabase Postgres\nRLS + Audit Hash Chain)]
-
-  W --> Q[Job Queue\nDB/Outbox]
-  Q --> PY[Python Workers\nRender Background Workers]
-  PY --> DB
-
-  PY --> TEL[Telnyx\nSMS + Voice + Recording + Transcription]
-  PY --> INS[Instantly\nCampaign Email]
-  PY --> MSG[Microsoft Graph/Outlook\nAd Hoc Email]
-  PY --> TEAM[Microsoft Teams\nCards + Tasks + Scheduling]
-
-  PY --> ENR[Enrichment Sources\nInternal DB + Clay + RapidAPI]
-  PY --> FAA[FAA Public Data\nManual Verification Workflow]
-  W --> SP[SharePoint Folder\nDocument Distribution]
-
-  MON[Render + Supabase Native Monitoring] --> W
-  MON --> PY
-```
-
-Diagram intent:
-- Web app handles user interactions, auth handoff, and tenant-safe reads/writes.
-- Python workers handle async orchestration, retries, and third-party integrations.
-- Supabase is the source of truth for transactional data, RLS enforcement, and append-only audited events.
 
 ### C4 Container Diagram (MVP)
 
@@ -370,6 +356,293 @@ sequenceDiagram
   W-->>R: Show profile, match reasons, and next actions
 ```
 
+### Sequence: Candidate Magic-Link Authentication
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant C as Candidate
+  participant W as Web App
+  participant DB as Supabase Postgres
+  participant T as Telnyx
+
+  C->>W: Request access for job (job-scoped entry point)
+  W->>DB: Create one-time token (short TTL, job-scoped, single-use)
+  W->>T: Send magic link via SMS or email
+  T-->>C: Deliver magic link message
+  C->>W: Click link with token
+  W->>DB: Validate token (expiry check, already-used check)
+  DB-->>W: Token valid
+  W->>DB: Mark token consumed (replay protection)
+  W->>DB: Create candidate session (job-scoped, time-bounded)
+  W-->>C: Authenticated — show consent + availability flow
+```
+
+### Sequence: Internal Recruiter SSO Login (Entra ID)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant R as Recruiter
+  participant W as Web App
+  participant E as Microsoft Entra ID
+
+  R->>W: Navigate to login
+  W-->>R: Redirect to Entra ID login
+  R->>E: Authenticate with @cblsolutions.com credentials
+  E-->>R: Return auth code
+  R->>W: Submit auth code
+  W->>E: Exchange code for ID + access tokens
+  E-->>W: Tokens (role claims included)
+  W->>W: Validate claims, extract tenant + role
+  W->>DB: Log login event (append-only audit)
+  W-->>R: Authenticated recruiter session
+```
+
+### Sequence: Job Intake to Ranked Candidate Delivery
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant R as Recruiter
+  participant W as Web App
+  participant DB as Supabase Postgres
+  participant Q as Outbox/Queue
+  participant PY as Python Worker
+  participant ENR as Enrichment (Clay / RapidAPI)
+  participant TM as Microsoft Teams
+
+  R->>W: Submit job intake form
+  W->>DB: Save job requirement (tenant-scoped)
+  W->>Q: Enqueue scoring/sourcing job
+  Q->>PY: Dispatch scoring job
+  PY->>DB: Load candidate pool + job criteria
+  PY->>ENR: Enrich shortlisted candidates
+  ENR-->>PY: Enriched profiles (skills, recency, cert status)
+  PY->>PY: Compute match score + generate explanation payload
+  PY->>DB: Store ranked candidates + match reasons (append-only)
+  PY->>TM: Post ranked candidate card to recruiter channel
+  TM-->>R: Deliver ranked list with action cards
+```
+
+### Sequence: Recruiter Teams Action to Candidate Outreach
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant R as Recruiter
+  participant TM as Microsoft Teams
+  participant W as Web App
+  participant DB as Supabase Postgres
+  participant Q as Outbox/Queue
+  participant PY as Python Worker
+  participant T as Telnyx SMS
+  participant C as Candidate
+
+  R->>TM: Click "Reach Out" on candidate card
+  TM->>W: POST action callback with candidate_id + job_id
+  W->>DB: Verify consent record and opt-in status
+  W->>Q: Enqueue outreach job (idempotency key set)
+  Q->>PY: Dispatch outreach task
+  PY->>DB: Load message template + candidate contact details
+  PY->>T: Send personalized SMS to candidate
+  T-->>PY: ACK + message SID
+  PY->>DB: Store delivery event (append-only audit)
+  T-->>PY: Delivery status callback (delivered / failed)
+  PY->>DB: Update outreach status
+  PY->>TM: Update card status (sent / delivered)
+  TM-->>R: Show delivery confirmation
+  T-->>C: Receive SMS
+```
+
+### Sequence: Two-Way SMS Conversation
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant C as Candidate
+  participant T as Telnyx
+  participant PY as Python Worker
+  participant DB as Supabase Postgres
+  participant TM as Microsoft Teams
+  participant R as Recruiter
+
+  C->>T: Reply to outreach SMS
+  T->>PY: Inbound webhook (from, body, message_id)
+  PY->>DB: Match to candidate + active outreach thread
+  PY->>DB: Store inbound message (append-only)
+  PY->>PY: Parse intent (availability confirm / question / opt-out)
+  alt Opt-out detected
+    PY->>DB: Record consent revocation
+    PY->>T: Send opt-out confirmation SMS
+    PY->>TM: Notify recruiter of opt-out
+  else Positive availability signal
+    PY->>DB: Update candidate availability signal
+    PY->>TM: Post reply alert card to recruiter channel
+    TM-->>R: Show candidate response with action options
+  end
+```
+
+### Sequence: Instantly Campaign Email Flow
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant PY as Python Worker
+  participant I as Instantly API
+  participant C as Candidate (email)
+  participant DB as Supabase Postgres
+  participant TM as Microsoft Teams
+
+  PY->>DB: Load campaign batch + consent-verified recipients
+  PY->>I: Create campaign and upload recipient sequence
+  I-->>PY: Campaign ID confirmed
+  PY->>I: Launch campaign send
+  I->>C: Deliver email sequence
+  C-->>I: Open / click / reply event
+  I->>PY: Webhook: delivery event (open, click, reply, bounce)
+  PY->>DB: Store delivery event (append-only, tenant-scoped)
+  PY->>PY: Evaluate response signals
+  alt Positive engagement
+    PY->>DB: Update candidate engagement score
+    PY->>TM: Alert recruiter with engagement summary
+  else Bounce or hard failure
+    PY->>DB: Flag address, halt sequence for candidate
+  end
+```
+
+### Sequence: Enrichment Pipeline Execution
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant PY as Sourcing Worker
+  participant DB as Supabase Postgres
+  participant INT as Internal DB
+  participant CLAY as Clay API
+  participant RAPID as RapidAPI Source
+  participant Q as Outbox/Queue
+
+  PY->>DB: Load candidate stubs requiring enrichment
+  PY->>INT: Lookup by email/phone in internal database
+  INT-->>PY: Match data (prior roles, contact history)
+  PY->>CLAY: Enrich with professional profile data
+  CLAY-->>PY: Skills, current employer, social signals
+  PY->>RAPID: Fetch aviation cert / license lookups
+  RAPID-->>PY: Certification records
+  PY->>PY: Merge, deduplicate, score completeness
+  PY->>DB: Upsert enriched candidate profile (versioned)
+  PY->>Q: Emit enrichment.complete event (triggers scoring)
+```
+
+### Sequence: Manual FAA Verification Workflow
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant PY as Compliance Worker
+  participant FAA as FAA Public Data
+  participant DB as Supabase Postgres
+  participant W as Web App
+  participant OPS as Ops / Manual Reviewer
+  participant TM as Microsoft Teams
+
+  PY->>FAA: Query candidate by name / cert number
+  FAA-->>PY: Certificate status data
+  PY->>PY: Auto-match: compare FAA record to candidate profile
+  alt Confident automated match
+    PY->>DB: Record FAA verification (auto, with evidence)
+    PY->>DB: Emit compliance.verification.completed event
+  else Low-confidence or conflict
+    PY->>DB: Flag candidate for manual review
+    PY->>TM: Notify ops team with discrepancy details
+    TM-->>OPS: Manual review task created
+    OPS->>W: Review candidate + FAA evidence side-by-side
+    OPS->>W: Submit manual verdict (verified / rejected / pending)
+    W->>DB: Record manual FAA verification with reviewer ID
+  end
+```
+
+### Sequence: GDPR / CCPA Data Erasure Request
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant C as Candidate
+  participant W as Web App
+  participant DB as Supabase Postgres
+  participant Q as Outbox/Queue
+  participant PY as Compliance Worker
+  participant SP as SharePoint
+  participant TM as Microsoft Teams
+
+  C->>W: Submit data erasure request
+  W->>DB: Create erasure request record (check for legal hold)
+  W-->>C: Confirm receipt (72-hour SLA)
+  W->>Q: Enqueue erasure workflow
+  Q->>PY: Dispatch erasure job
+  PY->>DB: Check for active legal hold on candidate data
+  alt Legal hold active
+    PY->>DB: Record hold conflict, defer erasure
+    PY->>TM: Alert compliance admin with hold details
+  else No hold
+    PY->>DB: Soft-delete PII fields (name, phone, email, address)
+    PY->>DB: Retain anonymized audit skeleton (regulatory minimum)
+    PY->>DB: Revoke all active magic-link tokens
+    PY->>SP: Delete candidate documents from SharePoint folder
+    PY->>DB: Emit compliance.erasure.completed event (append-only)
+    W-->>C: Deletion confirmation
+  end
+```
+
+### Sequence: Step-Up Auth for High-Risk Action
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant R as Recruiter / Admin
+  participant W as Web App
+  participant E as Microsoft Entra ID
+  participant DB as Supabase Postgres
+
+  R->>W: Trigger high-risk action (bulk export / role change / compliance override)
+  W->>W: Detect action requires elevated scope (policy check)
+  W-->>R: Prompt step-up authentication
+  R->>E: Complete MFA challenge
+  E-->>W: Step-up token with elevated scope
+  W->>W: Validate token scope matches action requirement
+  W->>DB: Log step-up auth event (actor, action, timestamp, tenant)
+  W->>W: Execute action under elevated scope
+  W->>DB: Append immutable audit event (action outcome + actor)
+  W-->>R: Action complete with audit trace ID
+```
+
+### Sequence: Cost Guardrail Trigger and Replan
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Cost Guardrail Worker
+  participant DB as Supabase Postgres
+  participant O as Orchestrator Agent
+  participant G as Goal Manager Agent
+  participant TM as Microsoft Teams
+  participant R as Delivery Lead
+
+  W->>DB: Read real-time spend counters (API, SMS)
+  W->>W: Compare against thresholds ($1,000/month API · $200/placement SMS)
+  alt Threshold breached
+    W->>O: Emit budget.threshold.exceeded event
+    O->>G: Request goal replan with cost constraint
+    G->>G: Identify lower-cost outreach alternatives
+    G->>O: Updated execution plan (reduce SMS volume, shift to email)
+    O->>DB: Pause pending high-cost outreach tasks
+    O->>TM: Alert delivery lead with spend summary + revised plan
+    TM-->>R: Show budget alert and plan adjustment
+    R->>W: Approve or override revised plan
+  end
+```
+
 ### Budget and KPI Alert Baselines
 
 - API spend alert threshold: $1,000/month
@@ -427,25 +700,6 @@ sequenceDiagram
 - `docs/planning_artifacts/adr/0003-mcp-tool-access-control.md`
 - `docs/planning_artifacts/adr/0004-supabase-access-for-python-workers.md`
 - `docs/planning_artifacts/adr/0005-transport-and-tls-standards.md`
-
-### Decision Impact Analysis
-
-**Implementation sequence:**
-
-1. Baseline app scaffold and module boundaries
-2. Identity, auth, and tenant middleware foundation
-3. Core data model + migrations + repository contracts
-4. Outreach pipeline + idempotent job workers
-5. Recruiter and candidate primary workflows
-6. Audit immutability and compliance workflows
-7. Teams integration + fallback path hardening
-8. Operational dashboards and readiness checks
-
-**Cross-component dependencies:**
-
-- Scoring explainability depends on event and interaction model quality.
-- Compliance workflows depend on consent and immutable audit architecture.
-- Tier 2 automation throughput depends on queue and retry architecture selected in Tier 1.
 
 ## Implementation Patterns and Consistency Rules
 
@@ -732,50 +986,6 @@ cblaero/
 
 ## Architecture Validation Results
 
-### Coherence Validation
-
-**Decision compatibility:**
-
-- Selected stack and module boundaries align with tiered rollout and validation-first MVP strategy.
-- Async orchestration pattern supports notification and outreach constraints without forcing early microservices split.
-
-**Pattern consistency:**
-
-- Naming/format/process rules are aligned across DB, API, events, and code organization.
-- Multi-tenant requirements are reflected in boundary rules and test strategy.
-
-**Structure alignment:**
-
-- Project structure supports each FR domain and non-functional cross-cutting concerns.
-- Dedicated worker paths match retry/fallback and latency requirements.
-
-### Requirements Coverage Validation
-
-**Functional requirement coverage:**
-
-- All major FR domains are mapped to explicit feature modules and runtime components.
-- Workflow-heavy paths (outreach, delivery, ranking, tracking) are represented in both sync and async architecture.
-
-**Non-functional requirement coverage:**
-
-- Security/compliance: covered through authz, immutable audit stream, retention/deletion workflows
-- Performance/reliability: covered through worker isolation, retry policies, observability, and SLA metrics
-- Multi-tenancy: covered through explicit tenancy boundaries and adversarial test suite location
-
-### Implementation Readiness Validation
-
-**Decision completeness:**
-
-- Core blocking decisions are documented and linked to implementation order.
-
-**Structure completeness:**
-
-- Directory tree and module decomposition are specific enough for implementation-story planning.
-
-**Pattern completeness:**
-
-- Agent conflict points are addressed by mandatory conventions and contract enforcement.
-
 ### Stack-Mapped Implementation Readiness Checklist
 
 Use this checklist as the pre-build and pre-release gate for the chosen stack.
@@ -900,38 +1110,7 @@ Gate rule:
 
 **Nice-to-have gaps:**
 
-- Add formal ADR records per major decision once implementation starts.
 - Add synthetic load test profiles tied to Tier 2 and Tier 3 gates.
-
-### Architecture Completeness Checklist
-
-**Requirements analysis**
-
-- [x] Project context analyzed
-- [x] Scale and complexity assessed
-- [x] Technical constraints identified
-- [x] Cross-cutting concerns mapped
-
-**Architectural decisions**
-
-- [x] Critical decisions documented
-- [x] Core stack selected
-- [x] Integration patterns defined
-- [x] Reliability/security expectations captured
-
-**Implementation patterns**
-
-- [x] Naming conventions established
-- [x] Structure patterns defined
-- [x] Communication patterns specified
-- [x] Process rules documented
-
-**Project structure**
-
-- [x] Complete directory structure defined
-- [x] Component boundaries established
-- [x] Integration points mapped
-- [x] Requirements mapped to structure
 
 ### Architecture Readiness Assessment
 
