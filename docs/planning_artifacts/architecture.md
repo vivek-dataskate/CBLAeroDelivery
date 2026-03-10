@@ -259,6 +259,117 @@ npx create-next-app@latest cblaero --typescript --eslint --tailwind --src-dir --
 | Document/file storage | SharePoint folder | `https://cblsolution-my.sharepoint.com/:f:/g/personal/vivek_cblsolutions_com/IgDKIFYS0joSSbhgfpiY6XA_AbVtySkMKVQAIZwkiyZblTg?e=QTy2dU` |
 | Analytics/BI | In-app only | External BI warehouse/tools deferred |
 
+### Architecture Diagram (MVP)
+
+```mermaid
+flowchart LR
+  R[Recruiter] --> W[CBLAero Web App\nNext.js on Render]
+  C[Candidate] --> W
+  D[Delivery Head/Admin] --> W
+
+  W --> IDP[Microsoft Entra ID\nInternal SSO]
+  W --> DB[(Supabase Postgres\nRLS + Audit Hash Chain)]
+
+  W --> Q[Job Queue\nDB/Outbox]
+  Q --> PY[Python Workers\nRender Background Workers]
+  PY --> DB
+
+  PY --> TEL[Telnyx\nSMS + Voice + Recording + Transcription]
+  PY --> INS[Instantly\nCampaign Email]
+  PY --> MSG[Microsoft Graph/Outlook\nAd Hoc Email]
+  PY --> TEAM[Microsoft Teams\nCards + Tasks + Scheduling]
+
+  PY --> ENR[Enrichment Sources\nInternal DB + Clay + RapidAPI]
+  PY --> FAA[FAA Public Data\nManual Verification Workflow]
+  W --> SP[SharePoint Folder\nDocument Distribution]
+
+  MON[Render + Supabase Native Monitoring] --> W
+  MON --> PY
+```
+
+Diagram intent:
+- Web app handles user interactions, auth handoff, and tenant-safe reads/writes.
+- Python workers handle async orchestration, retries, and third-party integrations.
+- Supabase is the source of truth for transactional data, RLS enforcement, and append-only audited events.
+
+### C4 Container Diagram (MVP)
+
+```mermaid
+flowchart TB
+  subgraph People
+    Recruiter[Recruiter]
+    Candidate[Candidate]
+    Admin[Delivery Head/Admin]
+  end
+
+  subgraph CBL[CBLAero System]
+    Web[Container: Web App\nNext.js on Render\nUI + API routes]
+    Worker[Container: Worker Services\nPython on Render\nAsync jobs and integrations]
+    Data[(Container: Supabase Postgres\nRLS + Audit Hash Chain)]
+    Queue[Container: Outbox/Job Queue\nAsync orchestration]
+  end
+
+  subgraph Ext[External Systems]
+    Entra[Microsoft Entra ID]
+    Telnyx[Telnyx SMS/Voice]
+    Instantly[Instantly Campaign Email]
+    Graph[Microsoft Graph/Outlook]
+    Teams[Microsoft Teams]
+    Enrich[Internal DB + Clay + RapidAPI]
+    FAA[FAA Public Data]
+    SP[SharePoint Folder]
+  end
+
+  Recruiter --> Web
+  Candidate --> Web
+  Admin --> Web
+
+  Web <--> Entra
+  Web --> Data
+  Web --> Queue
+  Queue --> Worker
+  Worker --> Data
+
+  Worker --> Telnyx
+  Worker --> Instantly
+  Worker --> Graph
+  Worker --> Teams
+  Worker --> Enrich
+  Worker --> FAA
+
+  Web --> SP
+```
+
+### Sequence Diagram (Candidate Outreach to Recruiter Notification)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant C as Candidate
+  participant W as Web App (Render)
+  participant DB as Supabase Postgres
+  participant Q as Outbox/Queue
+  participant PY as Python Worker (Render)
+  participant T as Telnyx
+  participant TM as Microsoft Teams
+  participant R as Recruiter
+
+  C->>W: Submit availability + consent
+  W->>DB: Persist candidate update (tenant scoped)
+  W->>Q: Enqueue scoring/outreach job
+  Q->>PY: Dispatch async job
+  PY->>DB: Load candidate + job requirement
+  PY->>PY: Compute score + match reasons
+  PY->>T: Send SMS follow-up (if eligible)
+  T-->>PY: Delivery status callback
+  PY->>DB: Store delivery/audit event (append-only)
+  PY->>TM: Post Teams card with top candidate details
+  TM-->>R: Notify recruiter with action card
+  R->>W: Open candidate profile from Teams
+  W->>DB: Read profile + audit trail (RLS enforced)
+  W-->>R: Show profile, match reasons, and next actions
+```
+
 ### Budget and KPI Alert Baselines
 
 - API spend alert threshold: $1,000/month
@@ -307,6 +418,15 @@ npx create-next-app@latest cblaero --typescript --eslint --tailwind --src-dir --
 - Service-to-database traffic: TLS required (`sslmode=require` minimum, `verify-full` where supported).
 - Certificates are managed by platform-managed TLS endpoints (Render and Supabase) with automatic renewal.
 - No plaintext credentials or connection strings in source control; all secrets via Render environment secrets.
+
+**Related ADRs:**
+
+- `docs/planning_artifacts/adr/README.md`
+- `docs/planning_artifacts/adr/0001-security-baseline-and-zero-trust.md`
+- `docs/planning_artifacts/adr/0002-rag-and-vector-governance.md`
+- `docs/planning_artifacts/adr/0003-mcp-tool-access-control.md`
+- `docs/planning_artifacts/adr/0004-supabase-access-for-python-workers.md`
+- `docs/planning_artifacts/adr/0005-transport-and-tls-standards.md`
 
 ### Decision Impact Analysis
 
@@ -655,6 +775,116 @@ cblaero/
 **Pattern completeness:**
 
 - Agent conflict points are addressed by mandatory conventions and contract enforcement.
+
+### Stack-Mapped Implementation Readiness Checklist
+
+Use this checklist as the pre-build and pre-release gate for the chosen stack.
+
+#### 1. Render Platform and Environment Readiness
+
+- [ ] Separate Render services created for web app and Python workers.
+- [ ] Separate `staging` and `production` environments configured.
+- [ ] Environment variables and secrets loaded through Render environment secrets only.
+- [ ] CI/CD pipeline includes schema migration checks and protected-branch build rules.
+- [ ] Rollback procedure documented and tested for both web and worker services.
+
+Evidence:
+- Render service configuration exports/screenshots
+- Deployment pipeline config and last successful staging run
+
+#### 2. Supabase and Data Security Readiness
+
+- [ ] Supabase project provisioned in approved US region.
+- [ ] RLS policies implemented and tested for all tenant-owned tables.
+- [ ] Append-only audit tables with hash-chain integrity checks implemented.
+- [ ] Python workers use backend-only service credentials; no client exposure of service role keys.
+- [ ] TLS enforced for all DB connections from app and workers.
+- [ ] 3-year retention policy for call recordings/transcripts configured and documented.
+
+Evidence:
+- SQL migrations for RLS and audit models
+- Access test report proving cross-tenant denial
+- Connection settings showing TLS requirement
+
+#### 3. Identity and Access (Entra + Candidate Magic Links)
+
+- [ ] Microsoft Entra SSO configured for internal users.
+- [ ] Candidate magic-link login flow implemented for SMS/email link entry.
+- [ ] Step-up authentication enforced for high-risk actions (exports, role changes, bulk sensitive actions).
+- [ ] Emergency access runbook documented and audit logging verified.
+
+Evidence:
+- Auth flow test cases and runbook
+- Audit sample showing privileged action traces
+
+#### 4. Messaging and Collaboration Integrations
+
+- [ ] Telnyx integration live for two-way SMS.
+- [ ] Telnyx voice integration live for dial, recording, and transcription.
+- [ ] Instantly integration live for campaign email sends/status.
+- [ ] Microsoft Graph/Outlook integration live for ad hoc recruiter email actions.
+- [ ] Microsoft Teams integration live for cards, task creation, and scheduling actions.
+- [ ] Retry policy (max retries, delay strategy, terminal state) implemented and tested across integrations.
+
+Evidence:
+- Integration smoke-test report per provider
+- Message delivery and callback logs
+- Teams card/task end-to-end test capture
+
+#### 5. Enrichment and Compliance Workflow Readiness
+
+- [ ] Enrichment connector layer implemented for internal DB, Clay, and RapidAPI sources.
+- [ ] Provider-agnostic connector contract verified with at least two enrichment sources.
+- [ ] FAA verification workflow implemented using official FAA public data + manual review.
+- [ ] Background check path documented as manual-only in MVP operations SOP.
+
+Evidence:
+- Connector contract tests
+- FAA verification workflow documentation and sample execution
+
+#### 6. Security, TLS, and MCP Control Readiness
+
+- [ ] HTTPS-only access and HSTS enabled on authenticated application surfaces.
+- [ ] TLS 1.2+ enforced edge-to-client; TLS enforced service-to-database.
+- [ ] MCP tool access policies implemented with role/environment allowlists.
+- [ ] MCP high-risk operations protected by step-up auth and explicit audit trails.
+- [ ] Secret scanning active in CI; no plaintext credentials in repository.
+
+Evidence:
+- Security config snapshots
+- MCP policy definitions and deny-path test results
+- CI security scan reports
+
+#### 7. Observability, Alerts, and Cost Guardrails
+
+- [ ] Render and Supabase native monitoring dashboards configured.
+- [ ] Alert rules configured for uptime, queue failures, provider errors, and auth anomalies.
+- [ ] Cost alerts configured at: API `$1,000/month`, SMS `$200/placement`.
+- [ ] KPI alert configured for conversion rate `<5%`.
+- [ ] Operational runbook exists for provider outage and queue fallback mode.
+
+Evidence:
+- Alert policy export
+- Test alert triggers and runbook execution notes
+
+#### 8. Testing and Release Gate
+
+- [ ] Unit, integration, and e2e tests pass on staging.
+- [ ] Tenant-isolation adversarial suite passes with zero leakage.
+- [ ] External-provider outage drill validates queue mode and recovery.
+- [ ] Audit immutability and hash-chain verification checks pass.
+- [ ] Accessibility baseline checks pass for critical workflows.
+
+Gate rule:
+- `PASS`: all critical items complete.
+- `CONCERNS`: non-critical items pending with approved mitigation owner/date.
+- `FAIL`: any critical security, tenant isolation, or audit integrity item incomplete.
+
+#### 9. Known Accepted MVP Risks
+
+- [ ] SMS backup provider is not configured in MVP (accepted risk, monitor via outage drill).
+- [ ] Background checks remain manual in MVP (accepted operational tradeoff).
+- [ ] External BI remains deferred; in-app analytics only for MVP.
 
 ### Gap Analysis Results
 
