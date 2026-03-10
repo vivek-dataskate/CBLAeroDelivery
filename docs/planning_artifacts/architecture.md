@@ -1,3 +1,6 @@
+  - `pending_asset_deletions` (SharePoint erasure cleanup queue with retry state — see _Resilience §14_)
+  - `provider_rate_counters` (per-provider leaky bucket for enrichment rate limiting — see _Resilience §15_)
+  - `goal_approval_requests` (HITL approval records linking goal_states to actor decisions — see _Resilience §16_)
 ---
 stepsCompleted: [1, 2, 3, 4, 5, 6, 7, 8]
 inputDocuments:
@@ -983,6 +986,51 @@ Processing order on inbound opt-out:
 - When a recruiter asks "why did this candidate's rank change?", the application can query the two `candidate_match` records (before and after), compare `scoring_prompt_version` and `scoring_model_id`, and surface a human-readable explanation: _"Score changed from 87 to 61 on [date]. Scoring model updated from `gpt-4o-2026-01` to `gpt-4o-2026-03`; prompt version updated from `2.0.1` to `2.1.0` (updated: weighted recency of FAA cert renewal). Prior score reasoning is preserved below."_
 - Prompt version changes must go through a deployment gate: new version is staged (used for new scores only), prior version remains active for 30 days, scores from both versions co-exist in the UI with a version badge. Version retirement requires delivery head approval.
 - The `audit_event` stream also captures `scoring.model.version.changed` events when a new prompt/model is deployed, with actor, timestamp, and change summary.
+
+### 14. GDPR Erasure — SharePoint Asset Cleanup Queue
+
+**Decision:** SharePoint deletion is a retried async step within the compliance worker using the existing outbox pattern. Erasure status remains `PARTIAL_PENDING_SP` until SharePoint confirms all assets deleted. The record is never promoted to `COMPLETE` while orphaned files exist.
+
+- A `pending_asset_deletions` table stores one row per asset awaiting deletion: `(deletion_id, erasure_request_id, candidate_id, tenant_id, asset_type, asset_reference, status [pending|confirmed|failed], attempt_count, last_attempted_at, confirmed_at)`.
+- The compliance worker writes `pending_asset_deletions` rows **before** calling the SharePoint API — the intent is recorded even if the worker crashes before the API call.
+- On SharePoint `200 OK`: row is updated to `confirmed`.
+- On error or timeout: row stays `pending`, re-enqueued with exponential backoff (1 min → 5 min → 15 min → 60 min). Maximum 10 attempts over 24 hours.
+- `erasure_request.status` transitions: `IN_PROGRESS` → `PARTIAL_PENDING_SP` (PII DB fields erased, SharePoint pending) → `COMPLETE` (all assets confirmed). Alert fires if any erasure stays in `PARTIAL_PENDING_SP` for > 6 hours.
+- After 10 failed attempts: status set to `MANUAL_INTERVENTION_REQUIRED`; compliance admin is alerted with the full asset list. Manual deletion and confirmation via admin console closes the record.
+- Reuses the existing Render background worker + outbox retry infrastructure — no separate cleanup service.
+
+### 15. External Enrichment Rate Limiting — Provider-Scoped Leaky Bucket
+
+**Decision:** A `provider_rate_counters` table implements a per-provider leaky bucket using the same Supabase atomic counter pattern as cost guardrails. No Redis dependency introduced in MVP.
+
+- Schema: `provider_rate_counters(provider_id, window_start, request_count, window_seconds, limit_per_window)`. One row per `(provider_id, window_start)` per rolling window.
+- Before any outbound enrichment call (Clay, RapidAPI, FAA public data), the worker atomically increments the counter for the current window and compares against `limit_per_window`. If at limit, the job is not issued — it is re-enqueued with a delay equal to the time until the next window boundary.
+- Default per-provider limits (configurable by admin without a deploy):
+  - Clay: 60 req/min
+  - RapidAPI: 30 req/min
+  - FAA public data: 20 req/min (no published SLA; conservative to avoid IP block)
+- Bulk intake (initial 1M load): the enrichment batch worker self-throttles by checking the rate counter before each chunk dispatch — it will never saturate a provider window on its own.
+- Provider `429` responses are a secondary defense: on `429` the worker reads the `Retry-After` header and re-enqueues with that exact delay.
+- All rate-limit backoffs are written as `enrichment.rate_limited` informational events in the audit stream for provider headroom visibility.
+
+### 16. Human-in-the-Loop Approval Entry Points
+
+**Decision:** Teams Action Card is the primary HITL path; the Web App "Agent Pending" tab is the authoritative entry point, required fallback, and audit owner. The Web App owns all state transitions — Teams is a delivery channel only.
+
+**Teams Action Card (primary path):**
+- When a goal requires human approval, the Orchestrator creates a `goal_approval_requests` record and the Reporting Agent sends an Adaptive Card to the recruiter/delivery lead Teams channel.
+- Card shows: goal summary, pause reason, cost-at-pause, and action buttons: "Approve & Resume" / "Abandon" / "View Details in App".
+- Button actions POST to `POST /api/v1/agent-approvals/:approval_id/action` on the Web App. The Web App validates the actor's Entra token, writes the decision, updates `goal_states.status`, and enqueues the resume job. The Teams card is then updated to a confirmation message.
+
+**Web App "Agent Pending" tab (authoritative fallback):**
+- Lists all `goal_approval_requests` with `status = awaiting_approval` for the tenant, ordered by urgency and elapsed wait time.
+- Required during Teams outage: if the Teams card delivery dead-letters (per Teams timeout decision §5), the escalation path notifies the delivery lead via email (Graph) with a direct link to this tab.
+- High-sensitivity approvals (bulk-erasure overrides, compliance holds) never appear on Teams cards — Web App only, with step-up authentication required.
+
+**Audit trail:**
+- Every decision (source: `teams_card` or `webapp_tab`) is written as `agent.goal.approved` / `agent.goal.abandoned` with actor, source, tenant, elapsed wait time, and cost-at-decision.
+- Approval SLA: any `goal_approval_requests` item awaiting approval for > 30 minutes triggers auto-escalation to the delivery head via both channels.
+- New entities: `goal_approval_requests(approval_id, goal_id, tenant_id, triggered_by, status, created_at, decided_at, decided_by_actor_id, decision_source, cost_at_trigger)`.
 
 ## Implementation Patterns and Consistency Rules
 
