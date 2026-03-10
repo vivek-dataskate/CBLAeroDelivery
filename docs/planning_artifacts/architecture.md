@@ -83,6 +83,11 @@ Runtimes: Node.js v24 LTS · Next.js 16.x · PostgreSQL 18. TypeScript-first, Ap
   - `outreach_message`, `consent_record`, `delivery_attempt`
   - `interaction_event`, `audit_event`, `teams_notification`
   - `import_batch`, `import_row_error` (tracks all bulk upload and sync jobs with per-row error audit)
+  - `goal_states` (serialized agent scratchpad for resumable agentic execution — see _Resilience §9_)
+  - `candidate_outreach_lock` (channel-agnostic 24-hour cooldown enforcement — see _Resilience §10_)
+  - `outreach_jobs` (provider idempotency keys and request IDs — see _Resilience §11_)
+  - `candidate_faa_verification` (cert expiry tracking for nightly re-verification sweep — see _Resilience §12_)
+  - `prompt_registry` (append-only scoring prompt/model version registry — see _Resilience §13_)
 - Dedupe strategy:
   - Deterministic identity confidence thresholds per PRD
   - Manual review queue for uncertain merges
@@ -188,8 +193,9 @@ This implementation uses a goal-driven multi-agent execution model, not just bac
 - Orchestrator decisions are auditable and stored in append-only event history.
 - High-impact actions (bulk changes, exports, compliance overrides) require human-in-the-loop confirmation.
 - If worker outputs disagree, Orchestrator uses deterministic arbitration policy and logs rationale.
-- Every goal has a hard `max_iterations` and `max_consecutive_failures` budget; breach triggers human-in-the-loop pause — see _Architecture Resilience Decisions §1_.
-- Cold-start tenants (< 10 placements) operate in bootstrap mode with global anonymized baselines — see _Architecture Resilience Decisions §2_.
+- Every goal has a hard `max_iterations` and `max_consecutive_failures` budget; breach triggers human-in-the-loop pause — see _Resilience §1_.
+- Cold-start tenants (< 10 placements) operate in bootstrap mode with global anonymized baselines — see _Resilience §2_.
+- Paused goals resume from serialized scratchpad checkpoint — no full re-run on worker restart — see _Resilience §9_.
 
 ### Agentic Architecture Diagram (Control Plane)
 
@@ -920,6 +926,63 @@ Processing order on inbound opt-out:
 - The Cost Guardrail Worker also runs a 1-minute polling loop as a macro check across all tenants (catches accumulated small increments that might slip past per-request checks during concurrent bursts).
 - Thresholds: API `$1,000/month` (hard stop at `$950` + alert delivery lead), SMS `$200/placement` (hard stop at `$180` + alert recruiter).
 - All budget stops are written as `cost.threshold.exceeded` audit events and surface in the operations console.
+
+### 9. Agentic Continuity — Goal State Persistence for Resumption
+
+**Decision:** A `goal_states` table in Supabase stores the serialized agent execution context; paused goals resume from their last checkpoint without re-running full analysis.
+
+- Schema: `goal_states(goal_id PK, tenant_id, status, scratchpad JSONB, last_checkpoint_at, iteration_count, correlation_id, resumed_by_actor_id, created_at, updated_at)`.
+- `scratchpad` stores the serialized agent working memory: current plan, completed sub-tasks, partial results, pending actions, and token budget consumed. Format is framework-neutral JSON — not LangChain-specific — so the worker layer can swap model libraries without a schema change.
+- On every iteration completion the Orchestrator writes an updated `scratchpad` checkpoint inside the same DB transaction as the outbox job state update. If the Render replica crashes mid-iteration, the last committed checkpoint is the recovery point.
+- On human approval: the approver's action sets `goal_states.status = 'approved'`, records `resumed_by_actor_id`, and enqueues a resume job referencing the `goal_id`. The new worker reads the `scratchpad` and continues from the last checkpoint — it does not re-run prior steps.
+- Scratchpad retention: completed goals retain their final scratchpad for 90 days for audit/debugging then are pruned. Abandoned goals retain for 7 days.
+- Token cost protection: each checkpoint records `tokens_consumed_total`; if a resumed goal would exceed a per-goal token budget (default 50,000 tokens), it is auto-escalated rather than resumed.
+
+### 10. Communication Collision Prevention — Channel-Agnostic Outreach Lock
+
+**Decision:** A `candidate_outreach_lock` record enforces a 24-hour channel-agnostic cooldown on all automated outreach. Manual recruiter-triggered outreach bypasses the lock but surfaces a visible warning.
+
+- Schema: `candidate_outreach_lock(candidate_id, tenant_id, last_outreach_at, last_channel, last_actor_type [automated|recruiter], lock_expires_at)`. One row per `(candidate_id, tenant_id)`; upserted on every outreach dispatch.
+- Before any automated outreach job dispatches (SMS via Telnyx, campaign email via Instantly, ad hoc email via Graph), the worker reads `lock_expires_at`. If `now() < lock_expires_at`, the job is cancelled and written as `outreach.skipped.cooldown` — not retried.
+- Cooldown window: 24 hours for automated outreach. Configurable per tenant by admin (minimum 4 hours; maximum 72 hours).
+- Manual recruiter action (Teams card "Reach Out"): bypasses the automated lock but the Web App renders a warning banner — "This candidate was last contacted [X hours ago] via [channel]." The recruiter must confirm before the send proceeds. Their confirmation is logged as `outreach.manual.override` in the audit trail.
+- Lock is always written regardless of delivery outcome (sent, failed, bounced) — the cooldown protects the candidate experience, not just confirmed deliveries.
+- Opt-out takes precedence over lock logic: a revoked consent record short-circuits before the lock check is ever reached.
+
+### 11. Provider-Level Idempotency — Preventing Duplicate Outreach on Worker Retry
+
+**Decision:** Every outreach job stores a `provider_idempotency_key` that is passed to the external provider on every attempt; duplicate sends are prevented at the provider level regardless of how many times the worker retries.
+
+- The `outreach_jobs` table contains: `job_id`, `outbox_event_id`, `provider_idempotency_key`, `provider_request_id` (written back after first successful API call), `send_status`, `attempt_count`.
+- `provider_idempotency_key` is generated as `sha256(tenant_id + candidate_id + job_requirement_id + message_template_version + send_window_date)` — deterministic, stable across retries, and scoped to a single send intent. It is generated before the first attempt and never changes on retry.
+- Telnyx: key is passed in the `X-Idempotency-Key` header. If Telnyx has already processed the key, it returns the original `message_id` without sending again. The worker writes this `message_id` as `provider_request_id` and marks the job complete.
+- Instantly: campaign sequence membership is deduplicated by recipient email per sequence ID — adding the same email twice to the same sequence is a no-op at the Instantly API level. The worker checks sequence membership before adding.
+- Microsoft Graph (ad hoc email): idempotency key is included as a custom `X-CBL-Idempotency-Key` message header. The worker queries sent items by this header before dispatching to detect prior successful sends by a crashed prior attempt.
+- If the worker crashes after the external API call succeeds but before writing `provider_request_id` to DB: the retry will call the provider again with the same idempotency key, receive the deduplicated response, and then successfully write the status. No double-send occurs.
+
+### 12. FAA Verification Decay — Periodic Re-Verification for Active Candidates
+
+**Decision:** FAA verification is a subscription for ranked/active candidates, not a one-time snapshot. The Compliance Worker runs a nightly re-verification sweep on all candidates with `rank_status = active` and FAA certs nearing or past expiration.
+
+- The `candidate_faa_verification` table stores: `verification_id`, `candidate_id`, `verified_at`, `cert_type`, `cert_expiry_date`, `verification_status [current|expiring_soon|expired|invalid]`, `source [auto|manual]`.
+- Nightly sweep: Compliance Worker queries all candidates where `cert_expiry_date <= now() + 60 days` AND `rank_status = active`. For each, it re-queries FAA public data to confirm current status.
+- Status transitions:
+  - `current → expiring_soon`: cert expires within 60 days. Recruiter is notified via Teams card; candidate is not automatically downranked but match reasons include expiry warning.
+  - `expiring_soon → expired`: cert is past expiry date. Candidate's `rank_status` is set to `compliance_hold` automatically. A `compliance.faa_cert.expired` audit event is emitted.
+  - `expired → current`: re-verification confirms renewal (candidate renewed cert). `rank_status` restored; recruiter notified.
+- Recruiter-triggered manual re-verification is also supported at any time and does not wait for the nightly sweep.
+- Re-verification sweep runs at off-peak hours (default 02:00 tenant local time) to avoid competing with scoring jobs.
+- All re-verification outcomes (pass, expiring, expired, error) are written as append-only audit events with `source: compliance_sweep` and the FAA data snapshot used as evidence.
+
+### 13. Scoring Model Version Audit — Prompt and Model ID Recorded on Every Score
+
+**Decision:** Every `candidate_match` record stores the exact prompt version and model ID used to generate the score and match reasons, making scoring decisions fully reproducible and auditable.
+
+- The `candidate_match` table adds: `scoring_model_id` (e.g. `gpt-4o-2026-01`), `scoring_prompt_version` (semver tag e.g. `scoring-prompt@2.1.0`), `scoring_schema_version`, `scored_at`.
+- `scoring_prompt_version` references a `prompt_registry` table: `(prompt_id, version, prompt_text_hash, description, deployed_at, deprecated_at)`. The prompt text is never stored inline in `candidate_match` — only the version reference. The `prompt_registry` is append-only; versions are never deleted.
+- When a recruiter asks "why did this candidate's rank change?", the application can query the two `candidate_match` records (before and after), compare `scoring_prompt_version` and `scoring_model_id`, and surface a human-readable explanation: _"Score changed from 87 to 61 on [date]. Scoring model updated from `gpt-4o-2026-01` to `gpt-4o-2026-03`; prompt version updated from `2.0.1` to `2.1.0` (updated: weighted recency of FAA cert renewal). Prior score reasoning is preserved below."_
+- Prompt version changes must go through a deployment gate: new version is staged (used for new scores only), prior version remains active for 30 days, scores from both versions co-exist in the UI with a version badge. Version retirement requires delivery head approval.
+- The `audit_event` stream also captures `scoring.model.version.changed` events when a new prompt/model is deployed, with actor, timestamp, and change summary.
 
 ## Implementation Patterns and Consistency Rules
 
