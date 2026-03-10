@@ -91,6 +91,9 @@ Runtimes: Node.js v24 LTS · Next.js 16.x · PostgreSQL 18. TypeScript-first, Ap
   - `outreach_jobs` (provider idempotency keys and request IDs — see _Resilience §11_)
   - `candidate_faa_verification` (cert expiry tracking for nightly re-verification sweep — see _Resilience §12_)
   - `prompt_registry` (append-only scoring prompt/model version registry — see _Resilience §13_)
+  - `trace_spans` (cross-service request tracing spans for Web App, queue, workers, and providers — see _Resilience §17_)
+  - `gold_dataset_cases`, `logic_regression_runs`, `logic_regression_results` (LLM logic regression testing corpus and staged evaluation runs — see _Resilience §18_)
+  - `provider_routing_policies`, `provider_health_events` (kill switch, warm-standby routing, and provider health state — see _Resilience §19_)
 - Dedupe strategy:
   - Deterministic identity confidence thresholds per PRD
   - Manual review queue for uncertain merges
@@ -297,7 +300,7 @@ sequenceDiagram
   - Security/static analysis checks on protected branches
 - Observability:
   - Render-native metrics/logging and Supabase-native telemetry
-  - Structured logs with correlation IDs
+  - Structured logs with correlation IDs, `trace_id`, `span_id`, and `parent_span_id`
   - Metrics for SLA, delivery latency, queue depth, and failure rates
   - Alerts for fallback triggers, compliance workflow failures, and budget thresholds
 - Secrets and configuration:
@@ -307,9 +310,9 @@ sequenceDiagram
 
 | Capability | Selected System | MVP Notes |
 |---|---|---|
-| SMS (two-way) | Telnyx | Primary provider; no backup SMS provider in MVP |
+| SMS (two-way) | Telnyx | Primary provider; Twilio warm standby supported for Day 2 failover, disabled by default at launch |
 | Voice calling | Telnyx Voice | Dial + call recording + transcription |
-| Email campaigns | Instantly | Campaign orchestration and delivery analytics |
+| Email campaigns | Instantly | Primary campaign provider; degraded fallback uses Graph for critical/manual messages if campaign provider is kill-switched |
 | Ad hoc recruiter email | Microsoft Graph/Outlook | One-click recruiter email actions |
 | Teams collaboration | Microsoft Teams | Notification cards, task creation, scheduling, recruiter communication |
 | Identity | Microsoft Entra ID + magic links | Internal SSO for staff, SMS/email magic links for candidates |
@@ -1032,6 +1035,59 @@ Processing order on inbound opt-out:
 - Approval SLA: any `goal_approval_requests` item awaiting approval for > 30 minutes triggers auto-escalation to the delivery head via both channels.
 - New entities: `goal_approval_requests(approval_id, goal_id, tenant_id, triggered_by, status, created_at, decided_at, decided_by_actor_id, decision_source, cost_at_trigger)`.
 
+### 17. Observability and Distributed Tracing — Full Request Lineage Across Web, Queue, Workers, and Providers
+
+**Decision:** Every request that can affect candidate state, scoring, outreach, or compliance carries a single `trace_id` end-to-end. Async hops create child `span_id` values, but the `trace_id` remains stable from ingress to final audit event.
+
+- The Web App generates a W3C-compatible `trace_id` at ingress if one is not already present. It writes `trace_id`, `span_id`, and `parent_span_id` into API request context, outbox payloads, worker job envelopes, `audit_event` rows, and structured logs emitted by both Next.js and Python workers.
+- Every queue dispatch creates a child span. Example lineage: `web.request -> api.persist_candidate -> outbox.enqueue -> worker.process -> telnyx.send_sms -> audit.persist_delivery`.
+- The `audit_event` envelope is extended with `trace_id`, `span_id`, and `parent_span_id`, making audit and tracing queryable together.
+- A `trace_spans` table stores summarized async span records: `(trace_id, span_id, parent_span_id, service_name, operation_name, status, started_at, ended_at, tenant_id, candidate_id, job_id, provider_name, error_code)`.
+- External provider calls include `X-CBL-Trace-ID` where the provider supports custom headers. If not supported, the worker still logs a local `provider_request_id -> trace_id` mapping in `trace_spans`.
+- Debugging contract: any user-visible candidate action, score change, message send, or compliance decision must be explainable by querying all `trace_spans` and `audit_event` rows for the same `trace_id`.
+
+### 18. Testing Undeterministic Logic — Gold Dataset and Judge-Assisted Regression Gate
+
+**Decision:** Prompt/model changes must pass a staged logic regression suite using a curated gold dataset plus a secondary LLM judge. The judge is advisory, not the only gate.
+
+- A `gold_dataset_cases` table stores a curated set of at least 30 representative candidate/job pairs covering strong positive matches, obvious rejects, borderline aviation-cert cases, stale availability signals, conflicting enrichment inputs, and compliance-sensitive cases.
+- On every scoring prompt or model change, the system runs both the current version and candidate version against the full gold dataset during the 30-day staging window.
+- Results are written to:
+  - `logic_regression_runs(run_id, baseline_model_id, candidate_model_id, baseline_prompt_version, candidate_prompt_version, started_at, completed_at, summary_status)`
+  - `logic_regression_results(run_id, case_id, baseline_score, candidate_score, baseline_reason, candidate_reason, judge_verdict, judge_confidence, human_override_status)`
+- The judge model must not be the same model under test. Its task is rubric-based comparison: did the candidate version improve ranking quality, explanation quality, and compliance-safety for this case?
+- Release gate for a prompt/model upgrade:
+  - zero unresolved Sev1 regressions on the gold dataset
+  - no more than 2 unresolved medium regressions after human review
+  - judge model preference must be non-worse than baseline on median quality
+  - any low-confidence or disputed judge result is routed to human review before promotion
+- Human review is focused, not exhaustive: reviewers inspect only cases where the judge flags regression, confidence is low, or the score delta exceeds a configured threshold.
+- Gold dataset updates are append-only and versioned; retired cases remain queryable so historical model comparisons stay reproducible.
+
+### 19. Provider Failover and Reputation Management — Kill Switch plus Warm Standby Routing
+
+**Decision:** Every external messaging provider has a kill switch. SMS has a warm-standby secondary provider; campaign email enters degraded mode instead of pretending there is equivalent hot failover.
+
+- A `provider_routing_policies` table controls per-channel routing: `(channel, primary_provider, fallback_provider, mode [normal|degraded|kill_switched], updated_at, updated_by_actor_id, reason)`.
+- A `provider_health_events` table records rolling failure rates, reputation incidents, and kill-switch transitions.
+- Automatic kill-switch trigger criteria:
+  - rolling 5-minute failure rate >= 80% with at least 50 attempts, or
+  - provider returns explicit account/reputation suspension signal, or
+  - admin manually activates the kill switch from the operations console.
+- SMS routing:
+  - Primary: Telnyx
+  - Fallback: Twilio warm standby connector, pre-configured but disabled until needed
+  - When Telnyx is kill-switched, new SMS jobs route to Twilio automatically. Existing in-flight Telnyx jobs are marked `provider_aborted` and not retried against Telnyx.
+- Campaign email routing:
+  - Primary: Instantly
+  - No equivalent high-volume hot failover provider is assumed at launch.
+  - If Instantly is kill-switched, the system enters `degraded` email mode: bulk campaign sends pause, recruiter-triggered ad hoc emails and critical transactional candidate notices continue via Microsoft Graph/Outlook.
+  - Operations console must clearly show that campaign automation is paused so recruiters do not assume bulk outreach is still running.
+- Reputation-protection policy:
+  - failover is not silent; every mode transition emits `provider.kill_switch.activated`, `provider.failover.started`, or `provider.degraded_mode.entered`
+  - delivery leads are alerted immediately with provider, channel, failure rate, queued job count, and current routing mode
+  - once the primary provider recovers, failback requires manual approval; the system never auto-fails back during an incident window
+
 ## Implementation Patterns and Consistency Rules
 
 ### Pattern Categories Defined
@@ -1084,7 +1140,7 @@ Critical conflict points identified: naming, API contract shape, event semantics
 - Event naming: `<bounded_context>.<aggregate>.<past_tense_verb>`
   - Example: `outreach.message.sent`
 - Event envelope:
-  - `event_id`, `event_type`, `occurred_at`, `tenant_id`, `actor_id`, `payload`, `schema_version`
+  - `event_id`, `event_type`, `occurred_at`, `tenant_id`, `actor_id`, `trace_id`, `span_id`, `parent_span_id`, `payload`, `schema_version`
 - Correlation and causation IDs required for all async workflows.
 
 ### Process Patterns
