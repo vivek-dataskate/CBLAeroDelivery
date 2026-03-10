@@ -2,8 +2,8 @@
 validationTarget: 'docs/planning_artifacts/prd.md'
 validationDate: '2026-03-05'
 inputDocuments:
-  - docs/aviation-product-brief.md
-  - docs/aviation-talent-PRD.md
+  - docs/planning_artifacts/source-inputs/aviation-product-brief.md
+  - docs/planning_artifacts/source-inputs/aviation-talent-PRD.md
 validationStepsCompleted:
   - step-v-01-discovery
   - step-v-02-format-detection
@@ -18,9 +18,10 @@ validationStepsCompleted:
   - step-v-11-holistic-quality-validation
   - step-v-12-completeness-validation
   - step-v-13-post-edit-revalidation
+  - step-v-14-full-revalidation-refresh
 validationStatus: COMPLETE
 revalidationDate: '2026-03-10'
-holisticQualityRating: '3.5/5 - Improving'
+holisticQualityRating: '4.0/5 - Good with residual refinements'
 overallStatus: 'Warning'
 ---
 
@@ -34,15 +35,15 @@ overallStatus: 'Warning'
 
 ## Input Documents Loaded
 
-✓ Product Brief: docs/aviation-product-brief.md  
-✓ Existing PRD: docs/aviation-talent-PRD.md  
+✓ Product Brief: docs/planning_artifacts/source-inputs/aviation-product-brief.md  
+✓ Existing PRD: docs/planning_artifacts/source-inputs/aviation-talent-PRD.md  
 
 ## Discovery Summary
 
 **PRD Metadata:**
 - **Author:** vivek
 - **PRD Creation Date:** 2026-03-04
-- **Workflow Steps Completed:** 13 (init → discovery → vision → summary → success → journeys → domain → innovation → project-type → scoping → functional → nonfunctional → polish)
+- **Workflow Steps Completed:** 14 (init → discovery → vision → summary → success → journeys → domain → innovation → project-type → scoping → functional → nonfunctional → polish → complete)
 - **Project Type:** Web-based recruiter tool
 - **Domain:** Aviation recruitment
 - **Classification:** High complexity greenfield
@@ -110,7 +111,7 @@ overallStatus: 'Warning'
 
 ## Product Brief Coverage
 
-**Product Brief:** docs/aviation-product-brief.md
+**Product Brief:** docs/planning_artifacts/source-inputs/aviation-product-brief.md
 
 ### Coverage Map
 
@@ -678,3 +679,51 @@ This addendum revalidates the PRD after the March 10 validation-driven remediati
 Proceed with PRD closeout and implementation planning under a controlled refinement approach:
 - Keep this PRD as the current capability contract baseline.
 - Enforce additional measurable acceptance criteria during epic/story breakdown for remaining long-tail items.
+
+## Full Revalidation Refresh (2026-03-10, Pass 2)
+
+This pass re-ran high-signal validation checks after final PRD updates and planning-artifact path alignment.
+
+### Evidence Snapshot
+
+- Requirement counts verified: **FR=75**, **NFR=38**.
+- Structure check: `## Product Scope` appears **once** (duplicate removed).
+- Web-app completeness checks present in PRD:
+  - Browser support matrix with minimum versions
+  - Responsive design requirements
+  - Accessibility target (WCAG 2.1 AA)
+  - SEO/indexing posture
+- Contract-level implementation leakage scan across FR/NFR lines: **0 vendor/framework/cloud matches** in requirement header lines.
+- Residual measurability rough-check on FR lines: **4 vague-token matches** across 75 FR lines (long-tail tightening remains advisable).
+
+### Traceability Refresh
+
+Previously flagged under-supported links are now explicitly represented:
+
+- Preferred contact-window handling: **FR11**.
+- Interview attendance tracking: **FR22** and **FR38**.
+- Delivery-head reassignment logic: **FR39** and **FR50**.
+- Forecast-versus-actual cohort reporting: **FR51**.
+
+### Updated Assessment
+
+| Dimension | Prior Revalidated | Pass 2 (Current) |
+|---|---|---|
+| Format/Completeness | Pass with minor residual polish | Pass |
+| Project-Type Compliance | Pass (5/5 required sections) | Pass |
+| Contract Leakage | Warning | Pass at requirement-header level |
+| Measurability | Warning | Warning (improved; long-tail refinement remains) |
+
+**Current Overall Status:** `Warning` (non-blocking)
+
+Interpretation:
+- The PRD is now sufficiently stable as a planning baseline.
+- Remaining risk is concentrated in long-tail wording precision, not structural or platform-compliance blockers.
+
+### Closeout Recommendation
+
+Proceed to architecture/story decomposition with a controlled refinement gate:
+
+1. Keep this PRD as the active baseline contract.
+2. Require explicit acceptance criteria additions during epic/story breakdown for residual broad statements.
+3. Track any wording-tightening changes as non-breaking PRD hygiene updates.
