@@ -32,7 +32,7 @@ _This document captures collaborative architecture decisions for CBLAero and is 
 
 ### Requirements Overview
 
-- 75 FRs across 3 tiers: candidate management, outreach/engagement, recruiter workflow, scoring/matching, delivery analytics, compliance/governance.
+- 76 FRs across 3 tiers: candidate management, outreach/engagement, recruiter workflow, scoring/matching, delivery analytics, compliance/governance.
 - NFRs: 99.5% uptime, 24-hour delivery SLA for 5 candidates, <1-minute notification latency, GDPR/CCPA/TCPA, SOC 2 trajectory, tamper-evident audit.
 - Architecture classification: event-rich workflow system with strict multi-tenant data boundaries, 12–16 bounded components, compliance as a first-order design concern.
 
@@ -94,6 +94,8 @@ Runtimes: Node.js v24 LTS · Next.js 16.x · PostgreSQL 18. TypeScript-first, Ap
   - `trace_spans` (cross-service request tracing spans for Web App, queue, workers, and providers — see _Resilience §17_)
   - `gold_dataset_cases`, `logic_regression_runs`, `logic_regression_results` (LLM logic regression testing corpus and staged evaluation runs — see _Resilience §18_)
   - `provider_routing_policies`, `provider_health_events` (kill switch, warm-standby routing, and provider health state — see _Resilience §19_)
+  - `policy_registry`, `policy_versions` (versioned scoring weights, thresholds, and operational policies — see _Resilience §24_)
+  - `synthetic_load_profiles`, `load_test_runs` (Tier 2 and Tier 3 load-gate definitions and results — see _Resilience §23_)
 - Dedupe strategy:
   - Deterministic identity confidence thresholds per PRD
   - Manual review queue for uncertain merges
@@ -1088,6 +1090,100 @@ Processing order on inbound opt-out:
   - delivery leads are alerted immediately with provider, channel, failure rate, queued job count, and current routing mode
   - once the primary provider recovers, failback requires manual approval; the system never auto-fails back during an incident window
 
+### 20. Throughput Evolution and Service-Boundary Extraction — Monolith+Worker Until Triggered
+
+**Decision:** The launch architecture remains a web monolith plus background workers, but service extraction is governed by explicit throughput and deployment-cadence triggers. Extraction is not ad hoc.
+
+- The initial implementation slice keeps these in one deployable web/API boundary: recruiter UI, candidate portal, auth/session handling, approval endpoints, and lightweight orchestration entrypoints.
+- The first extractable backend service is the `processing-orchestration` boundary: scoring orchestration, enrichment dispatch, queue control, and provider routing. Auth, tenant resolution, and recruiter-facing page delivery remain in the web boundary.
+- Service extraction becomes mandatory if any **two** of the following are true for 7 consecutive days in production or staging load tests:
+  - candidate-processing backlog exceeds 50,000 queued jobs or oldest job age exceeds 15 minutes
+  - worker autoscaling requires >8 sustained replicas to meet SLA
+  - recruiter-facing API p95 exceeds 2 seconds due to worker or orchestration contention
+  - background processing independently needs a faster deployment cadence than the web app more than twice per sprint
+  - outbound provider dispatch exceeds 25 calls/sec sustained or scoring throughput exceeds 100 candidate evaluations/minute sustained
+- When extraction is triggered, the migration path is:
+  1. preserve existing event envelopes and contracts
+  2. move orchestration endpoints behind a dedicated internal API/service
+  3. keep the outbox/event catalog stable so workers do not change behavior
+  4. route the web app through the new service for orchestration-only calls
+- This prevents premature microservice decomposition while removing ambiguity about when the monolith+worker envelope is no longer sufficient.
+
+### 21. Model-Serving and RAG Evolution Lane — Deferred but Predefined
+
+**Decision:** Advanced model-serving and RAG infrastructure stays deferred until post-Tier 2 validation, but the activation lane is defined now so later implementation is additive rather than architectural guesswork.
+
+- Tier 1 and Tier 2 use deterministic scoring rules plus bounded model calls inside workers; no separate model-serving cluster is required at launch.
+- Activation gate for a dedicated model-serving lane requires all of the following:
+  - Tier 2 scoring precision target met on historical outcomes
+  - gold-dataset regression gate stable for 30 days
+  - clear evidence that semantic retrieval improves ranking or explanation quality beyond deterministic signals
+- Once activated, the lane consists of:
+  - `model-gateway` service for model routing and prompt/version enforcement
+  - `embedding-worker` for offline chunking and vector generation
+  - `retrieval-service` enforcing tenant filter and role filter before semantic ranking
+  - `prompt-firewall` stage for prompt-injection detection and policy filtering before model execution
+  - optional reranker after retrieval, before final score assembly
+- Performance targets for the model-serving lane:
+  - vector retrieval <250ms p95
+  - prompt-firewall + assembly <500ms p95
+  - end-to-end scored inference <5s p95 for interactive recruiter use
+- No direct app-to-model calls are allowed once this lane is introduced; all model access must flow through the model gateway for policy and audit consistency.
+
+### 22. Provider Outage Queue Fallback Mode — Operational Runbook and State Machine
+
+**Decision:** Queue fallback mode is now an explicit operating mode, not a runbook placeholder.
+
+- Provider-facing jobs can be in one of these states: `ready`, `queued_degraded`, `provider_aborted`, `dead_letter`, `completed`.
+- If a provider is kill-switched or enters degraded mode, new jobs targeting that provider move to `queued_degraded` instead of failing immediately.
+- Recruiter-facing behavior in degraded mode:
+  - web and Teams surfaces show current channel mode and ETA
+  - bulk sends display `paused due to provider incident`
+  - manual critical notifications continue only on allowed fallback channels
+- The provider-outage runbook must define:
+  - incident detection trigger
+  - kill-switch owner and approval path
+  - fallback routing rules by channel
+  - queue release criteria after recovery
+  - manual failback approval before primary provider resumes traffic
+- Queue fallback mode must be exercised in staging before launch and quarterly thereafter.
+
+### 23. Synthetic Load Profiles — Tier 2 and Tier 3 Gate Artifacts
+
+**Decision:** Synthetic load profiles are mandatory gate artifacts, not a nice-to-have.
+
+- `synthetic_load_profiles` defines reusable named scenarios with workload shape, dataset size, concurrency, and pass criteria.
+- Required launch-adjacent profiles:
+  - `tier2-automation-load`:
+    - 100 recruiter sessions
+    - 1M candidate records
+    - 5,000-recipient outreach batch
+    - 500 concurrent provider/webhook callbacks
+    - 100 candidate enrichments/sec for 5 minutes
+  - `tier3-pilot-load`:
+    - 200 recruiter sessions
+    - 1-2M candidate records
+    - nightly FAA re-verification sweep
+    - queue catch-up after degraded mode recovery
+    - concurrent audit writes and score recalculations
+- Pass criteria:
+  - recruiter candidate-list load <2 seconds p95
+  - queue backlog drains to steady state within 15 minutes after burst
+  - no tenant leakage or cross-tenant query success
+  - provider throttling enters graceful backoff instead of hard failure
+  - no data-loss in outbox, webhook_events, or audit_event streams
+- Tier 2 gate cannot pass without `tier2-automation-load`. Tier 3 gate cannot pass without `tier3-pilot-load`.
+
+### 24. Policy Registry and Zero-Inference Guardrail — No Hidden Business Logic in Code
+
+**Decision:** Any scoring weight, reassignment threshold, cooldown window, cost threshold, or routing rule that affects business behavior must be versioned in a policy registry instead of being inferred or hardcoded by implementers.
+
+- `policy_registry` stores policy families such as `scoring_weights`, `reassignment_thresholds`, `cooldown_windows`, `provider_failover_thresholds`, and `seasonal_adjustments`.
+- `policy_versions` stores versioned values and activation windows. Example: `scoring_weights@1.0.0` with skills 40, availability 30, location 20, domain 10.
+- Workers and orchestration code must read effective policy at execution time and record the `policy_version_id` used in the resulting audit or match records.
+- If a requirement is broad in product language and no policy value exists yet, engineering is not allowed to guess. The work item is blocked until a policy entry or product decision is created.
+- This converts remaining PRD long-tail ambiguity into explicit configuration debt rather than hidden implementation leakage.
+
 ## Implementation Patterns and Consistency Rules
 
 ### Pattern Categories Defined
@@ -1497,7 +1593,7 @@ Gate rule:
 
 **Nice-to-have gaps:**
 
-- Add synthetic load test profiles tied to Tier 2 and Tier 3 gates.
+- None beyond ongoing wording hygiene in PRD/validation artifacts.
 
 ### Architecture Readiness Assessment
 
@@ -1517,8 +1613,8 @@ Gate rule:
 
 **Areas for future enhancement:**
 
-- Extract separate backend service boundary if throughput exceeds monolith+worker envelope
-- Add advanced model-serving lane after Tier 1 and Tier 2 validation gates
+- Execute service-boundary extraction only if the throughput triggers in _Resilience §20_ are breached.
+- Activate the dedicated model-serving lane only if the gate in _Resilience §21_ is passed.
 
 ### Implementation Handoff
 

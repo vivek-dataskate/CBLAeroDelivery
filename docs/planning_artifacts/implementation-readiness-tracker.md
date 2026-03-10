@@ -24,6 +24,8 @@ Source of truth: `docs/planning_artifacts/architecture.md` -> `Stack-Mapped Impl
 | R-02 | Render Platform | Configure separate staging and production environments | TBD | TBD | NOT-STARTED | TBD |  |
 | R-03 | Render Platform | Load all secrets via Render environment secrets only | TBD | TBD | NOT-STARTED | TBD |  |
 | R-04 | Render Platform | Validate rollback procedure for web and worker services | TBD | TBD | NOT-STARTED | TBD |  |
+| R-05 | Render Platform | Publish service-boundary extraction thresholds and first-extract migration plan for processing orchestration | TBD | TBD | NOT-STARTED | TBD |  |
+| R-06 | Render Platform | Validate queue partitioning and independent worker autoscaling under Tier 2 load profile | TBD | TBD | NOT-STARTED | TBD |  |
 | D-01 | Supabase Data | Provision Supabase in approved US region | TBD | TBD | NOT-STARTED | TBD |  |
 | D-02 | Supabase Data | Implement and test RLS for all tenant-owned tables | TBD | TBD | NOT-STARTED | TBD |  |
 | D-03 | Supabase Data | Implement append-only audit + hash-chain verification | TBD | TBD | NOT-STARTED | TBD |  |
@@ -39,10 +41,13 @@ Source of truth: `docs/planning_artifacts/architecture.md` -> `Stack-Mapped Impl
 | M-04 | Messaging | Complete Graph/Outlook ad hoc email integration | TBD | TBD | NOT-STARTED | TBD |  |
 | M-05 | Messaging | Complete Teams cards + tasks + scheduling integration | TBD | TBD | NOT-STARTED | TBD |  |
 | M-06 | Messaging | Validate retry policy and terminal failure handling | TBD | TBD | NOT-STARTED | TBD |  |
+| M-07 | Messaging | Configure Twilio warm-standby SMS failover and validate provider kill-switch routing | TBD | TBD | NOT-STARTED | TBD |  |
+| M-08 | Messaging | Validate degraded email mode and recruiter-visible outage messaging for campaign provider incidents | TBD | TBD | NOT-STARTED | TBD |  |
 | E-01 | Enrichment Compliance | Implement connector contracts for Internal DB, Clay, RapidAPI | TBD | TBD | NOT-STARTED | TBD |  |
 | E-02 | Enrichment Compliance | Verify provider-agnostic behavior across 2+ sources | TBD | TBD | NOT-STARTED | TBD |  |
 | E-03 | Enrichment Compliance | Implement FAA public data + manual verification workflow | TBD | TBD | NOT-STARTED | TBD |  |
 | E-04 | Enrichment Compliance | Publish SOP: background checks manual-only in MVP | TBD | TBD | NOT-STARTED | TBD |  |
+| E-05 | Enrichment Compliance | Implement provider-scoped leaky-bucket throttling and 429 backoff for Clay, RapidAPI, and FAA enrichment calls | TBD | TBD | NOT-STARTED | TBD |  |
 | S-01 | Security and MCP | Enforce HTTPS + HSTS on authenticated surfaces | TBD | TBD | NOT-STARTED | TBD |  |
 | S-02 | Security and MCP | Enforce MCP policy allowlists by role/environment | TBD | TBD | NOT-STARTED | TBD |  |
 | S-03 | Security and MCP | Add step-up auth + audit for high-risk MCP actions | TBD | TBD | NOT-STARTED | TBD |  |
@@ -52,22 +57,28 @@ Source of truth: `docs/planning_artifacts/architecture.md` -> `Stack-Mapped Impl
 | O-03 | Observability | Configure cost alerts (`API $1000/mo`, `SMS $200/placement`) | TBD | TBD | NOT-STARTED | TBD |  |
 | O-04 | Observability | Configure KPI alert (`conversion <5%`) | TBD | TBD | NOT-STARTED | TBD |  |
 | O-05 | Observability | Validate outage runbook for queue fallback mode | TBD | TBD | NOT-STARTED | TBD |  |
+| O-06 | Observability | Implement end-to-end `trace_id`/`span_id` instrumentation across web, queue, workers, providers, and audit events | TBD | TBD | NOT-STARTED | TBD |  |
+| O-07 | Observability | Publish provider outage runbook covering kill switch, degraded mode, queue fallback, and failback approval | TBD | TBD | NOT-STARTED | TBD |  |
+| O-08 | Observability | Publish versioned policy registry for scoring weights, reassignment thresholds, cooldowns, and provider failover rules | TBD | TBD | NOT-STARTED | TBD |  |
 | T-01 | Testing Gate | Pass unit/integration/e2e suites in staging | TBD | TBD | NOT-STARTED | TBD |  |
 | T-02 | Testing Gate | Pass tenant-isolation adversarial tests with zero leakage | TBD | TBD | NOT-STARTED | TBD |  |
 | T-03 | Testing Gate | Pass external-provider outage drill and recovery validation | TBD | TBD | NOT-STARTED | TBD |  |
 | T-04 | Testing Gate | Pass audit immutability + hash-chain verification tests | TBD | TBD | NOT-STARTED | TBD |  |
 | T-05 | Testing Gate | Pass accessibility checks on critical workflows | TBD | TBD | NOT-STARTED | TBD |  |
+| T-06 | Testing Gate | Pass synthetic Tier 2 automation load profile (100 recruiters, 1M records, outreach burst, provider callbacks) | TBD | TBD | NOT-STARTED | TBD |  |
+| T-07 | Testing Gate | Pass synthetic Tier 3 pilot load profile (200 recruiters, 1-2M records, re-verification sweep, queue catch-up) | TBD | TBD | NOT-STARTED | TBD |  |
+| T-08 | Testing Gate | Pass gold-dataset scoring regression gate before prompt/model promotion | TBD | TBD | NOT-STARTED | TBD |  |
 
 ## Accepted MVP Risks (Track and Monitor)
 
 | Risk ID | Accepted Risk | Owner | Monitoring Control | Review Cadence | Status |
 |---|---|---|---|---|---|
-| K-01 | No SMS backup provider in MVP | TBD | Outage drill + provider health alerts | Weekly | OPEN |
+| K-01 | SMS failover architecture exists, but warm-standby provider is not yet launch-validated until outage drill passes | TBD | Outage drill + provider health alerts + failover test evidence | Weekly | OPEN |
 | K-02 | Background checks are manual in MVP | TBD | SOP adherence + audit sample review | Bi-weekly | OPEN |
 | K-03 | In-app analytics only (no external BI) | TBD | Dashboard accuracy checks + metric reconciliation | Weekly | OPEN |
 
 ## Gate Decision Rule
 
-- `PASS`: All critical items complete (`R-01..R-04`, `D-01..D-05`, `I-01..I-04`, `M-01..M-06`, `S-01..S-04`, `T-01..T-05`).
+- `PASS`: All critical items complete (`R-01..R-06`, `D-01..D-05`, `I-01..I-04`, `M-01..M-08`, `S-01..S-04`, `O-01..O-08`, `T-01..T-08`).
 - `CONCERNS`: Non-critical items pending with owner and target date assigned.
 - `FAIL`: Any critical security, tenant isolation, audit integrity, or core messaging item incomplete.
