@@ -104,6 +104,10 @@ Runtimes: Node.js v24 LTS · Next.js 16.x · PostgreSQL 18. TypeScript-first, Ap
 
 - External API style: REST with explicit resource scoping and contract versioning.
 - Internal async pattern: transactional outbox plus background workers.
+- **Outbox implementation contract:**
+  - A Postgres trigger (or application service) writes an `outbox` row **in the same transaction** as the state mutation. The DB is the single source of truth for event generation — no event can be lost due to an app crash between persist and enqueue.
+  - A dedicated relay worker polls the `outbox` table and publishes events to background workers with full retry, dead-letter, and idempotency control.
+  - **Supabase Database Webhooks (`pg_net` HTTP callbacks) are explicitly not used as the delivery mechanism.** They are fire-and-forget with no backpressure, no dead-letter queue, and no delivery ordering guarantees — insufficient for TCPA-compliant outreach and immutable audit requirements. They may be used for low-stakes internal notifications only (e.g., alerting the ops channel on a schema migration), never for the critical event pipeline.
 - Response contract:
   - success: `{"data": ..., "meta": ...}`
   - error: `{"error": {"code": "...", "message": "...", "details": ...}}`
