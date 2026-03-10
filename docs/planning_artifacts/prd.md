@@ -13,9 +13,10 @@ stepsCompleted:
   - step-09-functional
   - step-10-nonfunctional
   - step-11-polish
+  - step-12-complete
 inputDocuments:
-  - docs/aviation-product-brief.md
-  - docs/aviation-talent-PRD.md
+  - docs/planning_artifacts/source-inputs/aviation-product-brief.md
+  - docs/planning_artifacts/source-inputs/aviation-talent-PRD.md
 classification:
   projectType: "Web-based recruiter tool"
   domain: "Aviation recruitment"
