@@ -56,7 +56,7 @@ overallStatus: 'Warning'
 - ✓ Innovation Analysis (5 differentiators)
 - ✓ Decision Gates (Week 4, 10, 14)
 - ✓ Technical Requirements
-- ✓ Functional Requirements (75 FRs documented)
+- ✓ Functional Requirements (76 FRs currently documented)
 - ✓ Non-Functional Requirements (38 NFRs documented)
 
 ## Validation Findings
@@ -583,7 +583,7 @@ No template variables remaining ✓
 **User Journeys:** Complete
 
 **Functional Requirements:** Complete
-- 75 FRs are present and cover the intended capability areas, even though quality issues remain.
+- 76 FRs are present and cover the intended capability areas, even though quality issues remain.
 
 **Non-Functional Requirements:** Complete
 - 38 NFRs are present, though specificity varies.
@@ -727,3 +727,54 @@ Proceed to architecture/story decomposition with a controlled refinement gate:
 1. Keep this PRD as the active baseline contract.
 2. Require explicit acceptance criteria additions during epic/story breakdown for residual broad statements.
 3. Track any wording-tightening changes as non-breaking PRD hygiene updates.
+
+## Full Revalidation Refresh (2026-03-10, Pass 3)
+
+This pass refreshes the validation report against the current PRD plus the latest architecture and readiness artifacts so the planning set can be treated as a synchronized baseline.
+
+### Current Evidence Snapshot
+
+- Live PRD requirement header count: **FR=76**, **NFR=38**.
+- PRD summary/rollup state is now aligned to the live requirement count.
+- PRD scale baseline is aligned across summary, technical success criteria, and scalability NFRs:
+  - launch: **1M records**
+  - growth: **1-2M records**
+  - year 1: **3M+ records**
+- Architecture overview now reflects **76 FRs across 3 tiers**.
+- Residual measurability rough-check remains: **4 vague-token matches** across FR lines.
+
+### Cross-Artifact Planning Gaps Closed
+
+The following planning-level gaps that were previously open or only implied are now explicitly addressed in architecture and readiness artifacts:
+
+- **Throughput/service-boundary extraction:** explicit trigger thresholds and first-extract path now defined in architecture.
+- **Model-serving and RAG evolution lane:** deferred by design, but activation gate and target components are now explicitly documented.
+- **Provider outage queue fallback mode:** now defined as an operating mode with runbook expectations, degraded-state behavior, and recovery criteria.
+- **Synthetic load profiling:** now mandatory for Tier 2 and Tier 3 gates, with named scenarios and pass criteria.
+- **Policy/threshold ambiguity control:** remaining business-rule precision is now bounded by a versioned policy-registry decision, reducing hidden implementation guessing.
+- **Readiness tracker alignment:** observability, provider failover, tracing, policy registry, and synthetic load tasks are now present in the execution board.
+
+### Updated Assessment
+
+| Dimension | Pass 2 | Pass 3 (Current) |
+|---|---|---|
+| Requirement Count Consistency | Assumed aligned | Pass |
+| Scale Consistency | Assumed aligned | Pass |
+| Project-Type Compliance | Pass | Pass |
+| Contract Leakage | Pass at requirement-header level | Pass |
+| Measurability | Warning (improved; long-tail refinement remains) | Warning (same residual state) |
+| Architecture/Readiness Planning Alignment | Partial / implied | Pass |
+
+**Current Overall Status:** `Warning` (non-blocking)
+
+Interpretation:
+- The planning artifact set is now internally aligned for architecture, PRD, UX, and readiness tracking.
+- The remaining warning is concentrated in long-tail wording precision inside the PRD, not in missing architectural decisions or readiness blind spots.
+
+### Final Recommendation
+
+Proceed to epic/story decomposition using the current planning set as the implementation baseline.
+
+Residual follow-through:
+1. Tighten any remaining broad FR/NFR wording during story writing.
+2. Keep requirement counts and scale figures synchronized if future PRD edits add or remove requirements.
