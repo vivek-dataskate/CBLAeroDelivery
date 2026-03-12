@@ -39,6 +39,36 @@ type TokenExchangeResponse = {
   id_token: string;
 };
 
+type SsoErrorDetails = Record<string, string | number | boolean | null>;
+
+export class SsoError extends Error {
+  code: string;
+  details: SsoErrorDetails;
+
+  constructor(code: string, message: string, details: SsoErrorDetails = {}) {
+    super(message);
+    this.name = "SsoError";
+    this.code = code;
+    this.details = details;
+  }
+}
+
+function normalizeSsoError(error: unknown, fallbackCode: string): SsoError {
+  if (error instanceof SsoError) {
+    return error;
+  }
+
+  if (error instanceof Error) {
+    return new SsoError(fallbackCode, error.message);
+  }
+
+  return new SsoError(fallbackCode, "Unknown SSO error.");
+}
+
+export function toSsoError(error: unknown): SsoError {
+  return normalizeSsoError(error, "sso_unknown_failure");
+}
+
 function getSigningKey(): Uint8Array {
   return new TextEncoder().encode(getAuthSigningSecret());
 }
@@ -46,7 +76,9 @@ function getSigningKey(): Uint8Array {
 function readRequiredEnv(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
+    throw new SsoError("sso_config_missing", `Missing required environment variable: ${name}`, {
+      envVar: name,
+    });
   }
 
   return value;
@@ -90,7 +122,7 @@ function extractEmail(payload: JWTPayload): string {
     null;
 
   if (!candidate) {
-    throw new Error("Identity token did not include an email claim.");
+    throw new SsoError("sso_email_claim_missing", "Identity token did not include an email claim.");
   }
 
   return candidate.toLowerCase();
@@ -99,7 +131,14 @@ function extractEmail(payload: JWTPayload): string {
 function assertAllowedDomain(email: string, allowedDomain: string): void {
   const [, domain = ""] = email.split("@");
   if (domain.toLowerCase() !== allowedDomain.toLowerCase()) {
-    throw new Error("Email domain is not authorized for internal access.");
+    throw new SsoError(
+      "sso_email_domain_not_allowed",
+      "Email domain is not authorized for internal access.",
+      {
+        actualDomain: domain.toLowerCase(),
+        expectedDomain: allowedDomain.toLowerCase(),
+      },
+    );
   }
 }
 
@@ -109,7 +148,14 @@ function assertAllowedTenant(tenantId: string, allowedTenantId: string | null): 
   }
 
   if (tenantId !== allowedTenantId) {
-    throw new Error("Microsoft tenant is not authorized for internal access.");
+    throw new SsoError(
+      "sso_tenant_not_allowed",
+      "Microsoft tenant is not authorized for internal access.",
+      {
+        actualTenantId: tenantId,
+        expectedTenantId: allowedTenantId,
+      },
+    );
   }
 }
 
@@ -254,12 +300,37 @@ export async function exchangeAuthorizationCode(
   });
 
   if (!response.ok) {
-    throw new Error(`Token exchange failed with status ${response.status}.`);
+    let azureError: string | null = null;
+    let azureErrorDescription: string | null = null;
+
+    try {
+      const failure = (await response.json()) as Record<string, unknown>;
+      azureError = typeof failure.error === "string" ? failure.error : null;
+      azureErrorDescription =
+        typeof failure.error_description === "string"
+          ? failure.error_description.slice(0, 240)
+          : null;
+    } catch {
+      // Ignore parse failures; the HTTP status is still enough for diagnostics.
+    }
+
+    throw new SsoError(
+      "sso_token_exchange_failed",
+      `Token exchange failed with status ${response.status}.`,
+      {
+        httpStatus: response.status,
+        azureError,
+        azureErrorDescription,
+      },
+    );
   }
 
   const payload = (await response.json()) as Record<string, unknown>;
   if (typeof payload.id_token !== "string" || payload.id_token.length === 0) {
-    throw new Error("Token exchange response is missing id_token.");
+    throw new SsoError(
+      "sso_id_token_missing",
+      "Token exchange response is missing id_token.",
+    );
   }
 
   return {
@@ -273,14 +344,21 @@ export async function verifyAndMapIdentityClaims(
 ): Promise<InternalIdentity> {
   const config = getSsoConfig();
   const jwks = createRemoteJWKSet(new URL(config.jwksUri));
-  const { payload } = await jwtVerify(idToken, jwks, {
+  const payload = await jwtVerify(idToken, jwks, {
     issuer: config.tokenIssuer,
     audience: config.clientId,
     algorithms: ["RS256", "RS384", "RS512"],
-  });
+  })
+    .then((result) => result.payload)
+    .catch((error: unknown) => {
+      throw new SsoError(
+        "sso_id_token_validation_failed",
+        normalizeSsoError(error, "sso_id_token_validation_failed").message,
+      );
+    });
 
   if (payload.nonce !== expectedNonce) {
-    throw new Error("Identity token nonce mismatch.");
+    throw new SsoError("sso_nonce_mismatch", "Identity token nonce mismatch.");
   }
 
   const email = extractEmail(payload);
@@ -292,7 +370,10 @@ export async function verifyAndMapIdentityClaims(
     null;
 
   if (!actorIdCandidate) {
-    throw new Error("Identity token did not include an actor identifier.");
+    throw new SsoError(
+      "sso_actor_claim_missing",
+      "Identity token did not include an actor identifier.",
+    );
   }
 
   const tenantId =

@@ -6,6 +6,7 @@ import {
   exchangeAuthorizationCode,
   issueSessionToken,
   shouldUseSecureCookies,
+  toSsoError,
   verifyAndMapIdentityClaims,
   verifyAuthStateToken,
 } from "@/modules/auth";
@@ -42,28 +43,62 @@ function clearAuthStateCookie(response: NextResponse): void {
 }
 
 export async function GET(request: NextRequest) {
+  const traceId = request.headers.get("x-trace-id") ?? crypto.randomUUID();
   const state = request.nextUrl.searchParams.get("state");
   const code = request.nextUrl.searchParams.get("code");
 
   if (!state || !code) {
+    console.warn("[auth/callback] missing code or state", {
+      traceId,
+      hasState: !!state,
+      hasCode: !!code,
+    });
+
     return NextResponse.json(
-      { error: { code: "invalid_callback", message: "Missing code or state." } },
+      {
+        error: {
+          code: "invalid_callback",
+          message: "Missing code or state.",
+          traceId,
+        },
+      },
       { status: 400 },
     );
   }
 
   const authStateCookie = request.cookies.get(AUTH_STATE_COOKIE_NAME)?.value;
   if (!authStateCookie) {
+    console.warn("[auth/callback] missing auth state cookie", { traceId });
+
     return NextResponse.json(
-      { error: { code: "missing_state", message: "SSO state cookie not found." } },
+      {
+        error: {
+          code: "missing_state",
+          message: "SSO state cookie not found.",
+          traceId,
+        },
+      },
       { status: 400 },
     );
   }
 
   const authState = await verifyAuthStateToken(authStateCookie);
   if (!authState || authState.state !== state) {
+    console.warn("[auth/callback] state mismatch", {
+      traceId,
+      hasAuthState: !!authState,
+      providedState: state,
+      expectedState: authState?.state ?? null,
+    });
+
     return NextResponse.json(
-      { error: { code: "state_mismatch", message: "Invalid SSO state." } },
+      {
+        error: {
+          code: "state_mismatch",
+          message: "Invalid SSO state.",
+          traceId,
+        },
+      },
       { status: 401 },
     );
   }
@@ -95,10 +130,35 @@ export async function GET(request: NextRequest) {
     });
     clearAuthStateCookie(response);
 
+    console.info("[auth/callback] sso login succeeded", {
+      traceId,
+      actorId: identity.actorId,
+      tenantId: identity.tenantId,
+      emailDomain: identity.email.split("@")[1] ?? null,
+    });
+
     return response;
-  } catch {
+  } catch (error: unknown) {
+    const ssoError = toSsoError(error);
+
+    console.error("[auth/callback] sso login failed", {
+      traceId,
+      reason: ssoError.code,
+      message: ssoError.message,
+      details: ssoError.details,
+      origin: getPublicOrigin(request),
+      path: request.nextUrl.pathname,
+    });
+
     return NextResponse.json(
-      { error: { code: "auth_failed", message: "Unable to complete SSO login." } },
+      {
+        error: {
+          code: "auth_failed",
+          reason: ssoError.code,
+          message: "Unable to complete SSO login.",
+          traceId,
+        },
+      },
       { status: 401 },
     );
   }
