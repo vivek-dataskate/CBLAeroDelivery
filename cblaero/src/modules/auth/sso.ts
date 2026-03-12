@@ -56,9 +56,11 @@ function getAppUrl(): string {
   return process.env.CBL_APP_URL?.trim() ?? "http://localhost:3000";
 }
 
+const DEFAULT_POST_LOGIN_PATH = "/dashboard";
+
 function normalizeReturnToPath(returnToPath: string | null | undefined): string {
   if (!returnToPath || !returnToPath.startsWith("/") || returnToPath.startsWith("//")) {
-    return "/";
+    return DEFAULT_POST_LOGIN_PATH;
   }
 
   return returnToPath;

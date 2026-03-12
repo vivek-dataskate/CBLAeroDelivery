@@ -7,6 +7,27 @@ import {
   validateActiveSession,
 } from "@/modules/auth";
 
+function getPublicOrigin(request: NextRequest): string {
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+
+  if (forwardedHost) {
+    const proto = forwardedProto || "https";
+    return `${proto}://${forwardedHost}`;
+  }
+
+  const configuredAppUrl = process.env.CBL_APP_URL?.trim();
+  if (configuredAppUrl) {
+    try {
+      return new URL(configuredAppUrl).origin;
+    } catch {
+      // Fall through to runtime request origin.
+    }
+  }
+
+  return request.nextUrl.origin;
+}
+
 async function handleLogout(request: NextRequest): Promise<NextResponse> {
   const sessionToken = request.cookies.get(SESSION_COOKIE_NAME)?.value ?? null;
   const session = await validateActiveSession(sessionToken);
@@ -15,7 +36,7 @@ async function handleLogout(request: NextRequest): Promise<NextResponse> {
     revokeSession(session.sessionId, session.expiresAtEpochSec);
   }
 
-  const response = NextResponse.redirect(new URL("/", request.url));
+  const response = NextResponse.redirect(new URL("/", `${getPublicOrigin(request)}/`));
   response.cookies.set({
     name: SESSION_COOKIE_NAME,
     value: "",
