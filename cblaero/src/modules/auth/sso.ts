@@ -3,7 +3,6 @@ import { createRemoteJWKSet, jwtVerify, SignJWT, type JWTPayload } from "jose";
 import { AUTH_ISSUER, getAuthSigningSecret } from "./config";
 import {
   AUTH_STATE_COOKIE_MAX_AGE_SECONDS,
-  MAX_REMEMBER_DEVICE_SECONDS,
   type SessionRole,
 } from "./session";
 
@@ -223,10 +222,6 @@ export async function createSsoAuthorizationRequest(options: {
   authorizationUrl.searchParams.set("scope", "openid profile email");
   authorizationUrl.searchParams.set("state", state);
   authorizationUrl.searchParams.set("nonce", nonce);
-
-  if (rememberDevice) {
-    authorizationUrl.searchParams.set("max_age", String(MAX_REMEMBER_DEVICE_SECONDS));
-  }
 
   return {
     authorizationUrl,
