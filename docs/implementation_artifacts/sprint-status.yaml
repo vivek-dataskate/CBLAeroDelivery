@@ -29,33 +29,33 @@ epic_schedule:
     finish: week-2
   epic-4:
     owner: squad-member-2
-    start: week-2
+    start: week-3
     finish: week-3
   epic-5:
     owner: squad-member-1
-    start: week-2
-    finish: week-3
+    start: week-3
+    finish: week-4
   epic-6:
     owner: squad-member-2
-    start: week-3
+    start: week-4
     finish: week-4
   epic-7:
     owner: squad-member-1
     start: week-3
-    finish: week-4
+    finish: week-3
   epic-8:
     owner: squad-member-2
-    start: week-2
+    start: week-3
     finish: week-4
   epic-9:
     owner: squad-member-1
-    start: week-3
+    start: week-4
     finish: week-4
 
 development_status:
-  epic-1: backlog
-  1-1-initialize-next-js-baseline-with-core-platform-modules: backlog
-  1-2-implement-enterprise-sso-and-session-controls: backlog
+  epic-1: in-progress
+  1-1-initialize-next-js-baseline-with-core-platform-modules: done
+  1-2-implement-enterprise-sso-and-session-controls: ready-for-dev
   1-3-enforce-rbac-and-tenant-isolated-authorization: backlog
   1-4-build-admin-user-and-team-management-console: backlog
   1-5-add-step-up-auth-for-sensitive-operations: backlog
