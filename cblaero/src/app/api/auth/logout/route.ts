@@ -33,7 +33,7 @@ async function handleLogout(request: NextRequest): Promise<NextResponse> {
   const session = await validateActiveSession(sessionToken);
 
   if (session) {
-    revokeSession(session.sessionId, session.expiresAtEpochSec);
+    await revokeSession(session.sessionId, session.expiresAtEpochSec);
   }
 
   const response = NextResponse.redirect(new URL("/", `${getPublicOrigin(request)}/`));

@@ -2,7 +2,8 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { SESSION_COOKIE_NAME, validateActiveSession } from "@/modules/auth";
+import { SESSION_COOKIE_NAME, authorizeAccess, validateActiveSession } from "@/modules/auth";
+import { registerOrSyncUserFromSession, resolveEffectiveRole } from "@/modules/admin";
 
 async function requireSession() {
   const cookieStore = await cookies();
@@ -10,7 +11,24 @@ async function requireSession() {
   const session = await validateActiveSession(sessionToken);
 
   if (!session) {
+    await authorizeAccess({
+      session: null,
+      action: "dashboard:view",
+      path: "/dashboard",
+      method: "GET",
+    });
     redirect("/api/auth/login?next=%2Fdashboard");
+  }
+
+  const authz = await authorizeAccess({
+    session,
+    action: "dashboard:view",
+    path: "/dashboard",
+    method: "GET",
+  });
+
+  if (!authz.allowed) {
+    redirect("/?error=forbidden");
   }
 
   return session;
@@ -18,6 +36,8 @@ async function requireSession() {
 
 export default async function DashboardPage() {
   const session = await requireSession();
+  await registerOrSyncUserFromSession(session);
+  const effectiveRole = await resolveEffectiveRole(session.actorId, session.role);
 
   return (
     <div className="min-h-screen bg-slate-950 px-6 py-10 text-slate-100 md:px-10">
@@ -44,7 +64,7 @@ export default async function DashboardPage() {
           </article>
           <article className="rounded-2xl border border-white/10 bg-slate-950/65 p-5">
             <p className="text-xs uppercase tracking-[0.15em] text-slate-400">Role</p>
-            <p className="mt-2 text-sm text-white">{session.role}</p>
+            <p className="mt-2 text-sm text-white">{effectiveRole}</p>
           </article>
           <article className="rounded-2xl border border-white/10 bg-slate-950/65 p-5">
             <p className="text-xs uppercase tracking-[0.15em] text-slate-400">Tenant</p>
@@ -58,9 +78,16 @@ export default async function DashboardPage() {
         </div>
 
         <div className="mt-6">
-          <Link href="/" className="text-sm font-medium text-emerald-200 hover:text-emerald-100">
-            Return to Home
-          </Link>
+          <div className="flex flex-wrap gap-5 text-sm font-medium">
+            <Link href="/" className="text-emerald-200 hover:text-emerald-100">
+              Return to Home
+            </Link>
+            {effectiveRole === "admin" ? (
+              <Link href="/dashboard/admin" className="text-emerald-200 hover:text-emerald-100">
+                Open Admin Console
+              </Link>
+            ) : null}
+          </div>
         </div>
       </main>
     </div>

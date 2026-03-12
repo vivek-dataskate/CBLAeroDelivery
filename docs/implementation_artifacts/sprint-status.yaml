@@ -56,9 +56,9 @@ development_status:
   epic-1: in-progress
   1-1-initialize-next-js-baseline-with-core-platform-modules: done
   1-2-implement-enterprise-sso-and-session-controls: done
-  1-3-enforce-rbac-and-tenant-isolated-authorization: ready-for-dev
-  1-4-build-admin-user-and-team-management-console: backlog
-  1-5-add-step-up-auth-for-sensitive-operations: backlog
+  1-3-enforce-rbac-and-tenant-isolated-authorization: done
+  1-4-build-admin-user-and-team-management-console: done
+  1-5-add-step-up-auth-for-sensitive-operations: done
   1-6-enforce-usa-data-residency-policy-gates: backlog
   1-7-add-active-client-context-safeguards: backlog
   epic-1-retrospective: optional
