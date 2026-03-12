@@ -10,6 +10,27 @@ import {
   verifyAuthStateToken,
 } from "@/modules/auth";
 
+function getPublicOrigin(request: NextRequest): string {
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+
+  if (forwardedHost) {
+    const proto = forwardedProto || "https";
+    return `${proto}://${forwardedHost}`;
+  }
+
+  const configuredAppUrl = process.env.CBL_APP_URL?.trim();
+  if (configuredAppUrl) {
+    try {
+      return new URL(configuredAppUrl).origin;
+    } catch {
+      // Fall through to runtime request origin.
+    }
+  }
+
+  return request.nextUrl.origin;
+}
+
 function clearAuthStateCookie(response: NextResponse): void {
   response.cookies.set({
     name: AUTH_STATE_COOKIE_NAME,
@@ -58,7 +79,7 @@ export async function GET(request: NextRequest) {
       rememberDevice: authState.rememberDevice,
     });
 
-    const destination = new URL(authState.returnToPath, request.url);
+    const destination = new URL(authState.returnToPath, `${getPublicOrigin(request)}/`);
     const response = NextResponse.redirect(destination);
 
     response.cookies.set({
