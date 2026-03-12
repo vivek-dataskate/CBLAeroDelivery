@@ -456,7 +456,7 @@ So that users cannot access data outside their allowed scope.
 **Given** authenticated users with different roles and tenants
 **When** they access protected APIs and UI routes
 **Then** only role-permitted operations succeed
-**And** cross-tenant access attempts are denied and audited
+**And** cross-tenant access attempts are denied and audited in Supabase Postgres with tenant-safe filtering across relational and vector retrieval paths
 
 ### Story 1.4: Build Admin User and Team Management Console
 
@@ -469,7 +469,7 @@ So that workforce onboarding and governance are controlled centrally.
 **Given** an admin user
 **When** they create invitations or change role/team assignments
 **Then** changes apply immediately with validation of allowed role transitions
-**And** admin actions are written to a separate auditable admin action stream
+**And** admin actions are written to a separate auditable admin action stream persisted in Supabase Postgres and queryable with tenant-safe vector-assisted retrieval
 
 ### Story 1.5: Add Step-Up Auth for Sensitive Operations
 
@@ -482,7 +482,7 @@ So that high-impact actions are protected from session misuse.
 **Given** a user with an active session
 **When** they attempt export, role change, or communication-history access
 **Then** a step-up challenge is required before completion
-**And** successful and failed step-up attempts are audited
+**And** successful and failed step-up attempts are audited in a dedicated Supabase-backed step-up stream, including traceable records for relational and vector search
 
 ### Story 1.6: Enforce USA Data Residency Policy Gates
 

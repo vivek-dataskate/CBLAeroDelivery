@@ -75,7 +75,7 @@ describe("story 1.2 auth flow coverage", () => {
     expect(active?.actorId).toBe("actor-10");
     expect(active?.tenantId).toBe("tenant-10");
 
-    revokeSession(issued.session.sessionId, issued.session.expiresAtEpochSec);
+    await revokeSession(issued.session.sessionId, issued.session.expiresAtEpochSec);
 
     const revoked = await validateActiveSession(issued.token, nowMs + 2_000);
     expect(revoked).toBeNull();

@@ -63,7 +63,7 @@ _This document captures collaborative architecture decisions for CBLAero and is 
 npx create-next-app@latest cblaero --typescript --eslint --tailwind --src-dir --app --import-alias "@/*"
 ```
 
-Runtimes: Node.js v24 LTS · Next.js 16.x · PostgreSQL 18. TypeScript-first, App Router, ESLint, `src/` layout. Fastest path to Tier 1 validation while preserving future extraction of worker services.
+Runtimes: Node.js v24 LTS · Next.js 16.x · Supabase Postgres (PostgreSQL 18-compatible) with `pgvector`. TypeScript-first, App Router, ESLint, `src/` layout. Fastest path to Tier 1 validation while preserving future extraction of worker services.
 
 **First story:** initialize baseline then add auth/tenant middleware, module boundaries, and audit envelope before any feature implementation.
 
@@ -75,6 +75,8 @@ Runtimes: Node.js v24 LTS · Next.js 16.x · PostgreSQL 18. TypeScript-first, Ap
 - **Record scale:** 1M existing candidate records at launch; projected 3M+ by Year 1 via ongoing recruiter uploads and automated ATS/email sync. All queries, indexes, and pagination strategies must be designed for 1M+ rows from day one — no deferred scaling assumptions.
 - Data strategy:
   - Relational core for transactional consistency
+  - Supabase Postgres is the authoritative persistence layer for session revocation, admin governance, and all audit streams to support multi-instance runtime safety
+  - `pgvector` schema in Supabase for tenant-scoped semantic retrieval and RAG grounding workloads
   - Event outbox for reliable asynchronous publication
   - Materialized read models for dashboards and SLA views
   - Cursor-based pagination enforced on all candidate list endpoints (no offset pagination at scale)
@@ -96,6 +98,8 @@ Runtimes: Node.js v24 LTS · Next.js 16.x · PostgreSQL 18. TypeScript-first, Ap
   - `provider_routing_policies`, `provider_health_events` (kill switch, warm-standby routing, and provider health state — see _Resilience §19_)
   - `policy_registry`, `policy_versions` (versioned scoring weights, thresholds, and operational policies — see _Resilience §24_)
   - `synthetic_load_profiles`, `load_test_runs` (Tier 2 and Tier 3 load-gate definitions and results — see _Resilience §23_)
+  - `rag_documents`, `rag_chunks`, `rag_embeddings` (tenant-scoped retrieval corpus and vector index state)
+  - `rag_queries`, `rag_citations` (RAG query auditability and source-grounding evidence)
 - Dedupe strategy:
   - Deterministic identity confidence thresholds per PRD
   - Manual review queue for uncertain merges
@@ -799,9 +803,9 @@ sequenceDiagram
 - OWASP ASVS L2 and OWASP API Security Top 10 as baseline application/API security standard.
 - Zero-trust access posture for internal services and operational tools.
 
-**Vector and RAG standard (when introduced):**
+**Vector and RAG implementation standard:**
 
-- RAG is not mandatory for Tier 1 MVP. If introduced, it must be tenant-safe by design.
+- RAG is introduced as a controlled capability and must be tenant-safe by design.
 - Vector storage standard: `pgvector` in Supabase Postgres under isolated schema.
 - Retrieval must enforce tenant filter + role filter before semantic ranking.
 - Prompt input pipeline must include prompt-injection detection and policy filtering.
@@ -1109,16 +1113,16 @@ Processing order on inbound opt-out:
   4. route the web app through the new service for orchestration-only calls
 - This prevents premature microservice decomposition while removing ambiguity about when the monolith+worker envelope is no longer sufficient.
 
-### 21. Model-Serving and RAG Evolution Lane — Deferred but Predefined
+### 21. Model-Serving and RAG Evolution Lane — Active with Governance Gates
 
-**Decision:** Advanced model-serving and RAG infrastructure stays deferred until post-Tier 2 validation, but the activation lane is defined now so later implementation is additive rather than architectural guesswork.
+**Decision:** Supabase `pgvector` and tenant-safe RAG are active architectural capabilities now, while advanced model-serving scale-out remains gated by throughput and quality triggers.
 
-- Tier 1 and Tier 2 use deterministic scoring rules plus bounded model calls inside workers; no separate model-serving cluster is required at launch.
-- Activation gate for a dedicated model-serving lane requires all of the following:
+- Tier 1 and Tier 2 continue to prioritize deterministic scoring rules, but RAG is allowed for approved retrieval and explanation scenarios with strict tenant and role filters.
+- Activation gate for a dedicated model-serving lane (separate service cluster) requires all of the following:
   - Tier 2 scoring precision target met on historical outcomes
   - gold-dataset regression gate stable for 30 days
   - clear evidence that semantic retrieval improves ranking or explanation quality beyond deterministic signals
-- Once activated, the lane consists of:
+- The active lane consists of:
   - `model-gateway` service for model routing and prompt/version enforcement
   - `embedding-worker` for offline chunking and vector generation
   - `retrieval-service` enforcing tenant filter and role filter before semantic ranking

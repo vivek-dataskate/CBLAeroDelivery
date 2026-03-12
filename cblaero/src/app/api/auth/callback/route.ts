@@ -9,6 +9,7 @@ import {
   verifyAndMapIdentityClaims,
   verifyAuthStateToken,
 } from "@/modules/auth";
+import { registerOrSyncUserFromSession } from "@/modules/admin";
 
 function getPublicOrigin(request: NextRequest): string {
   const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
@@ -78,6 +79,7 @@ export async function GET(request: NextRequest) {
       role: identity.role,
       rememberDevice: authState.rememberDevice,
     });
+    await registerOrSyncUserFromSession(issued.session);
 
     const destination = new URL(authState.returnToPath, `${getPublicOrigin(request)}/`);
     const response = NextResponse.redirect(destination);

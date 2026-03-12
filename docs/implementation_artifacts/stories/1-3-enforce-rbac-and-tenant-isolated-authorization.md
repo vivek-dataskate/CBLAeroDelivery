@@ -1,6 +1,6 @@
 # Story 1.3: Enforce RBAC and Tenant-Isolated Authorization
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -11,35 +11,37 @@ so that users cannot access data outside their allowed scope.
 ## Acceptance Criteria
 
 1. Given authenticated users with different roles and tenants, when they access protected APIs and UI routes, then only role-permitted operations succeed.
-2. Given cross-tenant access attempts, when a protected path is evaluated, then access is denied and the attempt is audited.
+2. Given cross-tenant access attempts, when a protected path is evaluated, then access is denied and the attempt is audited in Supabase Postgres with tenant-safe controls across relational and vector retrieval paths.
 
 ## Tasks / Subtasks
 
-- [ ] Enforce role-based authorization on protected APIs and UI routes (AC: 1)
-  - [ ] Define role-permission checks for internal roles across route handlers and protected pages.
-  - [ ] Apply authorization guards so only allowed operations execute per role.
-  - [ ] Return explicit unauthorized responses for forbidden role operations.
+- [x] Enforce role-based authorization on protected APIs and UI routes (AC: 1)
+  - [x] Define role-permission checks for internal roles across route handlers and protected pages.
+  - [x] Apply authorization guards so only allowed operations execute per role.
+  - [x] Return explicit unauthorized responses for forbidden role operations.
 
-- [ ] Enforce tenant-isolated authorization on read/write paths (AC: 1, 2)
-  - [ ] Validate tenant scope on every protected read/write path using trusted server session context.
-  - [ ] Deny cross-tenant access attempts regardless of client-provided identifiers.
-  - [ ] Ensure tenant context propagation remains server-authoritative throughout request handling.
+- [x] Enforce tenant-isolated authorization on read/write paths (AC: 1, 2)
+  - [x] Validate tenant scope on every protected read/write path using trusted server session context.
+  - [x] Deny cross-tenant access attempts regardless of client-provided identifiers.
+  - [x] Ensure tenant context propagation remains server-authoritative throughout request handling.
 
-- [ ] Add authorization audit logging for denied access (AC: 2)
-  - [ ] Capture denied-role and cross-tenant events with actor, tenant, path, and reason metadata.
-  - [ ] Ensure audit entries are emitted for both API and UI-protected path denials.
-  - [ ] Verify denied events are queryable through existing audit foundations.
+- [x] Add authorization audit logging for denied access (AC: 2)
+  - [x] Capture denied-role and cross-tenant events with actor, tenant, path, and reason metadata.
+  - [x] Ensure audit entries are emitted for both API and UI-protected path denials.
+  - [x] Verify denied events are queryable through existing audit foundations.
 
-- [ ] Add quality gates and verification for authorization behavior (AC: 1, 2)
-  - [ ] Add unit/integration tests for role-permitted access and role-forbidden access.
-  - [ ] Add tests for cross-tenant denial and audit-event emission on denial.
-  - [ ] Run lint, typecheck, test, and build; capture evidence in completion notes.
+- [x] Add quality gates and verification for authorization behavior (AC: 1, 2)
+  - [x] Add unit/integration tests for role-permitted access and role-forbidden access.
+  - [x] Add tests for cross-tenant denial and audit-event emission on denial.
+  - [x] Run lint, typecheck, test, and build; capture evidence in completion notes.
 
 ## Dev Notes
 
 - Build on Story 1.2 authenticated session context and keep authorization checks server-side.
 - Treat tenant and role from signed session as trusted; do not trust client-supplied actor/tenant claims.
 - Ensure denial behavior is deterministic and observable through audit logging.
+- Ensure authorization deny auditing is multi-instance safe by persisting through Supabase Postgres instead of process-local memory.
+- Enforce tenant guardrails consistently for both relational queries and vector retrieval paths used by semantic features.
 - Keep implementation scoped to authorization and tenant isolation only.
 
 ### Project Structure Notes
@@ -66,10 +68,30 @@ GPT-5.3-Codex
 
 ### Debug Log References
 
+- npm run lint
+- npm run typecheck
+- npm test
+- npm run build
+
 ### Completion Notes List
 
-- Story created from Epic 1 Story 1.3 with acceptance criteria and implementation tasks aligned to RBAC and tenant-isolation requirements.
+- Added a centralized authorization module with role-permission mapping and tenant-isolation checks for protected actions.
+- Applied RBAC and tenant checks to protected API routes and dashboard routes, including admin-only access paths.
+- Implemented denied authorization auditing with reason metadata and a protected query route for denial events.
+- Added unit and route tests covering allow paths, forbidden role paths, unauthenticated access, and cross-tenant denial behavior.
+- Validation passed locally: lint, typecheck, test, and build.
 
 ### File List
 
+- cblaero/src/modules/auth/authorization.ts
+- cblaero/src/modules/auth/index.ts
+- cblaero/src/modules/audit/index.ts
+- cblaero/src/modules/__tests__/authorization.test.ts
+- cblaero/src/app/api/internal/candidates/route.ts
+- cblaero/src/app/api/internal/candidates/__tests__/route.test.ts
+- cblaero/src/app/api/internal/audit/authorization-denials/route.ts
+- cblaero/src/app/api/internal/audit/authorization-denials/__tests__/route.test.ts
+- cblaero/src/app/dashboard/page.tsx
+- cblaero/src/app/dashboard/admin/page.tsx
+- cblaero/vitest.config.ts
 - docs/implementation_artifacts/stories/1-3-enforce-rbac-and-tenant-isolated-authorization.md
