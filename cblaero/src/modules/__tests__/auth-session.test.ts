@@ -11,8 +11,8 @@ import {
 } from "../auth";
 
 describe("auth session controls", () => {
-  beforeEach(() => {
-    clearRevokedSessionsForTest();
+  beforeEach(async () => {
+    await clearRevokedSessionsForTest();
   });
 
   it("issues standard session TTL for non-remembered login", async () => {
@@ -92,7 +92,7 @@ describe("auth session controls", () => {
       nowMs,
     );
 
-    revokeSession(issued.session.sessionId, issued.session.expiresAtEpochSec);
+    await revokeSession(issued.session.sessionId, issued.session.expiresAtEpochSec);
 
     const verified = await verifySessionToken(issued.token, nowMs + 1_000);
     expect(verified).toBeNull();

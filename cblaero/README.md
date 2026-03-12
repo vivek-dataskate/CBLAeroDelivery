@@ -38,6 +38,9 @@ Required variables:
 - CBL_SSO_CLIENT_SECRET: Client secret value from Entra app registration
 - CBL_SSO_ALLOWED_EMAIL_DOMAIN: cblsolutions.com
 - CBL_SSO_ALLOWED_TENANT_ID: Entra Directory (tenant) ID
+- CBL_SUPABASE_URL: Supabase project URL
+- CBL_SUPABASE_SERVICE_ROLE_KEY: Supabase service_role API key
+- CBL_SUPABASE_SCHEMA: dedicated Postgres schema for this app (for example cblaero_app, not public)
 
 Optional:
 
@@ -67,6 +70,18 @@ Set CBL_SSO_ISSUER as:
 - In Render service settings -> Environment, add all required variables.
 - Set CBL_APP_URL to your Render service URL.
 - Redeploy after saving env variables.
+
+### 4) Supabase schema setup (non-default schema)
+
+This app is configured to use a dedicated Postgres schema, not `public`.
+
+1. In Supabase SQL Editor, run [cblaero/supabase/schema.sql](supabase/schema.sql).
+2. Choose a schema name (default in the script is `cblaero_app`).
+3. Set `CBL_SUPABASE_SCHEMA` to that schema name in:
+	- local: [cblaero/.env.local](.env.local)
+	- Render: service environment variables
+
+If `CBL_SUPABASE_SCHEMA` is set to `public`, the app will fail fast at startup by design.
 
 ## Learn More
 

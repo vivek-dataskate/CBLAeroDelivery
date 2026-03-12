@@ -1,6 +1,10 @@
 import { jwtVerify, SignJWT, type JWTPayload } from "jose";
 
 import { AUTH_ISSUER, getAuthSigningSecret } from "./config";
+import {
+  getSupabaseAdminClient,
+  shouldUseInMemoryPersistenceForTests,
+} from "../persistence";
 
 const SESSION_AUDIENCE = "cblaero-internal";
 
@@ -55,6 +59,10 @@ type SessionTokenPayload = JWTPayload & {
 };
 
 const revokedSessionExpirations = new Map<string, number>();
+
+function isInMemoryMode(): boolean {
+  return shouldUseInMemoryPersistenceForTests();
+}
 
 function getSigningKey(): Uint8Array {
   return new TextEncoder().encode(getAuthSigningSecret());
@@ -171,26 +179,110 @@ export async function issueSessionToken(
   };
 }
 
-export function revokeSession(sessionId: string, expiresAtEpochSec: number): void {
-  cleanupExpiredRevocations(asEpochSeconds(Date.now()));
-  revokedSessionExpirations.set(sessionId, expiresAtEpochSec);
+export async function revokeSession(
+  sessionId: string,
+  expiresAtEpochSec: number,
+): Promise<void> {
+  if (isInMemoryMode()) {
+    cleanupExpiredRevocations(asEpochSeconds(Date.now()));
+    revokedSessionExpirations.set(sessionId, expiresAtEpochSec);
+    return;
+  }
+
+  const client = getSupabaseAdminClient();
+  const { error } = await client.from("auth_session_revocations").upsert(
+    {
+      session_id: sessionId,
+      expires_at: new Date(expiresAtEpochSec * 1000).toISOString(),
+      revoked_at: new Date().toISOString(),
+    },
+    {
+      onConflict: "session_id",
+    },
+  );
+
+  if (error) {
+    throw new Error(`Failed to revoke session: ${error.message}`);
+  }
 }
 
-export function clearRevokedSessionsForTest(): void {
-  revokedSessionExpirations.clear();
+export async function clearRevokedSessionsForTest(): Promise<void> {
+  if (isInMemoryMode()) {
+    revokedSessionExpirations.clear();
+    return;
+  }
+
+  const client = getSupabaseAdminClient();
+  const { error } = await client
+    .from("auth_session_revocations")
+    .delete()
+    .neq("session_id", "");
+
+  if (error) {
+    throw new Error(`Failed to clear revoked sessions: ${error.message}`);
+  }
 }
 
-export function isSessionRevoked(sessionId: string, nowMs = Date.now()): boolean {
+export async function isSessionRevoked(
+  sessionId: string,
+  nowMs = Date.now(),
+): Promise<boolean> {
+  if (isInMemoryMode()) {
+    const nowEpochSec = asEpochSeconds(nowMs);
+    cleanupExpiredRevocations(nowEpochSec);
+
+    const expiresAtEpochSec = revokedSessionExpirations.get(sessionId);
+    if (!expiresAtEpochSec) {
+      return false;
+    }
+
+    if (expiresAtEpochSec <= nowEpochSec) {
+      revokedSessionExpirations.delete(sessionId);
+      return false;
+    }
+
+    return true;
+  }
+
   const nowEpochSec = asEpochSeconds(nowMs);
-  cleanupExpiredRevocations(nowEpochSec);
+  const nowIso = new Date(nowMs).toISOString();
 
-  const expiresAtEpochSec = revokedSessionExpirations.get(sessionId);
-  if (!expiresAtEpochSec) {
+  const client = getSupabaseAdminClient();
+
+  const { error: cleanupError } = await client
+    .from("auth_session_revocations")
+    .delete()
+    .lte("expires_at", nowIso);
+
+  if (cleanupError) {
+    throw new Error(`Failed to cleanup revoked sessions: ${cleanupError.message}`);
+  }
+
+  const { data, error } = await client
+    .from("auth_session_revocations")
+    .select("expires_at")
+    .eq("session_id", sessionId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to query revoked session: ${error.message}`);
+  }
+
+  if (!data) {
     return false;
   }
 
+  const expiresAtEpochSec = Math.floor(new Date(data.expires_at).getTime() / 1000);
   if (expiresAtEpochSec <= nowEpochSec) {
-    revokedSessionExpirations.delete(sessionId);
+    const { error: deleteError } = await client
+      .from("auth_session_revocations")
+      .delete()
+      .eq("session_id", sessionId);
+
+    if (deleteError) {
+      throw new Error(`Failed to delete expired revocation: ${deleteError.message}`);
+    }
+
     return false;
   }
 
@@ -210,7 +302,7 @@ export async function verifySessionToken(
     });
 
     const session = toSession(payload as SessionTokenPayload);
-    if (!session || isSessionRevoked(session.sessionId, nowMs)) {
+    if (!session || (await isSessionRevoked(session.sessionId, nowMs))) {
       return null;
     }
 

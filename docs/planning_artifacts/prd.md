@@ -686,7 +686,7 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 - **FR1 [MVP Tier 1]:** System can ingest candidate records from bulk CSV upload (up to 1M records initial load, then daily/weekly recruiter uploads of 100–10,000 records); upload must validate, deduplicate, and report import errors per row with a downloadable error report
 - **FR1a [MVP Tier 1]:** System can perform initial bulk load of up to 1M existing candidate records via a one-time admin-supervised migration pipeline; load must complete within a time-bounded batch window with progress tracking and rollback capability
 - **FR2 [MVP Tier 2]:** System can ingest candidate data automatically from configured ATS system connectors (read-only API polling or webhook) and recruiter email inboxes (Microsoft Graph mail parsing); new or updated records are upserted via the standard deduplication pipeline with source attribution
-- **FR3 [MVP Tier 1]:** System can store and index candidate profiles with core attributes (name, phone, email, location, skills, certifications, experience, availability status)
+- **FR3 [MVP Tier 1]:** System can store and index candidate profiles with core attributes (name, phone, email, location, skills, certifications, experience, availability status) in Supabase Postgres as the system of record; candidate semantic-retrieval indexes use `pgvector` under tenant-scoped access controls
 - **FR4 [MVP Tier 1]:** System can deduplicate candidate records (detect same person across multiple sources; prevent duplicate outreach) with deterministic merge policy: auto-merge at >=95% identity confidence, manual-review queue at 70-94%, keep separate below 70% ⚠️
 - **FR5 [MVP Tier 1]:** System can track candidate availability status (active, passive, unavailable) using self-reported status plus engagement events from the previous 90 days (response, click, call outcome)
 - **FR6 [MVP Tier 1]:** System can archive candidate records indefinitely with 5-year queryable retention and 7-year cold storage; implement GDPR right-to-be-forgotten deletion policy ⚠️
@@ -709,7 +709,7 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 
 - **FR18 [MVP Tier 1]:** Recruiter can post a new job requirement with client details, role description, and 10 mandatory aviation-specific intake questions
 - **FR19 [MVP Tier 1]:** Recruiter can view daily-refreshed candidate list for each job, sorted by opportunity score and availability signal
-- **FR20 [MVP Tier 1]:** Recruiter can view structured candidate match reasons containing at least certification fit, experience fit, location fit, and availability fit
+- **FR20 [MVP Tier 1]:** Recruiter can view structured candidate match reasons containing at least certification fit, experience fit, location fit, and availability fit; if semantic retrieval (RAG) contributes to explanation, each reason must include traceable grounded source references and tenant-safe retrieval filtering
 - **FR21 [MVP Tier 1]:** Recruiter can log interactions with each candidate (call, SMS response, declined, interviewed, placed)
 - **FR22 [MVP Tier 1]:** Recruiter can track candidate journey status (prospects → interested → interview scheduled → interview in progress → interview attended/missed → offer extended → placed → started), including attendance confirmation
 - **FR23 [MVP Tier 3]:** Recruiter can execute formal offer workflow (create offer, submit for sign-off, send to candidate, capture accept/decline state, and log turnaround time) ⚠️
@@ -754,7 +754,7 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 - **FR50 [MVP Tier 2]:** Delivery Head can view peer performance comparison (individual recruiter metrics vs. team average, percentile ranking) and recommended support reassignments when a recruiter's rolling 30-day conversion rate is >=15% below team average ⚠️
 - **FR51 [MVP Tier 2]:** Delivery Head can view forecasted pipeline (30-60 day) and forecast-vs-actual cohort performance by month
 - **FR52 [MVP Tier 2]:** System can alert when KPI thresholds are breached (conversion rate <5%, SMS response rate <70%, cost-per-hire >$1,000) ⚠️
-- **FR53 [MVP Tier 1]:** Admin can export audit logs for compliance review (all user actions, data access, system events, timestamp, actor)
+- **FR53 [MVP Tier 1]:** Admin can export audit logs for compliance review (all user actions, data access, system events, timestamp, actor) from Supabase Postgres append-only audit storage, including deterministic linkage to any vector-indexed audit records used for semantic compliance search
 - **FR54 [MVP Tier 1]:** System can alert when cost triggers are hit (API spend >$1k/month, SMS >$200/placement, churn >10%)
 - **FR55 [MVP Tier 2]:** System can forecast budget overspend (notify CFO/Admin at 80%, 90%, 100% of monthly budget) ⚠️
 
@@ -773,8 +773,8 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 - **FR63 [MVP Tier 2]:** System can monitor external provider health and alert Admin when rolling 1-hour availability drops below 95%
 - **FR64 [MVP Tier 2]:** System can meter API usage per-customer and trigger alerts at 80% quota usage (prevent runaway costs)
 - **FR65 [MVP Tier 1]:** System can gracefully degrade if APIs fail: queue candidates for batch processing; notify recruiter of delay with ETA
-- **FR66 [MVP Tier 1]:** System can log all user actions (user, timestamp, action, resource, change delta) in immutable append-only audit trail (5-year hot, 7-year cold)
-- **FR67 [MVP Tier 2]:** System can detect anomalies (unusual access patterns, bulk data export, impossible geolocation changes) using severity thresholds and alert Compliance Officer within 15 minutes for high-severity events
+- **FR66 [MVP Tier 1]:** System can log all user actions (user, timestamp, action, resource, change delta) in immutable append-only audit trail (5-year hot, 7-year cold) persisted in Supabase Postgres with multi-instance-safe write semantics (no process-local-only state)
+- **FR67 [MVP Tier 2]:** System can detect anomalies (unusual access patterns, bulk data export, impossible geolocation changes) using severity thresholds and alert Compliance Officer within 15 minutes for high-severity events; semantic anomaly correlation may use RAG over tenant-scoped audit history in `pgvector`
 - **FR68 [MVP Tier 1]:** Admin can manually refresh candidate data from external sources if scheduled refresh fails
 - **FR69 [MVP Tier 1]:** System can backup data daily to immutable cold archive with encryption and integrity verification
 - **FR70 [MVP Tier 1]:** System can enforce USA-only data residency for customer data, logs, and backups within approved USA regions
@@ -876,8 +876,8 @@ Design, architecture, and engineering teams should treat this section as the can
 
 **Access Control & Multi-Tenancy:**
 
-- **NFR12 [MVP Tier 1]:** Multi-tenancy isolation: Recruiter cannot query another tenant's candidates, validated by automated adversarial test suite with zero cross-tenant read success
-- **NFR13 [MVP Tier 1]:** Session authentication: enterprise SSO only; 30-day `remember device` token; step-up MFA for sensitive operations (data export, role changes)
+- **NFR12 [MVP Tier 1]:** Multi-tenancy isolation: Recruiter cannot query another tenant's candidates, validated by automated adversarial test suite with zero cross-tenant read success; Supabase Postgres RLS (and equivalent service-layer checks) must enforce tenant predicates for relational and vector retrieval paths
+- **NFR13 [MVP Tier 1]:** Session authentication: enterprise SSO only; 30-day `remember device` token; step-up MFA for sensitive operations (data export, role changes, communication-history access)
 - **NFR14 [MVP Tier 1]:** No hardcoded credentials in code; all secrets managed via centralized secrets service with audit logging
 
 **Threat Detection & Response:**
@@ -903,7 +903,7 @@ Design, architecture, and engineering teams should treat this section as the can
 - **NFR17 [MVP Tier 1]:** All user actions logged within 5 seconds with: timestamp, user ID, action type, resource ID, change delta
   - Examples: "FR_001 viewed candidate #C123", "FR_001 logged call with #C123", "Admin_001 deleted user #U456"
 - **NFR18 [MVP Tier 1]:** Communication audit trail: Every SMS/email logged with content hash, recipient, timestamp, delivery status, and response state; queryable within 1 hour
-- **NFR19 [MVP Tier 1]:** Append-only audit store (no DELETE, no UPDATE; immutable records), verified quarterly with tamper-attempt test cases
+- **NFR19 [MVP Tier 1]:** Append-only audit store (no DELETE, no UPDATE; immutable records) in Supabase Postgres, verified quarterly with tamper-attempt test cases; vector-side retrieval indexes must be rebuildable from immutable relational audit source-of-truth records
 - **NFR20 [MVP Tier 1]:** Audit logs cryptographically signed with industry-standard integrity controls; weekly off-chain backup to immutable archive storage with object lock
 
 **Data Retention & Deletion:**
@@ -946,11 +946,11 @@ Design, architecture, and engineering teams should treat this section as the can
   - Recruiter sees: "Enrichment queued; will complete in <1 hour"
   - No error to user; automatic retry with exponential backoff
 - **NFR29 [MVP Tier 1]:** SMS/email delivery failure mode: If provider unavailable, queue for 24-hour retry window; do not drop messages
-- **NFR30 [MVP Tier 1]:** Database failover: Automated failover to approved standby data service if primary data service is unavailable (<5min recovery)
+- **NFR30 [MVP Tier 1]:** Database failover: Supabase Postgres high-availability failover to approved standby within <5 minutes recovery, with all authentication, revocation, admin-governance, and audit persistence remaining consistent across horizontally scaled app instances
 
 **Backup & Recovery:**
 
-- **NFR31 [MVP Tier 1]:** Database backup: Daily snapshot to immutable cold archive; recovery tested monthly
+- **NFR31 [MVP Tier 1]:** Database backup: Daily Supabase Postgres snapshot plus point-in-time recovery configuration to immutable cold archive; recovery tested monthly
   - Recovery time objective (RTO): <1 hour to restore from backup
   - Recovery point objective (RPO): <24 hours of data loss acceptable
 - **NFR32 [MVP Tier 2]:** Disaster recovery runbook: Documented procedures for major outages; tested quarterly with dry-run exercises
@@ -969,7 +969,7 @@ Design, architecture, and engineering teams should treat this section as the can
 
 **Initial Scale (MVP Tier 1, Week 4):**
 
-- **NFR34 [MVP Tier 1]:** Support 50-100 recruiters, 50k candidate records, <100ms query latency
+- **NFR34 [MVP Tier 1]:** Support 50-100 recruiters, 50k candidate records, <100ms relational query latency on Supabase Postgres, and <=250ms p95 tenant-filtered vector retrieval latency for approved semantic lookup paths
   - Single approved USA region deployment
   - No horizontal data partitioning required
 
@@ -981,7 +981,7 @@ Design, architecture, and engineering teams should treat this section as the can
 
 **Year 1 Scale (Phase 2+):**
 
-- **NFR36 [MVP Tier 2+]:** Support 200 recruiters, 5M candidate records, <100ms query latency, 10x capacity headroom
+- **NFR36 [MVP Tier 2+]:** Support 200 recruiters, 5M candidate records, <100ms relational query latency, <=250ms p95 tenant-filtered vector retrieval latency, and 10x capacity headroom on Supabase Postgres + `pgvector`
   - Horizontal data-partitioning plan if >50M records
   - High-speed caching layer for real-time candidate lists
   - Global static-asset distribution for user-facing portals
