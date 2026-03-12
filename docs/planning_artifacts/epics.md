@@ -347,6 +347,7 @@ Enable candidates to securely self-serve profile, status, and document workflows
 - This plan executes and tracks work at the 9-epic level; package mapping below is FYI only.
 - Target remains full product completion by end of Week 4.
 - Each epic should be 1 week ideal and 2 weeks maximum.
+- Per-person WIP cap is 2 concurrent epics per week.
 - Parallel execution is required; epics overlap by design.
 
 ### Required Delivery Capacity
@@ -361,12 +362,12 @@ Enable candidates to securely self-serve profile, status, and document workflows
 | Epic 1: Platform Foundation, Access, and Tenant Security | squad-member-1 | Week 1 | Week 2 | None |
 | Epic 2: Candidate Data Ingestion and Profile Lifecycle | squad-member-2 | Week 1 | Week 2 | Core platform contracts from Epic 1 frozen |
 | Epic 3: Outreach Orchestration and Candidate Engagement | squad-member-1 | Week 1 | Week 2 | Core platform contracts from Epic 1 frozen |
-| Epic 4: Recruiter Delivery Workflow and Offer Management | squad-member-2 | Week 2 | Week 3 | Candidate ingestion and outreach interfaces complete |
-| Epic 5: Matching Intelligence and Domain Qualification | squad-member-1 | Week 2 | Week 3 | Recruiter workflow data model and candidate signals available |
-| Epic 6: Collaboration and Notification Workflows | squad-member-2 | Week 3 | Week 4 | Recruiter workflow and scoring payload contracts complete |
-| Epic 7: Metrics, Cost Governance, and Forecasting | squad-member-1 | Week 3 | Week 4 | Workflow event streams and scoring outputs available |
-| Epic 8: Compliance, Reliability, and Operational Guardrails | squad-member-2 | Week 2 | Week 4 | Security baseline from Epic 1 complete |
-| Epic 9: Candidate Self-Service Portal Experience | squad-member-1 | Week 3 | Week 4 | Outreach tokens and workflow status APIs available |
+| Epic 4: Recruiter Delivery Workflow and Offer Management | squad-member-2 | Week 3 | Week 3 | Candidate ingestion and outreach interfaces complete |
+| Epic 5: Matching Intelligence and Domain Qualification | squad-member-1 | Week 3 | Week 4 | Candidate signals available and Epic 4 workflow contracts frozen |
+| Epic 6: Collaboration and Notification Workflows | squad-member-2 | Week 4 | Week 4 | Epic 4 and Epic 5 payload contracts frozen |
+| Epic 7: Metrics, Cost Governance, and Forecasting | squad-member-1 | Week 3 | Week 3 | Workflow event streams and initial scoring outputs available |
+| Epic 8: Compliance, Reliability, and Operational Guardrails | squad-member-2 | Week 3 | Week 4 | Security baseline from Epic 1 complete |
+| Epic 9: Candidate Self-Service Portal Experience | squad-member-1 | Week 4 | Week 4 | Outreach tokens and Epic 4 workflow status APIs available |
 
 ### FYI Package Mapping (X1-X27 -> Epics)
 
@@ -404,15 +405,15 @@ This mapping is reference-only for decomposition visibility. Planning, ownership
 
 ### Weekly Objectives
 
-- Week 1: Start Epic 1, Epic 2, Epic 3 in parallel; freeze shared contracts.
-- Week 2: Complete core platform/data/outreach and begin Epic 4, Epic 5, Epic 8.
-- Week 3: Complete Epic 4 and Epic 5; start Epic 6, Epic 7, Epic 9.
-- Week 4: Complete Epic 6, Epic 7, Epic 8, Epic 9 and run end-to-end hardening.
+- Week 1: Start Epic 1, Epic 2, Epic 3 in parallel; baseline implementation and integration lanes.
+- Week 2: Complete Epic 1, Epic 2, Epic 3 and freeze shared contracts.
+- Week 3: Execute Epic 4 and Epic 7 as one-week deliveries; start Epic 5 and Epic 8.
+- Week 4: Complete Epic 5 and Epic 8; deliver Epic 6 and Epic 9; run end-to-end hardening.
 
 ### Critical Risk Note
 
-- This 4-week target is feasible only with disciplined parallel staffing and strict scope control.
-- If any epic exceeds 2 weeks, immediately defer non-critical scope behind feature flags to preserve date.
+- This 4-week target is feasible only with disciplined parallel staffing, strict WIP control, and contract freeze discipline.
+- If any Week 3 dependency slips, immediately defer non-critical scope behind feature flags to preserve date.
 
 ## Epic 1: Platform Foundation, Access, and Tenant Security
 

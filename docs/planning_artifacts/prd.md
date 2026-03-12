@@ -71,7 +71,7 @@ The product’s core insight is that **availability is the primary signal**; can
 | **Launch Go/No-Go** | 4-week pilot with 1–2 ideal-fit customers | Week 4 decision point locked in |
 | **Technical Readiness** | 99.5% uptime; no cross-tenant data leakage | 8 pre-launch security/resilience gaps identified |
 | **Compliance Baseline** | Immutable audit, GDPR 30-day deletion, SOC 2 Q2 2027 | Phase 3 launch gate |
-| **MVP Scope** | 75 FRs across 3 tiers; 38 NFRs defined | Tier is defined per requirement tag (`[MVP Tier X]`) |
+| **MVP Scope** | 76 FR identifiers (including FR1a) across 3 tiers; 38 NFRs defined | Tier is defined per requirement tag (`[MVP Tier X]`) |
 
 **Bottom Line:** ✅ Comprehensive, realistic, phased MVP. 🚩 Success requires: (1) committed pilot customer, (2) acceptance of 14-week timeline, (3) confidence-first approach (domain-logic → ML later), (4) strict cost governance.
 
@@ -818,7 +818,7 @@ Pilot ops + scaling:
 - Workflow: FR23 (offer management)
 - Compliance: FR62 (GDPR deletion workflow)
 
-**Total MVP Phase 1 (14 weeks):** 45 + 28 + 2 = **75 FRs**
+**Total MVP Phase 1 (14 weeks):** 45 + 28 + 2 = **75 numbered FRs**, plus **FR1a** = **76 FR identifiers**
 
 ---
 
