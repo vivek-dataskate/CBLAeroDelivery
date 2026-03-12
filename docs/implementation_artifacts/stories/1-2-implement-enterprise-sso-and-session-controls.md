@@ -102,6 +102,7 @@ GPT-5.3-Codex
 - cblaero/src/modules/auth/sso.ts
 - cblaero/src/modules/auth/index.ts
 - cblaero/src/modules/__tests__/auth-session.test.ts
+- cblaero/src/modules/__tests__/auth-sso-flow.test.ts
 - cblaero/src/modules/__tests__/baseline.test.ts
 - cblaero/src/app/api/auth/login/route.ts
 - cblaero/src/app/api/auth/callback/route.ts
