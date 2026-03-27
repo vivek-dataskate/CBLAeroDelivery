@@ -436,15 +436,15 @@ export async function recordDataResidencyCheckEvent(
     occurredAtIso: new Date().toISOString(),
   };
 
-  dataResidencyCheckEvents.push(event);
-  if (dataResidencyCheckEvents.length > DATA_RESIDENCY_CHECK_EVENT_LIMIT) {
-    dataResidencyCheckEvents.splice(
-      0,
-      dataResidencyCheckEvents.length - DATA_RESIDENCY_CHECK_EVENT_LIMIT,
-    );
-  }
-
   if (isInMemoryMode()) {
+    dataResidencyCheckEvents.push(event);
+    if (dataResidencyCheckEvents.length > DATA_RESIDENCY_CHECK_EVENT_LIMIT) {
+      dataResidencyCheckEvents.splice(
+        0,
+        dataResidencyCheckEvents.length - DATA_RESIDENCY_CHECK_EVENT_LIMIT,
+      );
+    }
+
     return event;
   }
 
