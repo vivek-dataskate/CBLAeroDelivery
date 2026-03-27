@@ -29,11 +29,23 @@ function getPublicOrigin(request: NextRequest): string {
 }
 
 async function handleLogout(request: NextRequest): Promise<NextResponse> {
+  const traceId = request.headers.get("x-trace-id") ?? crypto.randomUUID();
   const sessionToken = request.cookies.get(SESSION_COOKIE_NAME)?.value ?? null;
   const session = await validateActiveSession(sessionToken);
 
   if (session) {
-    await revokeSession(session.sessionId, session.expiresAtEpochSec);
+    try {
+      await revokeSession(session.sessionId, session.expiresAtEpochSec);
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : "Unknown session revocation failure.";
+
+      console.error("[auth/logout] revocation failed; clearing cookie anyway", {
+        traceId,
+        sessionId: session.sessionId,
+        message,
+      });
+    }
   }
 
   const response = NextResponse.redirect(new URL("/", `${getPublicOrigin(request)}/`));
