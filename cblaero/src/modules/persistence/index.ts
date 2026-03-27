@@ -1,5 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 
+import { assertUsaDataResidencyPolicyConfigured } from "./data-residency";
+
 function createSchemaBoundClient(url: string, key: string, schema: string) {
   return createClient(url, key, {
     db: {
@@ -42,7 +44,11 @@ export function isSupabaseConfigured(): boolean {
 }
 
 export function shouldUseInMemoryPersistenceForTests(): boolean {
-  return process.env.NODE_ENV === "test" && !isSupabaseConfigured();
+  if (process.env.NODE_ENV !== "test") {
+    return false;
+  }
+
+  return process.env.CBL_FORCE_SUPABASE_FOR_TESTS !== "true";
 }
 
 export function assertSupabasePersistenceConfigured(): void {
@@ -55,6 +61,8 @@ export function assertSupabasePersistenceConfigured(): void {
       "Supabase persistence is required. Set CBL_SUPABASE_URL, CBL_SUPABASE_SERVICE_ROLE_KEY, and CBL_SUPABASE_SCHEMA.",
     );
   }
+
+  assertUsaDataResidencyPolicyConfigured();
 }
 
 export function getSupabaseAdminClient(): SchemaBoundSupabaseClient {
