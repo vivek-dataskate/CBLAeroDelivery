@@ -114,7 +114,20 @@ export async function GET(request: NextRequest) {
       role: identity.role,
       rememberDevice: authState.rememberDevice,
     });
-    await registerOrSyncUserFromSession(issued.session);
+    try {
+      await registerOrSyncUserFromSession(issued.session);
+    } catch (syncError: unknown) {
+      const message =
+        syncError instanceof Error ? syncError.message : "Unknown governance sync failure.";
+
+      // Keep SSO availability independent from governance persistence health.
+      console.error("[auth/callback] governance sync failed; continuing login", {
+        traceId,
+        actorId: issued.session.actorId,
+        tenantId: issued.session.tenantId,
+        message,
+      });
+    }
 
     const destination = new URL(authState.returnToPath, `${getPublicOrigin(request)}/`);
     const response = NextResponse.redirect(destination);
