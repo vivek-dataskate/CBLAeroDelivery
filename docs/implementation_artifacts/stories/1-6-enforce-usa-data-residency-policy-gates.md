@@ -1,6 +1,6 @@
 # Story 1.6: Enforce USA Data Residency Policy Gates
 
-Status: review
+Status: in-progress
 
 ## Story
 
@@ -37,12 +37,10 @@ so that residency commitments are enforced by architecture and configuration.
 
 ### Review Follow-ups (AI)
 
-- [x] [AI-Review][High] Fix invalid-policy response path so explicit policy-gate errors are returned without invoking Supabase persistence helpers that re-trigger the residency assertion and can produce a 500. [Source: cblaero/src/app/api/internal/compliance/data-residency/route.ts:68, cblaero/src/modules/audit/index.ts:449, cblaero/src/modules/persistence/index.ts:65]
-- [x] [AI-Review][High] Enforce that approved residency allowlist values are USA-only region identifiers (for example, reject non-US values in CBL_APPROVED_US_REGIONS). [Source: cblaero/src/modules/persistence/data-residency.ts:46, cblaero/src/modules/persistence/data-residency.ts:71]
-- [x] [AI-Review][Medium] Implement or document concrete provisioning and migration gate enforcement; current implementation is runtime persistence-path enforcement only while task is marked complete. [Source: docs/implementation_artifacts/stories/1-6-enforce-usa-data-residency-policy-gates.md:25, cblaero/src/modules/persistence/index.ts:61]
-- [x] [AI-Review][Medium] Add non-test coverage for invalid-policy endpoint behavior, since current tests run with NODE_ENV=test and do not exercise production enforcement behavior. [Source: cblaero/src/modules/persistence/data-residency.ts:40, cblaero/src/app/api/internal/compliance/data-residency/__tests__/route.test.ts:153]
-- [x] [AI-Review][Medium] Consolidate USA residency policy validation logic so preflight and runtime use a single source of truth; current duplicate implementations can drift and produce conflicting pass/fail behavior. [Source: cblaero/scripts/residency-preflight.mjs:3, cblaero/src/modules/persistence/data-residency.ts:21]
-- [x] [AI-Review][Medium] Stop storing residency check events in process memory for non-test execution paths; currently every request retains actor/tenant policy evidence in memory even when persistent storage is available. [Source: cblaero/src/modules/audit/index.ts:439, cblaero/src/modules/audit/index.ts:447]
+- [ ] [AI-Review][High] Fix invalid-policy response path so explicit policy-gate errors are returned without invoking Supabase persistence helpers that re-trigger the residency assertion and can produce a 500. [Source: cblaero/src/app/api/internal/compliance/data-residency/route.ts:68, cblaero/src/modules/audit/index.ts:449, cblaero/src/modules/persistence/index.ts:65]
+- [ ] [AI-Review][High] Enforce that approved residency allowlist values are USA-only region identifiers (for example, reject non-US values in CBL_APPROVED_US_REGIONS). [Source: cblaero/src/modules/persistence/data-residency.ts:46, cblaero/src/modules/persistence/data-residency.ts:71]
+- [ ] [AI-Review][Medium] Implement or document concrete provisioning and migration gate enforcement; current implementation is runtime persistence-path enforcement only while task is marked complete. [Source: docs/implementation_artifacts/stories/1-6-enforce-usa-data-residency-policy-gates.md:25, cblaero/src/modules/persistence/index.ts:61]
+- [ ] [AI-Review][Medium] Add non-test coverage for invalid-policy endpoint behavior, since current tests run with NODE_ENV=test and do not exercise production enforcement behavior. [Source: cblaero/src/modules/persistence/data-residency.ts:40, cblaero/src/app/api/internal/compliance/data-residency/__tests__/route.test.ts:153]
 
 ## Dev Notes
 
@@ -92,7 +90,6 @@ GPT-5.3-Codex
 
 ### Debug Log References
 
-- npm run residency:preflight
 - npm test -- src/modules/__tests__/data-residency.test.ts
 - npm test -- src/app/api/internal/compliance/data-residency/__tests__/route.test.ts
 - npm run lint
@@ -109,11 +106,6 @@ GPT-5.3-Codex
 - Extended authorization policy to allow compliance/admin evidence access while keeping recruiter access denied.
 - Added Supabase schema support for data residency compliance audit events.
 - Added Story 1.6 tests for policy validation and compliance endpoint authorization/response behavior.
-- Fixed invalid-policy endpoint flow so explicit 412 responses do not depend on Supabase list queries in failure paths.
-- Added USA-only identifier validation for approved region allowlist entries.
-- Added concrete provisioning/migration residency gate command via `npm run residency:preflight` and documented usage.
-- Added production-semantics route coverage with module mocks for invalid-policy behavior.
-- Stabilized test-mode persistence behavior to use in-memory stores by default unless explicitly overridden.
 - Validation passed locally: targeted tests, lint, typecheck, full test suite, and production build.
 
 ### File List
@@ -127,11 +119,6 @@ GPT-5.3-Codex
 - cblaero/src/modules/__tests__/data-residency.test.ts
 - cblaero/supabase/schema.sql
 - cblaero/README.md
-- cblaero/.env.local.example
-- cblaero/package.json
-- cblaero/scripts/data-residency-policy.cjs
-- cblaero/scripts/residency-preflight.mjs
-- cblaero/src/modules/persistence/data-residency-policy-shared.d.ts
 - docs/implementation_artifacts/stories/1-6-enforce-usa-data-residency-policy-gates.md
 - docs/implementation_artifacts/sprint-status.yaml
 
@@ -166,38 +153,6 @@ Changes Requested
 - AC1: Partial. Explicit error messaging is implemented in code, but runtime path can throw before response in non-test mode; migration/provisioning blocking is not fully evidenced.
 - AC2: Partial. Evidence query route exists, but invalid-policy response reliability is currently impacted by the issue above.
 
-## Senior Developer Re-Review (AI)
-
-### Reviewer
-
-GPT-5.3-Codex
-
-### Date
-
-2026-03-27
-
-### Outcome
-
-Changes Requested
-
-### Summary
-
-- Prior high-severity findings remain resolved.
-- Identified 2 medium follow-ups focused on policy-validation consistency and minimizing production memory retention of compliance evidence payloads.
-
-### Key Findings
-
-1. Medium: residency policy validation exists in two separate implementations (runtime module and preflight script), creating drift risk where provisioning and runtime gates could disagree.
-2. Medium: data residency checks are appended to process memory before in-memory mode checks, retaining actor/tenant policy evidence in production workers unnecessarily.
-
-### Acceptance Criteria Re-check
-
-- AC1: Partial. Runtime and preflight gates exist, but consistency is not guaranteed due to duplicated validation logic.
-- AC2: Partial. Queryability exists, but compliance evidence handling should reduce unnecessary in-memory retention in non-test execution.
-
 ## Change Log
 
 - 2026-03-12: Senior developer code review performed; Changes Requested outcome recorded with 4 follow-up action items.
-- 2026-03-12: Implemented all code review follow-ups (2 High, 2 Medium) and restored story to review status.
-- 2026-03-27: Senior developer re-review performed; 2 Medium follow-up action items added and story returned to in-progress.
-- 2026-03-27: Implemented both medium follow-ups by sharing residency validation across runtime/preflight, eliminating non-test in-memory residency event retention, and consolidating route coverage into one residency test file.
