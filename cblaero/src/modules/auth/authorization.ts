@@ -11,7 +11,8 @@ export type ProtectedAction =
   | "candidate:read"
   | "candidate:write"
   | "audit:read-denials"
-  | "admin:manage-users";
+  | "admin:manage-users"
+  | "compliance:read-data-residency";
 
 type AuthorizationAllow = {
   allowed: true;
@@ -35,11 +36,13 @@ const ROLE_ACTION_MAP: Record<SessionRole, ReadonlySet<ProtectedAction>> = {
     "candidate:write",
     "audit:read-denials",
     "admin:manage-users",
+    "compliance:read-data-residency",
   ]),
   "compliance-officer": new Set([
     "dashboard:view",
     "candidate:read",
     "audit:read-denials",
+    "compliance:read-data-residency",
   ]),
 };
 

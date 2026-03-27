@@ -59,12 +59,33 @@ export type StepUpAttemptEvent = {
   occurredAtIso: string;
 };
 
+export type DataResidencyCheckStatus = "pass" | "fail";
+
+export type DataResidencyCheckTargets = {
+  data: string | null;
+  logs: string | null;
+  backups: string | null;
+};
+
+export type DataResidencyCheckEvent = {
+  traceId: string;
+  actorId: string | null;
+  tenantId: string | null;
+  status: DataResidencyCheckStatus;
+  approvedRegions: string[];
+  checkedTargets: DataResidencyCheckTargets;
+  violations: string[];
+  occurredAtIso: string;
+};
+
 const AUTHORIZATION_DENY_EVENT_LIMIT = 1000;
 const ADMIN_ACTION_EVENT_LIMIT = 1000;
 const STEP_UP_ATTEMPT_EVENT_LIMIT = 1000;
+const DATA_RESIDENCY_CHECK_EVENT_LIMIT = 1000;
 const authorizationDenyEvents: AuthorizationDenyEvent[] = [];
 const adminActionEvents: AdminActionEvent[] = [];
 const stepUpAttemptEvents: StepUpAttemptEvent[] = [];
+const dataResidencyCheckEvents: DataResidencyCheckEvent[] = [];
 
 function vectorAuditEnabled(): boolean {
   return process.env.CBL_VECTOR_AUDIT_ENABLED !== "false";
@@ -404,5 +425,129 @@ export async function clearStepUpAttemptEventsForTest(): Promise<void> {
   const { error } = await client.from("audit_step_up_attempts").delete().gte("id", 0);
   if (error) {
     throw new Error(`Failed to clear step-up attempt events: ${error.message}`);
+  }
+}
+
+export async function recordDataResidencyCheckEvent(
+  input: Omit<DataResidencyCheckEvent, "occurredAtIso">,
+): Promise<DataResidencyCheckEvent> {
+  const event: DataResidencyCheckEvent = {
+    ...input,
+    occurredAtIso: new Date().toISOString(),
+  };
+
+  dataResidencyCheckEvents.push(event);
+  if (dataResidencyCheckEvents.length > DATA_RESIDENCY_CHECK_EVENT_LIMIT) {
+    dataResidencyCheckEvents.splice(
+      0,
+      dataResidencyCheckEvents.length - DATA_RESIDENCY_CHECK_EVENT_LIMIT,
+    );
+  }
+
+  if (isInMemoryMode()) {
+    return event;
+  }
+
+  let client;
+  try {
+    client = getSupabaseAdminClient();
+  } catch (error) {
+    if (event.status === "fail") {
+      return event;
+    }
+
+    throw error;
+  }
+
+  const { data, error } = await client
+    .from("audit_data_residency_checks")
+    .insert({
+      trace_id: event.traceId,
+      actor_id: event.actorId,
+      tenant_id: event.tenantId,
+      status: event.status,
+      approved_regions: event.approvedRegions,
+      checked_targets: event.checkedTargets,
+      violations: event.violations,
+      occurred_at: event.occurredAtIso,
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    if (event.status === "fail") {
+      return event;
+    }
+
+    throw new Error(`Failed to persist data residency check event: ${error.message}`);
+  }
+
+  await insertVectorAudit(
+    "audit_data_residency_checks",
+    Number(data.id),
+    event.tenantId,
+    JSON.stringify(event),
+  );
+
+  return event;
+}
+
+export async function listDataResidencyCheckEvents(
+  tenantId?: string,
+): Promise<DataResidencyCheckEvent[]> {
+  if (isInMemoryMode()) {
+    const events = [...dataResidencyCheckEvents];
+    return tenantId ? events.filter((event) => event.tenantId === tenantId) : events;
+  }
+
+  const client = getSupabaseAdminClient();
+  const query = tenantId
+    ? client
+        .from("audit_data_residency_checks")
+        .select(
+          "trace_id, actor_id, tenant_id, status, approved_regions, checked_targets, violations, occurred_at",
+        )
+        .eq("tenant_id", tenantId)
+    : client
+        .from("audit_data_residency_checks")
+        .select(
+          "trace_id, actor_id, tenant_id, status, approved_regions, checked_targets, violations, occurred_at",
+        );
+
+  const { data, error } = await query
+    .order("occurred_at", { ascending: false })
+    .limit(DATA_RESIDENCY_CHECK_EVENT_LIMIT);
+
+  if (error) {
+    throw new Error(`Failed to list data residency check events: ${error.message}`);
+  }
+
+  return (data ?? []).map((row) => ({
+    traceId: row.trace_id,
+    actorId: row.actor_id,
+    tenantId: row.tenant_id,
+    status: row.status,
+    approvedRegions: Array.isArray(row.approved_regions) ? row.approved_regions : [],
+    checkedTargets: row.checked_targets as DataResidencyCheckTargets,
+    violations: Array.isArray(row.violations) ? row.violations : [],
+    occurredAtIso: row.occurred_at,
+  }));
+}
+
+export async function clearDataResidencyCheckEventsForTest(): Promise<void> {
+  dataResidencyCheckEvents.length = 0;
+
+  if (isInMemoryMode()) {
+    return;
+  }
+
+  const client = getSupabaseAdminClient();
+  const { error } = await client.from("audit_data_residency_checks").delete().gte("id", 0);
+  if (error) {
+    if (error.message.includes("Could not find the table")) {
+      return;
+    }
+
+    throw new Error(`Failed to clear data residency check events: ${error.message}`);
   }
 }
