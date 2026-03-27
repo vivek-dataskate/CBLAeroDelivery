@@ -41,6 +41,10 @@ Required variables:
 - CBL_SUPABASE_URL: Supabase project URL
 - CBL_SUPABASE_SERVICE_ROLE_KEY: Supabase service_role API key
 - CBL_SUPABASE_SCHEMA: dedicated Postgres schema for this app (for example cblaero_app, not public)
+- CBL_APPROVED_US_REGIONS: comma-separated allowlist of approved USA regions (for example us-east-1,us-west-2)
+- CBL_DATA_REGION: active region used for customer data storage
+- CBL_LOG_REGION: active region used for operational logs
+- CBL_BACKUP_REGION: active region used for backups/archive targets
 
 Optional:
 
@@ -82,6 +86,22 @@ This app is configured to use a dedicated Postgres schema, not `public`.
 	- Render: service environment variables
 
 If `CBL_SUPABASE_SCHEMA` is set to `public`, the app will fail fast at startup by design.
+
+If USA residency policy variables are missing or set to non-approved regions, the app will fail fast with an explicit policy error describing the invalid values and the approved region allowlist.
+
+## Residency Preflight for Provisioning and Migrations
+
+Run this before provisioning or migration operations to enforce the same USA residency policy gates outside runtime request paths:
+
+```bash
+npm run residency:preflight
+```
+
+Recommended usage:
+
+- Before running Supabase schema operations
+- Before environment provisioning/promotion to staging/production
+- In CI/CD prior to migration/apply steps
 
 ## Learn More
 

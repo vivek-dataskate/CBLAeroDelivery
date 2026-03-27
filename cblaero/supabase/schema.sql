@@ -72,6 +72,24 @@ create index if not exists idx_audit_step_up_attempts_occurred_at
 create index if not exists idx_audit_step_up_attempts_tenant
   on cblaero_app.audit_step_up_attempts (tenant_id, occurred_at desc);
 
+create table if not exists cblaero_app.audit_data_residency_checks (
+  id bigint generated always as identity primary key,
+  trace_id text not null,
+  actor_id text,
+  tenant_id text,
+  status text not null check (status in ('pass', 'fail')),
+  approved_regions text[] not null,
+  checked_targets jsonb not null,
+  violations text[] not null default '{}',
+  occurred_at timestamptz not null default now()
+);
+
+create index if not exists idx_audit_data_residency_checks_occurred_at
+  on cblaero_app.audit_data_residency_checks (occurred_at desc);
+
+create index if not exists idx_audit_data_residency_checks_tenant
+  on cblaero_app.audit_data_residency_checks (tenant_id, occurred_at desc);
+
 create table if not exists cblaero_app.admin_managed_users (
   actor_id text primary key,
   tenant_id text not null,
