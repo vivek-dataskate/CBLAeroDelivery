@@ -1,13 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 import { SESSION_COOKIE_NAME, issueSessionToken } from "@/modules/auth";
+import * as authModule from "@/modules/auth";
 import {
   clearAuthorizationDenyEventsForTest,
   clearDataResidencyCheckEventsForTest,
   listAuthorizationDenyEvents,
   listDataResidencyCheckEvents,
 } from "@/modules/audit";
+import * as auditModule from "@/modules/audit";
 
 import { GET } from "../route";
 
@@ -21,6 +23,7 @@ const ENV_KEYS = [
 type EnvSnapshot = Partial<Record<(typeof ENV_KEYS)[number], string | undefined>>;
 
 const PERSISTENCE_KEYS = [
+  "CBL_FORCE_SUPABASE_FOR_TESTS",
   "CBL_SUPABASE_URL",
   "CBL_SUPABASE_SERVICE_ROLE_KEY",
   "CBL_SUPABASE_SCHEMA",
@@ -84,6 +87,7 @@ describe("internal data residency compliance API", () => {
   beforeEach(async () => {
     envSnapshot = snapshotEnv();
     persistenceSnapshot = snapshotPersistenceEnv();
+    delete process.env.CBL_FORCE_SUPABASE_FOR_TESTS;
     delete process.env.CBL_SUPABASE_URL;
     delete process.env.CBL_SUPABASE_SERVICE_ROLE_KEY;
     delete process.env.CBL_SUPABASE_SCHEMA;
@@ -92,6 +96,8 @@ describe("internal data residency compliance API", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
     restoreEnv(envSnapshot);
     restorePersistenceEnv(persistenceSnapshot);
   });
@@ -224,5 +230,61 @@ describe("internal data residency compliance API", () => {
       traceId: "trace-residency-fail",
       status: "fail",
     });
+  });
+
+  it("returns explicit failure details in production semantics without throwing 500", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+
+    vi.spyOn(authModule, "validateActiveSession").mockResolvedValue({
+      actorId: "actor-admin-prod-1",
+      email: "admin-prod@cblsolutions.com",
+      tenantId: "tenant-a",
+      role: "admin",
+      sessionId: "session-prod-1",
+      rememberDevice: false,
+      issuedAtEpochSec: 1,
+      expiresAtEpochSec: 2,
+    });
+    vi.spyOn(authModule, "authorizeAccess").mockResolvedValue({ allowed: true });
+    vi.spyOn(auditModule, "recordDataResidencyCheckEvent").mockResolvedValue({
+      traceId: "trace-residency-prod-fail",
+      actorId: "actor-admin-prod-1",
+      tenantId: "tenant-a",
+      status: "fail",
+      approvedRegions: ["us-east-1", "us-west-2"],
+      checkedTargets: {
+        data: "eu-central-1",
+        logs: "us-east-1",
+        backups: "us-west-2",
+      },
+      violations: ["CBL_DATA_REGION=eu-central-1 is not in approved USA regions: us-east-1, us-west-2."],
+      occurredAtIso: new Date().toISOString(),
+    });
+    const listSpy = vi
+      .spyOn(auditModule, "listDataResidencyCheckEvents")
+      .mockResolvedValue([]);
+
+    process.env.CBL_APPROVED_US_REGIONS = "us-east-1,us-west-2";
+    process.env.CBL_DATA_REGION = "eu-central-1";
+    process.env.CBL_LOG_REGION = "us-east-1";
+    process.env.CBL_BACKUP_REGION = "us-west-2";
+
+    const request = buildRequest(
+      "https://aerodelivery.onrender.com/api/internal/compliance/data-residency",
+      {
+        method: "GET",
+        headers: {
+          "x-trace-id": "trace-residency-prod-fail",
+        },
+      },
+    );
+
+    const response = await GET(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(412);
+    expect(body.error.code).toBe("data_residency_policy_failed");
+    expect(body.error.message).toContain("CBL_DATA_REGION=eu-central-1");
+    expect(listSpy).not.toHaveBeenCalled();
   });
 });
