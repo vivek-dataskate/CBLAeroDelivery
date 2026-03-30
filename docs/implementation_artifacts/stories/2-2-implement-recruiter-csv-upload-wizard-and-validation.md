@@ -216,6 +216,13 @@ GPT-5.3-Codex
 - [x] M3: Extended blocked-key test to assert `secret` and `api_key` are excluded from `extra_attributes` (only `password` and `token` were previously asserted)
 - [x] M4: Added two positive error-report download tests: CSV format/headers/content assertion, and empty-errors headers-only assertion
 
+### Review-Driven Fixes (2026-03-30, code-review pass 2)
+
+- [x] C1: Reverted `CsvUploadWizard.tsx` `CanonicalField` wire value for unmapped columns from `"(additional_attribute)"` back to `"(ignore)"` — commit `a3c3caa8` had introduced a client-server contract break where the wizard sent `"(additional_attribute)"` but the server's `parseColumnMap` only accepts `"(ignore)"`, causing HTTP 400 for any upload with unmapped columns; display label "Additional Attribute" preserved in `<option>` render
+- [x] H1: Added regression test `"accepts '(ignore)' as columnMap wire value and populates extra_attributes"` to explicitly assert the `"(ignore)"` wire value contract and confirm extra_attributes are populated correctly
+- [x] H2: Reverted `docs/implementation_artifacts/sprint-status.yaml` story `2-1-build-admin-supervised-initial-1m-record-migration-pipeline` from `in-progress` back to `done` — incorrectly downgraded in the same commit with no explanation
+- [x] M1: Added inline comment on the `CanonicalField` type in `CsvUploadWizard.tsx` documenting that `"(ignore)"` is the server API wire value displayed as "Additional Attribute" in the UI
+
 ### Review-Driven Action Items (2026-03-30)
 
 - [ ] Add tests for audit event emission (verify `recordImportBatchAccessEvent` on upload and error report download)
