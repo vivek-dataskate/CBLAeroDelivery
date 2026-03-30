@@ -246,20 +246,9 @@ describe("internal data residency compliance API", () => {
       expiresAtEpochSec: 2,
     });
     vi.spyOn(authModule, "authorizeAccess").mockResolvedValue({ allowed: true });
-    vi.spyOn(auditModule, "recordDataResidencyCheckEvent").mockResolvedValue({
-      traceId: "trace-residency-prod-fail",
-      actorId: "actor-admin-prod-1",
-      tenantId: "tenant-a",
-      status: "fail",
-      approvedRegions: ["us-east-1", "us-west-2"],
-      checkedTargets: {
-        data: "eu-central-1",
-        logs: "us-east-1",
-        backups: "us-west-2",
-      },
-      violations: ["CBL_DATA_REGION=eu-central-1 is not in approved USA regions: us-east-1, us-west-2."],
-      occurredAtIso: new Date().toISOString(),
-    });
+    const recordSpy = vi
+      .spyOn(auditModule, "recordDataResidencyCheckEvent")
+      .mockRejectedValue(new Error("audit persistence unavailable"));
     const listSpy = vi
       .spyOn(auditModule, "listDataResidencyCheckEvents")
       .mockResolvedValue([]);
@@ -285,6 +274,7 @@ describe("internal data residency compliance API", () => {
     expect(response.status).toBe(412);
     expect(body.error.code).toBe("data_residency_policy_failed");
     expect(body.error.message).toContain("CBL_DATA_REGION=eu-central-1");
+    expect(recordSpy).toHaveBeenCalledTimes(1);
     expect(listSpy).not.toHaveBeenCalled();
   });
 });
