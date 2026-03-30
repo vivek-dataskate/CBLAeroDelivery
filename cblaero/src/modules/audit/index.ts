@@ -27,6 +27,104 @@ export type AuthorizationDenyEvent = {
   occurredAtIso: string;
 };
 
+export type ImportBatchAccessEvent = {
+  traceId: string;
+  actorId: string;
+  tenantId: string;
+  batchId: string | null;
+  action: "list_import_batches" | "read_import_batch_detail";
+  occurredAtIso: string;
+};
+
+const IMPORT_BATCH_ACCESS_EVENT_LIMIT = 1000;
+const importBatchAccessEvents: ImportBatchAccessEvent[] = [];
+
+export async function recordImportBatchAccessEvent(
+  input: Omit<ImportBatchAccessEvent, "occurredAtIso">,
+): Promise<ImportBatchAccessEvent> {
+  const event: ImportBatchAccessEvent = {
+    ...input,
+    occurredAtIso: new Date().toISOString(),
+  };
+
+  if (isInMemoryMode()) {
+    importBatchAccessEvents.push(event);
+    if (importBatchAccessEvents.length > IMPORT_BATCH_ACCESS_EVENT_LIMIT) {
+      importBatchAccessEvents.splice(
+        0,
+        importBatchAccessEvents.length - IMPORT_BATCH_ACCESS_EVENT_LIMIT,
+      );
+    }
+    return event;
+  }
+
+  const client = getSupabaseAdminClient();
+  const { error } = await client.from("audit_import_batch_accesses").insert({
+    trace_id: event.traceId,
+    actor_id: event.actorId,
+    tenant_id: event.tenantId,
+    batch_id: event.batchId,
+    action: event.action,
+    occurred_at: event.occurredAtIso,
+  });
+
+  if (error) {
+    throw new Error(`Failed to persist import batch access event: ${error.message}`);
+  }
+
+  return event;
+}
+
+export async function listImportBatchAccessEvents(
+  tenantId?: string,
+): Promise<ImportBatchAccessEvent[]> {
+  if (isInMemoryMode()) {
+    const events = [...importBatchAccessEvents];
+    return tenantId ? events.filter((event) => event.tenantId === tenantId) : events;
+  }
+
+  const client = getSupabaseAdminClient();
+  const query = tenantId
+    ? client
+        .from("audit_import_batch_accesses")
+        .select("trace_id, actor_id, tenant_id, batch_id, action, occurred_at")
+        .eq("tenant_id", tenantId)
+    : client
+        .from("audit_import_batch_accesses")
+        .select("trace_id, actor_id, tenant_id, batch_id, action, occurred_at");
+
+  const { data, error } = await query
+    .order("occurred_at", { ascending: false })
+    .limit(IMPORT_BATCH_ACCESS_EVENT_LIMIT);
+
+  if (error) {
+    throw new Error(`Failed to list import batch access events: ${error.message}`);
+  }
+
+  return (data ?? []).map((row) => ({
+    traceId: row.trace_id,
+    actorId: row.actor_id,
+    tenantId: row.tenant_id,
+    batchId: row.batch_id,
+    action: row.action as ImportBatchAccessEvent["action"],
+    occurredAtIso: row.occurred_at,
+  }));
+}
+
+export async function clearImportBatchAccessEventsForTest(): Promise<void> {
+  importBatchAccessEvents.length = 0;
+
+  if (isInMemoryMode()) {
+    return;
+  }
+
+  const client = getSupabaseAdminClient();
+  const { error } = await client.from("audit_import_batch_accesses").delete().gte("id", 0);
+  if (error) {
+    throw new Error(`Failed to clear import batch access events: ${error.message}`);
+  }
+}
+
 export type AdminActionType =
   | "invite_user"
   | "assign_role"

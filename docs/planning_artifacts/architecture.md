@@ -97,6 +97,7 @@ Runtimes: Node.js v24 LTS · Next.js 16.x · Supabase Postgres (PostgreSQL 18-co
   - `gold_dataset_cases`, `logic_regression_runs`, `logic_regression_results` (LLM logic regression testing corpus and staged evaluation runs — see _Resilience §18_)
   - `provider_routing_policies`, `provider_health_events` (kill switch, warm-standby routing, and provider health state — see _Resilience §19_)
   - `policy_registry`, `policy_versions` (versioned scoring weights, thresholds, and operational policies — see _Resilience §24_)
+  - `schedule_definitions`, `schedule_runs` (global scheduler control plane for recurring business jobs — see _Global Scheduler Design_)
   - `synthetic_load_profiles`, `load_test_runs` (Tier 2 and Tier 3 load-gate definitions and results — see _Resilience §23_)
   - `rag_documents`, `rag_chunks`, `rag_embeddings` (tenant-scoped retrieval corpus and vector index state)
   - `rag_queries`, `rag_citations` (RAG query auditability and source-grounding evidence)
@@ -129,8 +130,8 @@ Three ingestion paths are supported; all funnel through the same deduplication a
 - Imported records enter `pending_enrichment` state; enrichment worker picks them up via outbox.
 
 **Path 3 — ATS connector and email inbox sync (automated, Tier 2):**
-- ATS connector: read-only polling of configured ATS API at scheduled intervals (minimum 15-minute interval per connector). New and updated records are upserted via standard deduplication pipeline with `source: ats_sync` attribution.
-- Email inbox parsing: Microsoft Graph polls designated recruiter inboxes; forwarded resumes and candidate reply threads are parsed to extract candidate stubs. Parsed stubs are queued for recruiter review before activation (not auto-activated).
+- ATS connector: the global scheduler owns connector cadence and emits due `ats_sync.requested` jobs at scheduled intervals (minimum 15-minute interval per connector). The sync worker then polls the configured ATS API and upserts new or updated records through the standard deduplication pipeline with `source: ats_sync` attribution.
+- Email inbox parsing: the global scheduler emits due `inbox_parse.requested` jobs for designated recruiter inboxes. The parse worker then uses Microsoft Graph to read forwarded resumes and candidate reply threads, extracting candidate stubs that are queued for recruiter review before activation (not auto-activated).
 - Both paths write to `import_batch` with source attribution; sync errors alert the admin and never silently discard records.
 - Admin console shows per-connector: last sync timestamp, records synced/skipped/errored, and error rate trend.
 
@@ -163,6 +164,30 @@ Three ingestion paths are supported; all funnel through the same deduplication a
 - Retry behavior:
   - Bounded retries with escalating delay and dead-letter classification.
 
+### Global Scheduler Design
+
+- A single global scheduler service owns all recurring business schedules: ATS sync, inbox parsing, candidate refresh sweeps, daily digests, nightly FAA re-verification, recurring recalibration jobs, and recurring operational guardrail checks.
+- Scheduler state is stored in Postgres, not process memory.
+  - `schedule_definitions(schedule_id, tenant_id, schedule_type, target_ref, cadence_kind [interval|cron|fixed_local_time], cadence_value, timezone, next_run_at, last_run_at, paused_at, disabled_at, policy_version_id, created_by_actor_id, updated_by_actor_id, created_at, updated_at)`
+  - `schedule_runs(run_id, schedule_id, tenant_id, scheduled_for, claimed_at, started_at, completed_at, status [claimed|completed|failed|skipped], emitted_outbox_event_id, worker_job_id, policy_version_id, error_code, error_summary)`
+- The scheduler loop claims due rows using a DB-safe claim pattern (`FOR UPDATE SKIP LOCKED` or equivalent), writes the outbox event for the due job, records a `schedule_runs` row, and advances `next_run_at` in the same transaction.
+- The scheduler never calls providers directly. It emits due work into the outbox/job system; downstream workers remain event-driven.
+
+### Schedule Taxonomy
+
+- Business schedule: a recurring product or operations cadence that users/admins reason about directly, such as ATS polling every 15 minutes, daily Teams digests, nightly FAA sweeps, or 4-hour refresh jobs. Business schedules are centrally owned by the global scheduler.
+- Retry timer: an execution-local backoff created after a failed attempt, such as provider retry, `Retry-After`, or dead-letter delay. Retry timers stay inside worker/job handling and are not represented as user-managed schedules.
+- Lock/cooldown: a domain-protection window such as candidate outreach cooldown or breaker cool-down. Locks/cooldowns are enforced from domain state and policy values at execution time; they do not create scheduler-owned recurring jobs.
+
+### Schedule Change Path
+
+1. Admin or authorized user changes cadence/state in the UI.
+2. Backend API validates tenant scope, allowed cadence bounds, and policy compatibility.
+3. The API writes versioned policy/schedule records to `policy_versions` and `schedule_definitions`.
+4. The global scheduler picks up the new effective schedule definition.
+5. When due, the scheduler emits outbox jobs with the effective `policy_version_id`.
+6. Workers execute the emitted job and record the schedule run plus policy version in audit/tracing artifacts.
+
 ### Agentic Control Plane and Worker Model
 
 This implementation uses a goal-driven multi-agent execution model, not just background jobs.
@@ -179,6 +204,10 @@ This implementation uses a goal-driven multi-agent execution model, not just bac
   - Monitors whether current worker execution is moving toward KPI targets.
   - Replans worker assignments when progress stalls or constraints change.
   - Enforces stop/retry/escalate policy for failed goal paths.
+- Global Scheduler Service:
+  - Owns recurring business cadence across tenants and connectors.
+  - Claims due schedule definitions and emits outbox jobs with versioned schedule context.
+  - Records run history, missed-run state, and pause/disable semantics for operations visibility.
 
 **Execution workers (specialized agents):**
 
@@ -935,7 +964,7 @@ Processing order on inbound opt-out:
 - A `cost_counter` table has one row per `(tenant_id, counter_type, billing_period)` with an atomic `amount_cents` column.
 - Every outreach dispatch (SMS send, email send, enrichment API call) performs an `UPDATE cost_counter SET amount_cents = amount_cents + $cost WHERE tenant_id = $tid AND counter_type = $type AND billing_period = $period RETURNING amount_cents` inside the same DB transaction as the outbox job claim.
 - If `RETURNING amount_cents` exceeds the threshold for that `counter_type`, the job is aborted before the external API call is made. No API request is issued for an over-budget tenant.
-- The Cost Guardrail Worker also runs a 1-minute polling loop as a macro check across all tenants (catches accumulated small increments that might slip past per-request checks during concurrent bursts).
+- The Cost Guardrail Worker also executes a scheduler-emitted 1-minute macro-check job across all tenants (catches accumulated small increments that might slip past per-request checks during concurrent bursts without introducing worker-owned business timers).
 - Thresholds: API `$1,000/month` (hard stop at `$950` + alert delivery lead), SMS `$200/placement` (hard stop at `$180` + alert recruiter).
 - All budget stops are written as `cost.threshold.exceeded` audit events and surface in the operations console.
 
@@ -974,16 +1003,16 @@ Processing order on inbound opt-out:
 
 ### 12. FAA Verification Decay — Periodic Re-Verification for Active Candidates
 
-**Decision:** FAA verification is a subscription for ranked/active candidates, not a one-time snapshot. The Compliance Worker runs a nightly re-verification sweep on all candidates with `rank_status = active` and FAA certs nearing or past expiration.
+**Decision:** FAA verification is a subscription for ranked/active candidates, not a one-time snapshot. The global scheduler emits a nightly re-verification job that the Compliance Worker executes for all candidates with `rank_status = active` and FAA certs nearing or past expiration.
 
 - The `candidate_faa_verification` table stores: `verification_id`, `candidate_id`, `verified_at`, `cert_type`, `cert_expiry_date`, `verification_status [current|expiring_soon|expired|invalid]`, `source [auto|manual]`.
-- Nightly sweep: Compliance Worker queries all candidates where `cert_expiry_date <= now() + 60 days` AND `rank_status = active`. For each, it re-queries FAA public data to confirm current status.
+- Nightly sweep: the scheduler emits the due compliance sweep at off-peak hours and the Compliance Worker queries all candidates where `cert_expiry_date <= now() + 60 days` AND `rank_status = active`. For each, it re-queries FAA public data to confirm current status.
 - Status transitions:
   - `current → expiring_soon`: cert expires within 60 days. Recruiter is notified via Teams card; candidate is not automatically downranked but match reasons include expiry warning.
   - `expiring_soon → expired`: cert is past expiry date. Candidate's `rank_status` is set to `compliance_hold` automatically. A `compliance.faa_cert.expired` audit event is emitted.
   - `expired → current`: re-verification confirms renewal (candidate renewed cert). `rank_status` restored; recruiter notified.
 - Recruiter-triggered manual re-verification is also supported at any time and does not wait for the nightly sweep.
-- Re-verification sweep runs at off-peak hours (default 02:00 tenant local time) to avoid competing with scoring jobs.
+- Re-verification sweep runs at off-peak hours (default 02:00 tenant local time) using the global scheduler to avoid competing with scoring jobs and to keep timezone handling centralized.
 - All re-verification outcomes (pass, expiring, expired, error) are written as append-only audit events with `source: compliance_sweep` and the FAA data snapshot used as evidence.
 
 ### 13. Scoring Model Version Audit — Prompt and Model ID Recorded on Every Score
@@ -1180,11 +1209,12 @@ Processing order on inbound opt-out:
 
 ### 24. Policy Registry and Zero-Inference Guardrail — No Hidden Business Logic in Code
 
-**Decision:** Any scoring weight, reassignment threshold, cooldown window, cost threshold, or routing rule that affects business behavior must be versioned in a policy registry instead of being inferred or hardcoded by implementers.
+**Decision:** Any scoring weight, reassignment threshold, cooldown window, cost threshold, routing rule, or recurring business cadence that affects behavior must be versioned in a policy registry instead of being inferred or hardcoded by implementers.
 
-- `policy_registry` stores policy families such as `scoring_weights`, `reassignment_thresholds`, `cooldown_windows`, `provider_failover_thresholds`, and `seasonal_adjustments`.
-- `policy_versions` stores versioned values and activation windows. Example: `scoring_weights@1.0.0` with skills 40, availability 30, location 20, domain 10.
+- `policy_registry` stores policy families such as `scoring_weights`, `reassignment_thresholds`, `cooldown_windows`, `provider_failover_thresholds`, `seasonal_adjustments`, `connector_sync_cadences`, `digest_cadences`, `refresh_cadences`, and `guardrail_check_cadences`.
+- `policy_versions` stores versioned values and activation windows. Example: `scoring_weights@1.0.0` with skills 40, availability 30, location 20, domain 10; `digest_cadences@1.2.0` with recruiter-digest daily 07:00 tenant local time.
 - Workers and orchestration code must read effective policy at execution time and record the `policy_version_id` used in the resulting audit or match records.
+- `schedule_definitions` must reference the effective `policy_version_id` for any schedule whose cadence or enablement is user-configurable, so schedule-change history is auditable and replay-safe.
 - If a requirement is broad in product language and no policy value exists yet, engineering is not allowed to guess. The work item is blocked until a policy entry or product decision is created.
 - This converts remaining PRD long-tail ambiguity into explicit configuration debt rather than hidden implementation leakage.
 

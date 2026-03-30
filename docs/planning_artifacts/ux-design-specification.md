@@ -104,8 +104,18 @@ The platform starts with 1M existing candidate records and grows via three ongoi
 
 Design constraint: at 1M+ records, candidate search and list views must use cursor-based pagination and indexed pre-filters (by availability status, location, cert type) — never an unfiltered full-scan. The UI must not offer a "show all" control on unfiltered candidate tables.
 
+**8. Schedule and Cadence Console (Admin)**
+One global schedule console governs recurring business jobs. It is the configuration surface for business cadences, not a dump of every internal timer.
+
+- **Business schedules shown:** ATS connector syncs, recruiter inbox scans, candidate refresh sweeps, daily recruiter digests, nightly FAA/compliance sweeps, and recurring operational guardrail checks.
+- **Each schedule row shows:** tenant/customer scope, job type, cadence, timezone, next run, last run, paused/active state, latest run status, and policy version.
+- **Edit flow:** admin changes cadence or pause/resume state -> API validates allowed bounds and tenant scope -> system creates a new versioned schedule/policy record -> only subsequent runs use the new version.
+- **Non-schedulable timing controls:** retry backoffs and outreach cooldown windows are shown as read-only policy hints or in contextual warnings; they are not editable as recurring schedules in this console.
+
 **2. "See-Before-Share" → "Do Not Disturb Control Panel"**
 Sarah's portal is less job board, more preference enforcer. She sets exact criteria (role, pay, type rating, contact window). System promise: "We only contact you when it's near-perfect, max once per week." Transparency: shows her contact history, who has her data, how to revoke.
+
+Candidate contact windows and outreach cooldowns are enforced policy/consent controls, not admin-authored recurring schedules. The UI should make that distinction explicit so operators do not confuse preference protection with scheduler configuration.
 
 **3. Motivation-First Confidence Scoring**
 Confidence = motivation intensity + domain match. Fast response + questions asked + volunteered start date = high confidence. Show signal breakdown so Mike builds trust with the system. Track Mike's calling behavior vs. scores to validate usefulness or retire scores entirely.
