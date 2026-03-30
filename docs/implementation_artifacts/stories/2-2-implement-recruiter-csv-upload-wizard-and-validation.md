@@ -21,72 +21,72 @@ so that I can quickly add candidate pools with actionable per-row error feedback
 
 ## Tasks / Subtasks
 
-- [ ] Add `recruiter:csv-upload` action to authorization module and grant it to the correct roles (AC: 7)
-  - [ ] Add `"recruiter:csv-upload"` to the `ProtectedAction` union type in `cblaero/src/modules/auth/authorization.ts`
-  - [ ] Add `"recruiter:csv-upload"` to the `recruiter`, `delivery-head`, and `admin` role permission sets in `ROLE_ACTION_MAP`
-  - [ ] No schema change needed — `import_batch` and `import_row_error` tables already exist from Story 2.1
+- [x] Add `recruiter:csv-upload` action to authorization module and grant it to the correct roles (AC: 7)
+  - [x] Add `"recruiter:csv-upload"` to the `ProtectedAction` union type in `cblaero/src/modules/auth/authorization.ts`
+  - [x] Add `"recruiter:csv-upload"` to the `recruiter`, `delivery-head`, and `admin` role permission sets in `ROLE_ACTION_MAP`
+  - [x] No schema change needed — `import_batch` and `import_row_error` tables already exist from Story 2.1
 
-- [ ] Build CSV upload API route: `POST /api/internal/recruiter/csv-upload` (AC: 3, 4, 7)
-  - [ ] Create `cblaero/src/app/api/internal/recruiter/csv-upload/route.ts`
-  - [ ] Accept `multipart/form-data` with a single `file` field and optional `columnMap` JSON field; validate `Content-Type` is `text/csv` or filename ends `.csv`
-  - [ ] Enforce hard 10,000-row limit: stream-parse the CSV with Node.js `stream/promises` + manual line counting; reject with HTTP 422 and `{error: {code: "row_limit_exceeded", message: "..."}}` if row count > 10,000 — do not create an `import_batch` record (AC: 4)
-  - [ ] Authenticate via `validateActiveSession` + `authorizeAccess` with action `"recruiter:csv-upload"`; use the recruiter's `tenantId` (active-client from request header or session default) as the batch `tenant_id`
-  - [ ] On accept: create `import_batch` row with `source=csv_upload`, `status=validating`, `total_rows`, `created_by_actor_id=session.actorId`, `tenant_id`; return `{batchId, status: "validating"}` immediately with HTTP 202
-  - [ ] Process rows synchronously (≤ 10,000 rows fits within Render request timeout): for each chunk of 1,000 rows, call the existing `process_import_chunk` Supabase RPC with `ingestion_state=pending_enrichment` and `source=csv_upload`
-  - [ ] Apply column map: translate recruiter-mapped headers to canonical candidate fields before passing to RPC; rows where required fields are missing after mapping are written as `import_row_error` with code `missing_identity`
-  - [ ] For unmapped CSV columns, persist key/value pairs into `extra_attributes` JSONB in the candidate payload sent to RPC; normalize keys to lowercase snake_case and drop blocked keys (`password`, `token`, `secret`, `api_key`)
-  - [ ] Enforce JSON guardrails for `extra_attributes`: max 64 keys per row and max 16 KB serialized JSON; rows exceeding limits are written to `import_row_error` with code `invalid_format`
-  - [ ] Validate email format (basic regex) and phone format (digits-only after stripping spaces/dashes); rows failing validation are written as `import_row_error` with code `invalid_format`
-  - [ ] After all chunks: update `import_batch.status=complete` with final totals; return final batch summary in response body
-  - [ ] Response shape: `{data: {batchId, status, imported, skipped, errors, totalRows}, meta: {}}` (matches existing import-batches GET contract)
+- [x] Build CSV upload API route: `POST /api/internal/recruiter/csv-upload` (AC: 3, 4, 7)
+  - [x] Create `cblaero/src/app/api/internal/recruiter/csv-upload/route.ts`
+  - [x] Accept `multipart/form-data` with a single `file` field and optional `columnMap` JSON field; validate `Content-Type` is `text/csv` or filename ends `.csv`
+  - [x] Enforce hard 10,000-row limit: stream-parse the CSV with Node.js `stream/promises` + manual line counting; reject with HTTP 422 and `{error: {code: "row_limit_exceeded", message: "..."}}` if row count > 10,000 — do not create an `import_batch` record (AC: 4)
+  - [x] Authenticate via `validateActiveSession` + `authorizeAccess` with action `"recruiter:csv-upload"`; use the recruiter's `tenantId` (active-client from request header or session default) as the batch `tenant_id`
+  - [x] On accept: create `import_batch` row with `source=csv_upload`, `status=validating`, `total_rows`, `created_by_actor_id=session.actorId`, `tenant_id`; return `{batchId, status: "validating"}` immediately with HTTP 202
+  - [x] Process rows synchronously (≤ 10,000 rows fits within Render request timeout): for each chunk of 1,000 rows, call the existing `process_import_chunk` Supabase RPC with `ingestion_state=pending_enrichment` and `source=csv_upload`
+  - [x] Apply column map: translate recruiter-mapped headers to canonical candidate fields before passing to RPC; rows where required fields are missing after mapping are written as `import_row_error` with code `missing_identity`
+  - [x] For unmapped CSV columns, persist key/value pairs into `extra_attributes` JSONB in the candidate payload sent to RPC; normalize keys to lowercase snake_case and drop blocked keys (`password`, `token`, `secret`, `api_key`)
+  - [x] Enforce JSON guardrails for `extra_attributes`: max 64 keys per row and max 16 KB serialized JSON; rows exceeding limits are written to `import_row_error` with code `invalid_format`
+  - [x] Validate email format (basic regex) and phone format (digits-only after stripping spaces/dashes); rows failing validation are written as `import_row_error` with code `invalid_format`
+  - [x] After all chunks: update `import_batch.status=complete` with final totals; return final batch summary in response body
+  - [x] Response shape: `{data: {batchId, status, imported, skipped, errors, totalRows}, meta: {}}` (matches existing import-batches GET contract)
 
-- [ ] Build error report download route: `GET /api/internal/recruiter/csv-upload/[batchId]/error-report` (AC: 5)
-  - [ ] Create `cblaero/src/app/api/internal/recruiter/csv-upload/[batchId]/error-report/route.ts`
-  - [ ] Authenticate + authorize with action `"recruiter:csv-upload"`; enforce tenant scope: fetch the `import_batch` row, return 404 if `tenant_id ≠ session.tenantId` (active-client context)
-  - [ ] Stream `import_row_error` rows for the batch, ordered by `row_number asc`, as CSV: headers `row_number,error_code,error_detail,raw_data`; set `Content-Type: text/csv` and `Content-Disposition: attachment; filename="error-report-<batchId-prefix>.csv"`
-  - [ ] Return HTTP 200 with streamed body; if no errors exist, return an empty CSV (headers only)
+- [x] Build error report download route: `GET /api/internal/recruiter/csv-upload/[batchId]/error-report` (AC: 5)
+  - [x] Create `cblaero/src/app/api/internal/recruiter/csv-upload/[batchId]/error-report/route.ts`
+  - [x] Authenticate + authorize with action `"recruiter:csv-upload"`; enforce tenant scope: fetch the `import_batch` row, return 404 if `tenant_id ≠ session.tenantId` (active-client context)
+  - [x] Stream `import_row_error` rows for the batch, ordered by `row_number asc`, as CSV: headers `row_number,error_code,error_detail,raw_data`; set `Content-Type: text/csv` and `Content-Disposition: attachment; filename="error-report-<batchId-prefix>.csv"`
+  - [x] Return HTTP 200 with streamed body; if no errors exist, return an empty CSV (headers only)
 
-- [ ] Build batch status lookup route: `GET /api/internal/recruiter/csv-upload/[batchId]` (AC: 6, 7)
-  - [ ] Create `cblaero/src/app/api/internal/recruiter/csv-upload/[batchId]/route.ts`
-  - [ ] Authenticate + authorize; fetch single `import_batch` row scoped to recruiter's `tenant_id`; return `{data: {batchId, status, imported, totalRows, errors, startedAt, completedAt, elapsedMs}}`
-  - [ ] Return 404 if batch not found or tenant mismatch
+- [x] Build batch status lookup route: `GET /api/internal/recruiter/csv-upload/[batchId]` (AC: 6, 7)
+  - [x] Create `cblaero/src/app/api/internal/recruiter/csv-upload/[batchId]/route.ts`
+  - [x] Authenticate + authorize; fetch single `import_batch` row scoped to recruiter's `tenant_id`; return `{data: {batchId, status, imported, totalRows, errors, startedAt, completedAt, elapsedMs}}`
+  - [x] Return 404 if batch not found or tenant mismatch
 
-- [ ] Add `cblaero/src/app/dashboard/recruiter/` page tree and CSV upload wizard UI (AC: 1, 2, 3, 4, 6)
-  - [ ] Create `cblaero/src/app/dashboard/recruiter/upload/page.tsx` — server component that validates session and renders the wizard shell; follow the auth/session pattern from `cblaero/src/app/dashboard/admin/page.tsx`
-  - [ ] Create `cblaero/src/app/dashboard/recruiter/upload/CsvUploadWizard.tsx` — client component (use `"use client"`) with three steps:
+- [x] Add `cblaero/src/app/dashboard/recruiter/` page tree and CSV upload wizard UI (AC: 1, 2, 3, 4, 6)
+  - [x] Create `cblaero/src/app/dashboard/recruiter/upload/page.tsx` — server component that validates session and renders the wizard shell; follow the auth/session pattern from `cblaero/src/app/dashboard/admin/page.tsx`
+  - [x] Create `cblaero/src/app/dashboard/recruiter/upload/CsvUploadWizard.tsx` — client component (use `"use client"`) with three steps:
     - **Step 1 — File Select:** drag-and-drop file input (native `<input type="file" accept=".csv">` inside a drop zone `div`); on file drop/select, read the first 5 rows with `FileReader` to preview; enforce 10,000-row soft check in the browser (count newlines) and show an immediate warning if exceeded
     - **Step 2 — Column Mapping:** render detected headers in a table where each row has a `<select>` mapping to canonical fields (`name`, `email`, `phone`, `location`, `skills`, `availability_status`, `(ignore)`); required fields (`name` + `email or phone`) must be mapped before "Next" is enabled; display the 5-row preview using the current mapping
     - **Step 3 — Validation Preview & Submit:** call a local `validateRows()` helper that parses all rows client-side and counts valid vs invalid rows by error code; show summary table; "Upload" button submits the file + `columnMap` JSON to `POST /api/internal/recruiter/csv-upload`; handle 422 (`row_limit_exceeded`) with a clear inline error
-  - [ ] After successful submit, show `BatchProgressCard` component with polling (5-second `setInterval`) to `GET /api/internal/recruiter/csv-upload/[batchId]` until terminal state; render status, progress bar, counts, and elapsed time following the visual pattern from `cblaero/src/app/dashboard/admin/MigrationStatusCard.tsx`
-  - [ ] Show "Download error report" link to `/api/internal/recruiter/csv-upload/[batchId]/error-report` once batch is `complete` and `errors > 0`
-  - [ ] In the Step 2 mapping UI, show a clear note that unmapped non-required columns are stored under candidate `extra_attributes` and are not discarded
-  - [ ] Add a link from the main recruiter dashboard (`cblaero/src/app/dashboard/page.tsx`) to `/dashboard/recruiter/upload` when `effectiveRole` is `recruiter`, `delivery-head`, or `admin`
+  - [x] After successful submit, show `BatchProgressCard` component with polling (5-second `setInterval`) to `GET /api/internal/recruiter/csv-upload/[batchId]` until terminal state; render status, progress bar, counts, and elapsed time following the visual pattern from `cblaero/src/app/dashboard/admin/MigrationStatusCard.tsx`
+  - [x] Show "Download error report" link to `/api/internal/recruiter/csv-upload/[batchId]/error-report` once batch is `complete` and `errors > 0`
+  - [x] In the Step 2 mapping UI, show a clear note that unmapped non-required columns are stored under candidate `extra_attributes` and are not discarded
+  - [x] Add a link from the main recruiter dashboard (`cblaero/src/app/dashboard/page.tsx`) to `/dashboard/recruiter/upload` when `effectiveRole` is `recruiter`, `delivery-head`, or `admin`
 
-- [ ] Extend candidates schema for unmapped columns (AC: 8)
-  - [ ] Update `cblaero/supabase/schema.sql` to add `extra_attributes jsonb not null default '{}'::jsonb` to `cblaero_app.candidates`
-  - [ ] Update `process_import_chunk` upsert statements to populate `extra_attributes` from candidate payload with `coalesce(v_candidate->'extra_attributes', '{}'::jsonb)`
-  - [ ] Ensure conflict updates preserve/replace `extra_attributes` using latest row payload
+- [x] Extend candidates schema for unmapped columns (AC: 8)
+  - [x] Update `cblaero/supabase/schema.sql` to add `extra_attributes jsonb not null default '{}'::jsonb` to `cblaero_app.candidates`
+  - [x] Update `process_import_chunk` upsert statements to populate `extra_attributes` from candidate payload with `coalesce(v_candidate->'extra_attributes', '{}'::jsonb)`
+  - [x] Ensure conflict updates preserve/replace `extra_attributes` using latest row payload
 
-- [ ] Extend schema: add `csv_upload_access` audit event (AC: 7)
-  - [ ] Add `"csv_upload_access"` action to the `ImportBatchAccessEvent` type in `cblaero/src/modules/audit/index.ts` (extends the existing union `"list_import_batches" | "read_import_batch_detail"`)
-  - [ ] Emit a `recordImportBatchAccessEvent` call on each successful CSV upload and error-report download, with `action="csv_upload_access"`, batch ID, and actor context
+- [x] Extend schema: add `csv_upload_access` audit event (AC: 7)
+  - [x] Add `"csv_upload_access"` action to the `ImportBatchAccessEvent` type in `cblaero/src/modules/audit/index.ts` (extends the existing union `"list_import_batches" | "read_import_batch_detail"`)
+  - [x] Emit a `recordImportBatchAccessEvent` call on each successful CSV upload and error-report download, with `action="csv_upload_access"`, batch ID, and actor context
 
-- [ ] Write tests (AC: 1–8)
-  - [ ] Create `cblaero/src/app/api/internal/recruiter/csv-upload/__tests__/route.test.ts`
-    - [ ] 401 when no session cookie
-    - [ ] 403 when session role is `compliance-officer` (not granted `recruiter:csv-upload`)
-    - [ ] 422 when CSV row count > 10,000 (no import_batch created)
-    - [ ] 200/202 (check final response) with a valid 3-row CSV; assert import_batch returned with `status=complete`, `imported=3`, `errors=0`
-    - [ ] 200 with a CSV containing 2 valid rows and 1 row with no identity fields; assert `imported=2`, `errors=1`
-    - [ ] 200 with extra unmapped CSV columns; assert candidate rows include normalized `extra_attributes` keys/values
-    - [ ] 200 with blocked sensitive columns (`password`, `token`); assert blocked keys are excluded from `extra_attributes`
-    - [ ] 200 with oversized `extra_attributes` payload; assert offending rows are rejected as `invalid_format`
-    - [ ] Tenant scope: recruiter for tenant-A cannot download error report for a batch belonging to tenant-B (404)
-  - [ ] Create `cblaero/src/app/api/internal/recruiter/csv-upload/[batchId]/__tests__/route.test.ts`
-    - [ ] 404 for unknown batch ID
-    - [ ] 404 for cross-tenant batch access attempt
-    - [ ] 200 with correct shape for a seeded in-memory batch
-  - [ ] Run `npm run lint`, `npm run typecheck`, `npm test`, `npm run build` in `cblaero/`; capture all output in completion notes
+- [x] Write tests (AC: 1–8)
+  - [x] Create `cblaero/src/app/api/internal/recruiter/csv-upload/__tests__/route.test.ts`
+    - [x] 401 when no session cookie
+    - [x] 403 when session role is `compliance-officer` (not granted `recruiter:csv-upload`)
+    - [x] 422 when CSV row count > 10,000 (no import_batch created)
+    - [x] 200/202 (check final response) with a valid 3-row CSV; assert import_batch returned with `status=complete`, `imported=3`, `errors=0`
+    - [x] 200 with a CSV containing 2 valid rows and 1 row with no identity fields; assert `imported=2`, `errors=1`
+    - [x] 200 with extra unmapped CSV columns; assert candidate rows include normalized `extra_attributes` keys/values
+    - [x] 200 with blocked sensitive columns (`password`, `token`); assert blocked keys are excluded from `extra_attributes`
+    - [x] 200 with oversized `extra_attributes` payload; assert offending rows are rejected as `invalid_format`
+    - [x] Tenant scope: recruiter for tenant-A cannot download error report for a batch belonging to tenant-B (404)
+  - [x] Create `cblaero/src/app/api/internal/recruiter/csv-upload/[batchId]/__tests__/route.test.ts`
+    - [x] 404 for unknown batch ID
+    - [x] 404 for cross-tenant batch access attempt
+    - [x] 200 with correct shape for a seeded in-memory batch
+  - [x] Run `npm run lint`, `npm run typecheck`, `npm test`, `npm run build` in `cblaero/`; capture all output in completion notes
 
 ## Dev Notes
 
@@ -203,4 +203,25 @@ GPT-5.3-Codex
 - cblaero/src/app/dashboard/recruiter/upload/CsvUploadWizard.tsx
 - cblaero/src/app/dashboard/recruiter/upload/BatchProgressCard.tsx
 - cblaero/src/app/dashboard/page.tsx
+- cblaero/src/app/dashboard/admin/MigrationStatusCard.tsx
 - cblaero/supabase/schema.sql
+### Review-Driven Fixes (2026-03-30, code-review pass)
+
+- [x] H1: Marked all Tasks/Subtasks `[x]` — task list was left unchecked despite full implementation
+- [x] H2: Replaced misleading "dead code" framing on `if (!session)` guards in all 3 routes with explicit TypeScript-narrowing comments — guards remain for type safety, not runtime logic
+- [x] H3: Added compensating `candidates.delete().eq("source_batch_id", batchId)` in the Supabase failure catch block to prevent orphan candidate rows when a mid-batch chunk fails
+- [x] H4: Removed unreliable fallback arithmetic in `processSupabaseBatch` running totals; now throws immediately if `process_import_chunk` RPC returns no result
+- [x] M1: Added `cblaero/src/app/dashboard/admin/MigrationStatusCard.tsx` to story File List (was modified during this story, missing from file list)
+- [x] M2: Added 50 MB `file.size` guard before `file.text()` to prevent memory exhaustion on large files prior to row-count rejection
+- [x] M3: Extended blocked-key test to assert `secret` and `api_key` are excluded from `extra_attributes` (only `password` and `token` were previously asserted)
+- [x] M4: Added two positive error-report download tests: CSV format/headers/content assertion, and empty-errors headers-only assertion
+
+### Review-Driven Action Items (2026-03-30)
+
+- [ ] Add tests for audit event emission (verify `recordImportBatchAccessEvent` on upload and error report download)
+- [ ] Add tests for malformed CSV edge cases (unclosed quotes, embedded newlines, binary data)
+- [ ] Add tests for large individual cell values (enforce/document per-cell size limit)
+- [ ] Add concurrency tests for parallel uploads (race/resource contention)
+- [ ] Add retry logic or error state for chunk failures (reliability improvement)
+- [ ] Expand and/or make `extra_attributes` blocklist configurable (security improvement)
+- [ ] Add generic error fallback in UI for unknown server errors (UX improvement)

@@ -77,6 +77,8 @@ export async function GET(
     );
   }
 
+  // TypeScript type narrowing: authorizeAccess() only returns allowed:true when session is
+  // non-null (see authorization.ts:105-107). This guard satisfies the type checker only.
   if (!session) {
     return NextResponse.json(
       { error: { code: "unauthenticated", message: "Authentication required." } },

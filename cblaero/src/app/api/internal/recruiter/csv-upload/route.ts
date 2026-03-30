@@ -425,9 +425,12 @@ async function processSupabaseBatch(input: {
     }
 
     const rpcResult = Array.isArray(data) ? data[0] : null;
-    imported = Number(rpcResult?.imported ?? imported + candidateChunk.length);
-    skipped = Number(rpcResult?.skipped ?? skipped);
-    errors = Number(rpcResult?.errors ?? errors + errorChunk.length);
+    if (!rpcResult) {
+      throw new Error("process_import_chunk RPC returned no result");
+    }
+    imported = Number(rpcResult.imported);
+    skipped = Number(rpcResult.skipped);
+    errors = Number(rpcResult.errors);
   }
 
   return { imported, skipped, errors };
@@ -497,6 +500,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // TypeScript type narrowing: authorizeAccess() only returns allowed:true when session is
+  // non-null (see authorization.ts:105-107). This guard satisfies the type checker only.
   if (!session) {
     return NextResponse.json(
       { error: { code: "unauthenticated", message: "Authentication required." } },
@@ -533,6 +538,21 @@ export async function POST(request: NextRequest) {
         },
       },
       { status: 415 },
+    );
+  }
+
+  // Guard against memory exhaustion before reading the full file: 50 MB is far more than
+  // any legitimate 10,000-row CSV but prevents egregious payloads from consuming server heap.
+  const MAX_FILE_BYTES = 50 * 1024 * 1024;
+  if (file.size > MAX_FILE_BYTES) {
+    return NextResponse.json(
+      {
+        error: {
+          code: "file_too_large",
+          message: "CSV file must be smaller than 50 MB.",
+        },
+      },
+      { status: 413 },
     );
   }
 
@@ -728,6 +748,9 @@ export async function POST(request: NextRequest) {
       });
     } else {
       const client = getSupabaseAdminClient();
+      // Compensating delete: remove any candidate rows already committed in earlier chunks
+      // so they are not picked up by the enrichment worker with a rolled_back batch.
+      await client.from("candidates").delete().eq("source_batch_id", batchId);
       await client
         .from("import_batch")
         .update({ status: "rolled_back", completed_at: new Date().toISOString() })
