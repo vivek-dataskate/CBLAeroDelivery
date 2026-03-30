@@ -151,13 +151,23 @@ export async function GET(
     );
   }
 
-  await recordImportBatchAccessEvent({
-    traceId,
-    actorId: session.actorId,
-    tenantId: session.tenantId,
-    batchId,
-    action: "read_import_batch_detail",
-  });
+  try {
+    await recordImportBatchAccessEvent({
+      traceId,
+      actorId: session.actorId,
+      tenantId: session.tenantId,
+      batchId,
+      action: "read_import_batch_detail",
+    });
+  } catch (error) {
+    console.error("[admin/import-batches/:batchId] failed to persist audit event; continuing response", {
+      traceId,
+      actorId: session.actorId,
+      tenantId: session.tenantId,
+      batchId,
+      error,
+    });
+  }
 
   if (shouldUseInMemoryPersistenceForTests()) {
     const batch = inMemoryBatches.find(
