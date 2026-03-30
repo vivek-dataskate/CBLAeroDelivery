@@ -197,8 +197,8 @@ GPT-5.3-Codex
 - cblaero/src/app/api/internal/recruiter/csv-upload/route.ts
 - cblaero/src/app/api/internal/recruiter/csv-upload/[batchId]/route.ts
 - cblaero/src/app/api/internal/recruiter/csv-upload/[batchId]/error-report/route.ts
-- cblaero/src/app/api/internal/recruiter/csv-upload/__tests__/route.test.ts
-- cblaero/src/app/api/internal/recruiter/csv-upload/[batchId]/__tests__/route.test.ts
+- cblaero/src/app/api/internal/recruiter/csv-upload/**tests**/route.test.ts
+- cblaero/src/app/api/internal/recruiter/csv-upload/[batchId]/**tests**/route.test.ts
 - cblaero/src/app/dashboard/recruiter/upload/page.tsx
 - cblaero/src/app/dashboard/recruiter/upload/CsvUploadWizard.tsx
 - cblaero/src/app/dashboard/recruiter/upload/BatchProgressCard.tsx
