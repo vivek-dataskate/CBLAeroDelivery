@@ -11,7 +11,7 @@ type CanonicalField =
   | "location"
   | "skills"
   | "availability_status"
-  | "(ignore)";
+  | "(additional_attribute)";
 
 type ValidationSummary = {
   totalRows: number;
@@ -40,7 +40,7 @@ const FIELD_OPTIONS: CanonicalField[] = [
   "location",
   "skills",
   "availability_status",
-  "(ignore)",
+  "(additional_attribute)",
 ];
 
 const FIELD_ALIASES: Record<string, CanonicalField> = {
@@ -116,7 +116,7 @@ function normalizeHeader(value: string): string {
 function inferMapping(headers: string[]): Record<string, CanonicalField> {
   const map: Record<string, CanonicalField> = {};
   for (const header of headers) {
-    map[header] = FIELD_ALIASES[normalizeHeader(header)] ?? "(ignore)";
+    map[header] = FIELD_ALIASES[normalizeHeader(header)] ?? "(additional_attribute)";
   }
   return map;
 }
@@ -303,15 +303,14 @@ export default function CsvUploadWizard() {
         <section className="rounded-2xl border border-white/10 bg-slate-950/65 p-5">
           <p className="text-xs uppercase tracking-[0.15em] text-slate-400">Step 2 - Column Mapping</p>
           <p className="mt-2 text-xs text-slate-400">
-            Unmapped non-required columns are retained as additional attributes under
-            candidate extra_attributes.
+            Columns mapped as <b>Additional Attribute</b> are retained as additional attributes under candidate <b>extra_attributes</b> (JSON).
           </p>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             {parsed.headers.map((header) => (
               <label key={header} className="flex items-center justify-between gap-3 text-sm">
                 <span className="truncate text-slate-200">{header}</span>
                 <select
-                  value={mapping[header] ?? "(ignore)"}
+                  value={mapping[header] ?? "(additional_attribute)"}
                   onChange={(event) => {
                     const value = event.target.value as CanonicalField;
                     setMapping((current) => ({ ...current, [header]: value }));
@@ -320,7 +319,7 @@ export default function CsvUploadWizard() {
                 >
                   {FIELD_OPTIONS.map((option) => (
                     <option key={option} value={option}>
-                      {option}
+                      {option === "(additional_attribute)" ? "Additional Attribute" : option}
                     </option>
                   ))}
                 </select>

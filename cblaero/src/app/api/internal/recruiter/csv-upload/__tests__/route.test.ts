@@ -222,8 +222,8 @@ describe("POST /api/internal/recruiter/csv-upload", () => {
     const request = await buildMultipartUploadRequest({
       token: issued.token,
       csv: buildCsv([
-        "name,email,password,token",
-        "Jane Doe,jane@example.com,my-secret,abc123",
+        "name,email,password,token,secret,api_key",
+        "Jane Doe,jane@example.com,my-secret,abc123,s3cr3t,key-xyz",
       ]),
       columnMap: {
         name: "name",
@@ -238,6 +238,8 @@ describe("POST /api/internal/recruiter/csv-upload", () => {
     const candidates = listCsvCandidatesForTest();
     expect(candidates[0].extra_attributes.password).toBeUndefined();
     expect(candidates[0].extra_attributes.token).toBeUndefined();
+    expect(candidates[0].extra_attributes.secret).toBeUndefined();
+    expect(candidates[0].extra_attributes.api_key).toBeUndefined();
   });
 
   it("rejects oversized extra_attributes payload rows as invalid_format", async () => {
