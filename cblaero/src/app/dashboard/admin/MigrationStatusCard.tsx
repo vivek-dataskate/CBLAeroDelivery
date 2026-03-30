@@ -125,11 +125,9 @@ export default async function MigrationStatusCard({
     return (
       <section className="mt-8 rounded-2xl border border-white/10 bg-slate-950/65 p-5">
         <p className="text-xs uppercase tracking-[0.15em] text-slate-400">Initial Migration</p>
-        <p className="mt-2 text-sm text-slate-400">No migration runs found.</p>
+        <p className="mt-2 text-sm text-slate-400">No migration data available.</p>
         <p className="mt-1 text-xs text-slate-500">
-          Run{" "}
-          <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-300">initial_load.py</code>{" "}
-          on Render to import the initial candidate corpus.
+          The system is awaiting initial data import. Please contact your administrator if this message persists.
         </p>
       </section>
     );
