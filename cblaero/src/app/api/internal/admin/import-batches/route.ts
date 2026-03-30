@@ -114,13 +114,22 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  await recordImportBatchAccessEvent({
-    traceId,
-    actorId: session.actorId,
-    tenantId: session.tenantId,
-    batchId: null,
-    action: "list_import_batches",
-  });
+  try {
+    await recordImportBatchAccessEvent({
+      traceId,
+      actorId: session.actorId,
+      tenantId: session.tenantId,
+      batchId: null,
+      action: "list_import_batches",
+    });
+  } catch (error) {
+    console.error("[admin/import-batches] failed to persist audit event; continuing response", {
+      traceId,
+      actorId: session.actorId,
+      tenantId: session.tenantId,
+      error,
+    });
+  }
 
   const pageStr = request.nextUrl.searchParams.get("page") ?? "1";
   const page = Math.max(1, Number.parseInt(pageStr, 10) || 1);

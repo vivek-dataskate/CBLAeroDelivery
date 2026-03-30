@@ -101,13 +101,24 @@ export default async function MigrationStatusCard({
   const batch = await fetchLatestMigrationBatch(tenantId);
 
   if (actorId) {
-    await recordImportBatchAccessEvent({
-      traceId: crypto.randomUUID(),
-      actorId,
-      tenantId,
-      batchId: batch?.id ?? null,
-      action: "list_import_batches",
-    });
+    const traceId = crypto.randomUUID();
+    try {
+      await recordImportBatchAccessEvent({
+        traceId,
+        actorId,
+        tenantId,
+        batchId: batch?.id ?? null,
+        action: "list_import_batches",
+      });
+    } catch (error) {
+      console.error("[dashboard/admin] failed to persist audit event; rendering page anyway", {
+        traceId,
+        actorId,
+        tenantId,
+        batchId: batch?.id ?? null,
+        error,
+      });
+    }
   }
 
   if (!batch) {
