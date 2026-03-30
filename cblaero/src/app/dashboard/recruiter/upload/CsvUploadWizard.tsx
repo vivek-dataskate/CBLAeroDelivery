@@ -44,6 +44,16 @@ const FIELD_OPTIONS: CanonicalField[] = [
   "(ignore)",
 ];
 
+const FIELD_LABELS: Record<CanonicalField, string> = {
+  name: "Name",
+  email: "Email",
+  phone: "Phone",
+  location: "Location",
+  skills: "Skills",
+  availability_status: "Availability Status",
+  "(ignore)": "Additional Attribute",
+};
+
 const FIELD_ALIASES: Record<string, CanonicalField> = {
   name: "name",
   full_name: "name",
@@ -320,7 +330,7 @@ export default function CsvUploadWizard() {
                 >
                   {FIELD_OPTIONS.map((option) => (
                     <option key={option} value={option}>
-                      {option === "(ignore)" ? "Additional Attribute" : option}
+                      {FIELD_LABELS[option]}
                     </option>
                   ))}
                 </select>
