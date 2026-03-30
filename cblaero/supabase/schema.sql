@@ -237,6 +237,7 @@ create table if not exists cblaero_app.candidates (
   skills jsonb not null default '[]'::jsonb,
   certifications jsonb not null default '[]'::jsonb,
   experience jsonb not null default '[]'::jsonb,
+  extra_attributes jsonb not null default '{}'::jsonb,
   availability_status text not null default 'passive' check (availability_status in ('active', 'passive', 'unavailable')),
   ingestion_state text not null default 'pending_dedup' check (ingestion_state in ('pending_dedup', 'pending_enrichment', 'active', 'rejected')),
   source text not null,
@@ -245,6 +246,9 @@ create table if not exists cblaero_app.candidates (
   updated_at timestamptz not null default now(),
   constraint candidates_email_or_phone_required check (email is not null or phone is not null)
 );
+
+alter table cblaero_app.candidates
+  add column if not exists extra_attributes jsonb not null default '{}'::jsonb;
 
 create unique index if not exists uq_candidates_tenant_email
   on cblaero_app.candidates (tenant_id, email)
@@ -345,6 +349,7 @@ begin
           skills,
           certifications,
           experience,
+          extra_attributes,
           availability_status,
           ingestion_state,
           source,
@@ -360,6 +365,7 @@ begin
           coalesce(v_candidate->'skills', '[]'::jsonb),
           coalesce(v_candidate->'certifications', '[]'::jsonb),
           coalesce(v_candidate->'experience', '[]'::jsonb),
+          coalesce(v_candidate->'extra_attributes', '{}'::jsonb),
           coalesce(v_candidate->>'availability_status', 'passive'),
           coalesce(v_candidate->>'ingestion_state', 'pending_dedup'),
           coalesce(v_candidate->>'source', 'migration'),
@@ -374,6 +380,7 @@ begin
           skills = excluded.skills,
           certifications = excluded.certifications,
           experience = excluded.experience,
+          extra_attributes = excluded.extra_attributes,
           availability_status = excluded.availability_status,
           ingestion_state = excluded.ingestion_state,
           source = excluded.source,
@@ -389,6 +396,7 @@ begin
           skills,
           certifications,
           experience,
+          extra_attributes,
           availability_status,
           ingestion_state,
           source,
@@ -404,6 +412,7 @@ begin
           coalesce(v_candidate->'skills', '[]'::jsonb),
           coalesce(v_candidate->'certifications', '[]'::jsonb),
           coalesce(v_candidate->'experience', '[]'::jsonb),
+          coalesce(v_candidate->'extra_attributes', '{}'::jsonb),
           coalesce(v_candidate->>'availability_status', 'passive'),
           coalesce(v_candidate->>'ingestion_state', 'pending_dedup'),
           coalesce(v_candidate->>'source', 'migration'),
@@ -418,6 +427,7 @@ begin
           skills = excluded.skills,
           certifications = excluded.certifications,
           experience = excluded.experience,
+          extra_attributes = excluded.extra_attributes,
           availability_status = excluded.availability_status,
           ingestion_state = excluded.ingestion_state,
           source = excluded.source,

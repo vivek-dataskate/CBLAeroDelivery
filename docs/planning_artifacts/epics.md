@@ -23,7 +23,7 @@ This document provides the complete epic and story breakdown for CBLAero, decomp
 
 ### Functional Requirements
 
-FR1: System can ingest candidate records from bulk CSV upload (up to 1M records initial load, then daily/weekly recruiter uploads of 100-10,000 records); upload must validate, deduplicate, and report import errors per row with a downloadable error report.
+FR1: System can ingest candidate records from bulk CSV upload (up to 1M records initial load, then daily/weekly recruiter uploads of 100-10,000 records); upload must validate, deduplicate, retain unmapped columns in candidate extra_attributes (JSONB), and report import errors per row with a downloadable error report.
 FR1a: System can perform initial bulk load of up to 1M existing candidate records via a one-time admin-supervised migration pipeline; load must complete within a time-bounded batch window with progress tracking and rollback capability.
 FR2: System can ingest candidate data automatically from configured ATS system connectors (read-only API polling or webhook) and recruiter email inboxes (Microsoft Graph mail parsing); new or updated records are upserted via the standard deduplication pipeline with source attribution.
 FR3: System can store and index candidate profiles with core attributes (name, phone, email, location, skills, certifications, experience, availability status).
@@ -145,7 +145,7 @@ NFR38: Horizontal scaling supports independently scaled processing services with
 
 - Architecture mandates Next.js App Router TypeScript baseline as project starter; Epic 1 Story 1 must initialize from this baseline before feature work.
 - Initial one-time 1M-record load must use an admin-supervised migration path, not the regular recruiter upload UI.
-- Recruiter CSV upload path must support mapping wizard, live validation preview, per-row error report download, and max 10,000 records per upload.
+- Recruiter CSV upload path must support mapping wizard, live validation preview, per-row error report download, and max 10,000 records per upload; columns not mapped to canonical fields are retained in candidate extra_attributes (JSONB) with key normalization, blocked sensitive-key filtering, and per-row payload guardrails.
 - ATS and recruiter-email ingestion paths must use source attribution and must never silently discard sync failures.
 - Deduplication runs asynchronously; imported records move through pending states before activation.
 - Candidate list/search at 1M+ scale requires cursor pagination and indexed pre-filters; no unfiltered show-all table mode.
@@ -542,6 +542,7 @@ So that I can quickly add candidate pools with actionable error feedback.
 **When** the upload wizard runs validation and column mapping
 **Then** invalid rows are reported with downloadable per-row errors
 **And** valid rows are written into an import batch for background processing
+**And** unmapped columns are retained in candidate extra_attributes (JSONB) with guardrails applied
 
 ### Story 2.3: Implement ATS and Email Ingestion Connectors
 

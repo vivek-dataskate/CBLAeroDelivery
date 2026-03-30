@@ -126,6 +126,8 @@ Three ingestion paths are supported; all funnel through the same deduplication a
 - Web UI: drag-and-drop CSV with column mapping wizard and live validation preview.
 - Max 10,000 records per recruiter upload; larger batches must be split or handled via admin migration path.
 - Validated rows are written to `import_batch` table; a background worker processes the batch.
+- Columns not mapped to canonical candidate fields are persisted to `candidates.extra_attributes` (`jsonb`) to preserve recruiter-provided context without schema churn.
+- `extra_attributes` guardrails: normalize keys to lowercase snake_case, drop blocked sensitive keys (`password`, `token`, `secret`, `api_key`), and reject rows that exceed per-row key-count/serialized-size limits.
 - Per-row error report available for download after processing (missing required fields, failed dedup rules, invalid format).
 - Imported records enter `pending_enrichment` state; enrichment worker picks them up via outbox.
 
