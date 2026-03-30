@@ -72,6 +72,36 @@ create index if not exists idx_audit_step_up_attempts_occurred_at
 create index if not exists idx_audit_step_up_attempts_tenant
   on cblaero_app.audit_step_up_attempts (tenant_id, occurred_at desc);
 
+create table if not exists cblaero_app.audit_client_context_confirmations (
+  id bigint generated always as identity primary key,
+  trace_id text not null,
+  actor_id text not null,
+  role text not null,
+  tenant_id text not null,
+  active_client_id text not null,
+  target_client_id text not null,
+  action text not null,
+  path text not null,
+  method text not null,
+  outcome text not null check (outcome in ('required', 'confirmed')),
+  occurred_at timestamptz not null default now()
+);
+
+create index if not exists idx_audit_client_context_confirmations_occurred_at
+  on cblaero_app.audit_client_context_confirmations (occurred_at desc);
+
+create index if not exists idx_audit_client_context_confirmations_tenant
+  on cblaero_app.audit_client_context_confirmations (tenant_id, occurred_at desc);
+
+create table if not exists cblaero_app.cross_client_confirmation_token_uses (
+  jti text primary key,
+  expires_at timestamptz not null,
+  consumed_at timestamptz not null default now()
+);
+
+create index if not exists idx_cross_client_confirmation_token_uses_expires_at
+  on cblaero_app.cross_client_confirmation_token_uses (expires_at);
+
 create table if not exists cblaero_app.audit_data_residency_checks (
   id bigint generated always as identity primary key,
   trace_id text not null,

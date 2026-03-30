@@ -5,8 +5,10 @@ import { clearAdminGovernanceStoreForTest } from "@/modules/admin";
 import { SESSION_COOKIE_NAME, issueSessionToken } from "@/modules/auth";
 import {
   clearAuthorizationDenyEventsForTest,
+  clearClientContextConfirmationEventsForTest,
   clearStepUpAttemptEventsForTest,
   listAuthorizationDenyEvents,
+  listClientContextConfirmationEvents,
   listStepUpAttemptEvents,
 } from "@/modules/audit";
 
@@ -24,6 +26,7 @@ describe("internal candidates API authorization", () => {
   beforeEach(async () => {
     await clearAdminGovernanceStoreForTest();
     await clearAuthorizationDenyEventsForTest();
+    await clearClientContextConfirmationEventsForTest();
     await clearStepUpAttemptEventsForTest();
   });
 
@@ -125,7 +128,7 @@ describe("internal candidates API authorization", () => {
     });
   });
 
-  it("denies recruiter write operations by role", async () => {
+  it("allows recruiter write operations by role", async () => {
     const issued = await issueSessionToken({
       actorId: "actor-rec",
       email: "recruiter@cblsolutions.com",
@@ -142,6 +145,7 @@ describe("internal candidates API authorization", () => {
       },
       body: JSON.stringify({
         tenantId: "tenant-a",
+        activeClientId: "tenant-a",
         candidateIds: ["cand-1", "cand-2"],
       }),
     });
@@ -149,16 +153,12 @@ describe("internal candidates API authorization", () => {
     const response = await POST(request);
     const body = await response.json();
 
-    expect(response.status).toBe(403);
-    expect(body.error.code).toBe("forbidden");
-
-    const events = await listAuthorizationDenyEvents();
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({
-      reason: "forbidden_role",
-      role: "recruiter",
-      method: "POST",
-    });
+    expect(response.status).toBe(200);
+    expect(body.data.updated).toBe(2);
+    expect(body.data.tenantId).toBe("tenant-a");
+    expect(body.meta.activeClientId).toBe("tenant-a");
+    expect(body.meta.targetClientId).toBe("tenant-a");
+    expect(await listAuthorizationDenyEvents()).toHaveLength(0);
   });
 
   it("requires step-up for stale communication-history reads", async () => {
@@ -258,6 +258,7 @@ describe("internal candidates API authorization", () => {
       },
       body: JSON.stringify({
         tenantId: "tenant-a",
+        activeClientId: "tenant-a",
         action: "export",
         format: "csv",
         candidateIds: ["cand-1", "cand-2"],
@@ -298,6 +299,7 @@ describe("internal candidates API authorization", () => {
       },
       body: JSON.stringify({
         tenantId: "tenant-a",
+        activeClientId: "tenant-a",
         action: "export",
         format: "csv",
         candidateIds: ["cand-3"],
@@ -311,6 +313,8 @@ describe("internal candidates API authorization", () => {
     expect(body.data.status).toBe("queued");
     expect(body.data.format).toBe("csv");
     expect(body.data.candidateCount).toBe(1);
+    expect(body.meta.activeClientId).toBe("tenant-a");
+    expect(body.meta.targetClientId).toBe("tenant-a");
 
     const events = await listStepUpAttemptEvents();
     expect(events).toHaveLength(1);
@@ -320,5 +324,379 @@ describe("internal candidates API authorization", () => {
       outcome: "verified",
       reason: null,
     });
+  });
+
+  it("requires explicit confirmation for cross-client exports", async () => {
+    const issued = await issueSessionToken({
+      actorId: "actor-delivery-cross",
+      email: "delivery@cblsolutions.com",
+      tenantId: "tenant-a",
+      clientIds: ["tenant-a", "tenant-b"],
+      role: "delivery-head",
+      rememberDevice: false,
+    });
+
+    const request = buildRequest("https://aerodelivery.onrender.com/api/internal/candidates", {
+      method: "POST",
+      headers: {
+        cookie: withSessionCookie(issued.token),
+        "content-type": "application/json",
+        "x-trace-id": "trace-cross-client-confirm-required",
+      },
+      body: JSON.stringify({
+        tenantId: "tenant-b",
+        activeClientId: "tenant-a",
+        action: "export",
+        format: "csv",
+        candidateIds: ["cand-b-1"],
+      }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.error.code).toBe("cross_client_confirmation_required");
+    expect(body.error.activeClientId).toBe("tenant-a");
+    expect(body.error.targetClientId).toBe("tenant-b");
+
+    const confirmationEvents = await listClientContextConfirmationEvents();
+    expect(confirmationEvents).toHaveLength(1);
+    expect(confirmationEvents[0]).toMatchObject({
+      traceId: "trace-cross-client-confirm-required",
+      activeClientId: "tenant-a",
+      targetClientId: "tenant-b",
+      outcome: "required",
+      action: "candidate:data-export",
+    });
+  });
+
+  it("allows confirmed cross-client exports for authorized multi-client actors", async () => {
+    const issued = await issueSessionToken({
+      actorId: "actor-delivery-cross-confirmed",
+      email: "delivery@cblsolutions.com",
+      tenantId: "tenant-a",
+      clientIds: ["tenant-a", "tenant-b"],
+      role: "delivery-head",
+      rememberDevice: false,
+    });
+
+    const firstRequest = buildRequest("https://aerodelivery.onrender.com/api/internal/candidates", {
+      method: "POST",
+      headers: {
+        cookie: withSessionCookie(issued.token),
+        "content-type": "application/json",
+        "x-trace-id": "trace-cross-client-confirmed-initial",
+      },
+      body: JSON.stringify({
+        tenantId: "tenant-b",
+        activeClientId: "tenant-a",
+        action: "export",
+        format: "json",
+        candidateIds: ["cand-b-2", "cand-b-3"],
+      }),
+    });
+
+    const firstResponse = await POST(firstRequest);
+    const firstBody = await firstResponse.json();
+
+    expect(firstResponse.status).toBe(409);
+    expect(firstBody.error.code).toBe("cross_client_confirmation_required");
+    expect(typeof firstBody.error.confirmationToken).toBe("string");
+
+    const request = buildRequest("https://aerodelivery.onrender.com/api/internal/candidates", {
+      method: "POST",
+      headers: {
+        cookie: withSessionCookie(issued.token),
+        "content-type": "application/json",
+        "x-trace-id": "trace-cross-client-confirmed",
+      },
+      body: JSON.stringify({
+        tenantId: "tenant-b",
+        activeClientId: "tenant-a",
+        crossClientConfirmationToken: firstBody.error.confirmationToken,
+        action: "export",
+        format: "json",
+        candidateIds: ["cand-b-2", "cand-b-3"],
+      }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.data.tenantId).toBe("tenant-b");
+    expect(body.data.format).toBe("json");
+    expect(body.meta.activeClientId).toBe("tenant-a");
+    expect(body.meta.targetClientId).toBe("tenant-b");
+
+    const confirmationEvents = await listClientContextConfirmationEvents();
+    expect(confirmationEvents).toHaveLength(2);
+    const confirmedEvent = confirmationEvents.find((event) => event.outcome === "confirmed");
+    expect(confirmedEvent).toMatchObject({
+      traceId: "trace-cross-client-confirmed",
+      activeClientId: "tenant-a",
+      targetClientId: "tenant-b",
+      outcome: "confirmed",
+      action: "candidate:data-export",
+    });
+  });
+
+  it("rejects invalid cross-client confirmation token", async () => {
+    const issued = await issueSessionToken({
+      actorId: "actor-delivery-cross-invalid-token",
+      email: "delivery@cblsolutions.com",
+      tenantId: "tenant-a",
+      clientIds: ["tenant-a", "tenant-b"],
+      role: "delivery-head",
+      rememberDevice: false,
+    });
+
+    const request = buildRequest("https://aerodelivery.onrender.com/api/internal/candidates", {
+      method: "POST",
+      headers: {
+        cookie: withSessionCookie(issued.token),
+        "content-type": "application/json",
+        "x-trace-id": "trace-cross-client-invalid-token",
+      },
+      body: JSON.stringify({
+        tenantId: "tenant-b",
+        activeClientId: "tenant-a",
+        crossClientConfirmationToken: "not-a-valid-token",
+        action: "export",
+        format: "csv",
+        candidateIds: ["cand-b-5"],
+      }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.error.code).toBe("cross_client_confirmation_required");
+    expect(typeof body.error.confirmationToken).toBe("string");
+
+    const confirmationEvents = await listClientContextConfirmationEvents();
+    expect(confirmationEvents).toHaveLength(1);
+    expect(confirmationEvents[0]).toMatchObject({
+      traceId: "trace-cross-client-invalid-token",
+      activeClientId: "tenant-a",
+      targetClientId: "tenant-b",
+      outcome: "required",
+      action: "candidate:data-export",
+    });
+  });
+
+  it("rejects confirmation tokens when request intent drifts", async () => {
+    const issued = await issueSessionToken({
+      actorId: "actor-delivery-cross-intent-drift",
+      email: "delivery@cblsolutions.com",
+      tenantId: "tenant-a",
+      clientIds: ["tenant-a", "tenant-b"],
+      role: "delivery-head",
+      rememberDevice: false,
+    });
+
+    const challengeRequest = buildRequest(
+      "https://aerodelivery.onrender.com/api/internal/candidates",
+      {
+        method: "POST",
+        headers: {
+          cookie: withSessionCookie(issued.token),
+          "content-type": "application/json",
+          "x-trace-id": "trace-cross-client-intent-drift-initial",
+        },
+        body: JSON.stringify({
+          tenantId: "tenant-b",
+          activeClientId: "tenant-a",
+          action: "export",
+          format: "csv",
+          candidateIds: ["cand-b-10"],
+        }),
+      },
+    );
+
+    const challengeResponse = await POST(challengeRequest);
+    const challengeBody = await challengeResponse.json();
+
+    expect(challengeResponse.status).toBe(409);
+    expect(challengeBody.error.code).toBe("cross_client_confirmation_required");
+    expect(typeof challengeBody.error.confirmationToken).toBe("string");
+
+    const mismatchedConfirmRequest = buildRequest(
+      "https://aerodelivery.onrender.com/api/internal/candidates",
+      {
+        method: "POST",
+        headers: {
+          cookie: withSessionCookie(issued.token),
+          "content-type": "application/json",
+          "x-trace-id": "trace-cross-client-intent-drift-mismatch",
+        },
+        body: JSON.stringify({
+          tenantId: "tenant-b",
+          activeClientId: "tenant-a",
+          crossClientConfirmationToken: challengeBody.error.confirmationToken,
+          action: "export",
+          format: "json",
+          candidateIds: ["cand-b-10"],
+        }),
+      },
+    );
+
+    const mismatchedConfirmResponse = await POST(mismatchedConfirmRequest);
+    const mismatchedConfirmBody = await mismatchedConfirmResponse.json();
+
+    expect(mismatchedConfirmResponse.status).toBe(409);
+    expect(mismatchedConfirmBody.error.code).toBe("cross_client_confirmation_required");
+  });
+
+  it("rejects replayed cross-client confirmation tokens", async () => {
+    const issued = await issueSessionToken({
+      actorId: "actor-delivery-cross-replay",
+      email: "delivery@cblsolutions.com",
+      tenantId: "tenant-a",
+      clientIds: ["tenant-a", "tenant-b"],
+      role: "delivery-head",
+      rememberDevice: false,
+    });
+
+    const challengeRequest = buildRequest(
+      "https://aerodelivery.onrender.com/api/internal/candidates",
+      {
+        method: "POST",
+        headers: {
+          cookie: withSessionCookie(issued.token),
+          "content-type": "application/json",
+          "x-trace-id": "trace-cross-client-replay-initial",
+        },
+        body: JSON.stringify({
+          tenantId: "tenant-b",
+          activeClientId: "tenant-a",
+          action: "export",
+          format: "csv",
+          candidateIds: ["cand-b-6"],
+        }),
+      },
+    );
+
+    const challengeResponse = await POST(challengeRequest);
+    const challengeBody = await challengeResponse.json();
+
+    expect(challengeResponse.status).toBe(409);
+    expect(typeof challengeBody.error.confirmationToken).toBe("string");
+
+    const token = challengeBody.error.confirmationToken as string;
+
+    const confirmRequest = buildRequest(
+      "https://aerodelivery.onrender.com/api/internal/candidates",
+      {
+        method: "POST",
+        headers: {
+          cookie: withSessionCookie(issued.token),
+          "content-type": "application/json",
+          "x-trace-id": "trace-cross-client-replay-confirmed",
+        },
+        body: JSON.stringify({
+          tenantId: "tenant-b",
+          activeClientId: "tenant-a",
+          crossClientConfirmationToken: token,
+          action: "export",
+          format: "csv",
+          candidateIds: ["cand-b-6"],
+        }),
+      },
+    );
+
+    const confirmResponse = await POST(confirmRequest);
+    expect(confirmResponse.status).toBe(200);
+
+    const replayRequest = buildRequest(
+      "https://aerodelivery.onrender.com/api/internal/candidates",
+      {
+        method: "POST",
+        headers: {
+          cookie: withSessionCookie(issued.token),
+          "content-type": "application/json",
+          "x-trace-id": "trace-cross-client-replay-reused",
+        },
+        body: JSON.stringify({
+          tenantId: "tenant-b",
+          activeClientId: "tenant-a",
+          crossClientConfirmationToken: token,
+          action: "export",
+          format: "csv",
+          candidateIds: ["cand-b-7"],
+        }),
+      },
+    );
+
+    const replayResponse = await POST(replayRequest);
+    const replayBody = await replayResponse.json();
+
+    expect(replayResponse.status).toBe(409);
+    expect(replayBody.error.code).toBe("cross_client_confirmation_required");
+  });
+
+  it("allows active client selection when client is authorized", async () => {
+    const issued = await issueSessionToken({
+      actorId: "actor-delivery-active-selection",
+      email: "delivery@cblsolutions.com",
+      tenantId: "tenant-a",
+      clientIds: ["tenant-a", "tenant-b"],
+      role: "delivery-head",
+      rememberDevice: false,
+    });
+
+    const request = buildRequest("https://aerodelivery.onrender.com/api/internal/candidates", {
+      method: "POST",
+      headers: {
+        cookie: withSessionCookie(issued.token),
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        tenantId: "tenant-b",
+        activeClientId: "tenant-b",
+        candidateIds: ["cand-a-1"],
+      }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.meta.activeClientId).toBe("tenant-b");
+    expect(body.meta.targetClientId).toBe("tenant-b");
+    expect(await listClientContextConfirmationEvents()).toHaveLength(0);
+  });
+
+  it("rejects unauthorized active client identifiers in request scope", async () => {
+    const issued = await issueSessionToken({
+      actorId: "actor-delivery-active-mismatch",
+      email: "delivery@cblsolutions.com",
+      tenantId: "tenant-a",
+      clientIds: ["tenant-a", "tenant-b"],
+      role: "delivery-head",
+      rememberDevice: false,
+    });
+
+    const request = buildRequest("https://aerodelivery.onrender.com/api/internal/candidates", {
+      method: "POST",
+      headers: {
+        cookie: withSessionCookie(issued.token),
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        tenantId: "tenant-b",
+        activeClientId: "tenant-c",
+        candidateIds: ["cand-b-4"],
+      }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.error.code).toBe("active_client_forbidden");
+    expect(await listClientContextConfirmationEvents()).toHaveLength(0);
   });
 });
