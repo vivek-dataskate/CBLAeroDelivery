@@ -26,10 +26,21 @@ import {
 } from "./shared";
 
 type CanonicalField =
-  | "name"
+  | "first_name"
+  | "last_name"
+  | "middle_name"
   | "email"
-  | "phone"
-  | "location"
+  | "alternate_email"
+  | "mobile"
+  | "home_phone"
+  | "work_phone"
+  | "address"
+  | "city"
+  | "state"
+  | "country"
+  | "postal_code"
+  | "current_company"
+  | "job_title"
   | "skills"
   | "availability_status"
   | "(ignore)";
@@ -54,10 +65,21 @@ type PreparedErrorRow = {
 };
 
 const CANONICAL_FIELDS = new Set<CanonicalField>([
-  "name",
+  "first_name",
+  "last_name",
+  "middle_name",
   "email",
-  "phone",
-  "location",
+  "alternate_email",
+  "mobile",
+  "home_phone",
+  "work_phone",
+  "address",
+  "city",
+  "state",
+  "country",
+  "postal_code",
+  "current_company",
+  "job_title",
   "skills",
   "availability_status",
   "(ignore)",
@@ -68,16 +90,57 @@ const BLOCKED_EXTRA_ATTRIBUTE_KEYS = new Set(["password", "token", "secret", "ap
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const FIELD_ALIASES: Record<string, Exclude<CanonicalField, "(ignore)">> = {
-  name: "name",
-  full_name: "name",
-  fullname: "name",
+  // Name
+  first_name: "first_name",
+  firstname: "first_name",
+  given_name: "first_name",
+  last_name: "last_name",
+  lastname: "last_name",
+  surname: "last_name",
+  family_name: "last_name",
+  middle_name: "middle_name",
+  middlename: "middle_name",
+  // Email
   email: "email",
   email_address: "email",
-  phone: "phone",
-  phone_number: "phone",
-  mobile: "phone",
-  location: "location",
-  city: "location",
+  alternate_email: "alternate_email",
+  alternate_email_address: "alternate_email",
+  secondary_email: "alternate_email",
+  other_email: "alternate_email",
+  // Phone
+  mobile: "mobile",
+  mobile_phone: "mobile",
+  mobile_number: "mobile",
+  cell: "mobile",
+  cell_phone: "mobile",
+  phone: "mobile",
+  phone_number: "mobile",
+  home_phone: "home_phone",
+  home_phone_number: "home_phone",
+  work_phone: "work_phone",
+  work_phone_number: "work_phone",
+  office_phone: "work_phone",
+  // Location
+  address: "address",
+  street_address: "address",
+  city: "city",
+  state: "state",
+  province: "state",
+  country: "country",
+  postal_code: "postal_code",
+  zip: "postal_code",
+  zip_code: "postal_code",
+  postcode: "postal_code",
+  // Professional
+  current_company: "current_company",
+  company: "current_company",
+  employer: "current_company",
+  organization: "current_company",
+  job_title: "job_title",
+  title: "job_title",
+  position: "job_title",
+  role: "job_title",
+  // Skills / availability
   skills: "skills",
   skill: "skills",
   availability: "availability_status",
@@ -252,21 +315,8 @@ function prepareRows(input: {
     for (const header of input.headers) {
       const value = (rawData[header] ?? "").trim();
       const mappedField = input.mapping[header] ?? "(ignore)";
-
-      if (mappedField === "(ignore)") {
-        continue;
-      }
-
-      if (
-        mappedField === "name" ||
-        mappedField === "email" ||
-        mappedField === "phone" ||
-        mappedField === "location" ||
-        mappedField === "skills" ||
-        mappedField === "availability_status"
-      ) {
+      if (mappedField !== "(ignore)") {
         mappedValues[mappedField] = value;
-        continue;
       }
     }
 
@@ -310,16 +360,17 @@ function prepareRows(input: {
       continue;
     }
 
-    const name = (mappedValues.name ?? "").trim();
+    const firstName = (mappedValues.first_name ?? "").trim();
+    const lastName = (mappedValues.last_name ?? "").trim();
     const email = (mappedValues.email ?? "").trim().toLowerCase();
-    const phone = normalizePhone(mappedValues.phone ?? "");
+    const mobile = normalizePhone(mappedValues.mobile ?? "");
 
-    if (!name || (!email && !phone)) {
+    if (!firstName || !lastName || (!email && !mobile)) {
       errors.push({
         rowNumber,
         rawData,
         errorCode: "missing_identity",
-        errorDetail: "Row must include name and at least one of email or phone.",
+        errorDetail: "Row must include first_name, last_name, and at least one of email or mobile.",
       });
       continue;
     }
@@ -334,24 +385,50 @@ function prepareRows(input: {
       continue;
     }
 
-    if ((mappedValues.phone ?? "").trim().length > 0 && !phone) {
+    const alternateEmail = (mappedValues.alternate_email ?? "").trim().toLowerCase();
+    if (alternateEmail && !EMAIL_REGEX.test(alternateEmail)) {
       errors.push({
         rowNumber,
         rawData,
         errorCode: "invalid_format",
-        errorDetail: "Phone format is invalid.",
+        errorDetail: "Alternate email format is invalid.",
       });
       continue;
     }
+
+    if ((mappedValues.mobile ?? "").trim().length > 0 && !mobile) {
+      errors.push({
+        rowNumber,
+        rawData,
+        errorCode: "invalid_format",
+        errorDetail: "Mobile phone format is invalid.",
+      });
+      continue;
+    }
+
+    const homePhone = normalizePhone(mappedValues.home_phone ?? "");
+    const workPhone = normalizePhone(mappedValues.work_phone ?? "");
 
     candidates.push({
       rowNumber,
       rawData,
       tenant_id: input.tenantId,
       email: email || null,
-      phone,
-      name,
-      location: (mappedValues.location ?? "").trim() || null,
+      phone: mobile,
+      first_name: firstName,
+      last_name: lastName,
+      middle_name: (mappedValues.middle_name ?? "").trim() || null,
+      home_phone: homePhone,
+      work_phone: workPhone,
+      location: null,
+      address: (mappedValues.address ?? "").trim() || null,
+      city: (mappedValues.city ?? "").trim() || null,
+      state: (mappedValues.state ?? "").trim() || null,
+      country: (mappedValues.country ?? "").trim() || null,
+      postal_code: (mappedValues.postal_code ?? "").trim() || null,
+      current_company: (mappedValues.current_company ?? "").trim() || null,
+      job_title: (mappedValues.job_title ?? "").trim() || null,
+      alternate_email: alternateEmail || null,
       skills: parseSkills(mappedValues.skills ?? ""),
       availability_status: normalizeAvailabilityStatus(mappedValues.availability_status ?? ""),
       ingestion_state: "pending_enrichment",
@@ -383,8 +460,20 @@ async function processSupabaseBatch(input: {
     tenant_id: candidate.tenant_id,
     email: candidate.email,
     phone: candidate.phone,
-    name: candidate.name,
+    first_name: candidate.first_name,
+    last_name: candidate.last_name,
+    middle_name: candidate.middle_name,
+    home_phone: candidate.home_phone,
+    work_phone: candidate.work_phone,
     location: candidate.location,
+    address: candidate.address,
+    city: candidate.city,
+    state: candidate.state,
+    country: candidate.country,
+    postal_code: candidate.postal_code,
+    current_company: candidate.current_company,
+    job_title: candidate.job_title,
+    alternate_email: candidate.alternate_email,
     skills: candidate.skills,
     availability_status: candidate.availability_status,
     ingestion_state: candidate.ingestion_state,
@@ -456,8 +545,20 @@ function processInMemoryBatch(input: {
       tenant_id: candidate.tenant_id,
       email: candidate.email,
       phone: candidate.phone,
-      name: candidate.name,
+      first_name: candidate.first_name,
+      last_name: candidate.last_name,
+      middle_name: candidate.middle_name,
+      home_phone: candidate.home_phone,
+      work_phone: candidate.work_phone,
       location: candidate.location,
+      address: candidate.address,
+      city: candidate.city,
+      state: candidate.state,
+      country: candidate.country,
+      postal_code: candidate.postal_code,
+      current_company: candidate.current_company,
+      job_title: candidate.job_title,
+      alternate_email: candidate.alternate_email,
       skills: candidate.skills,
       availability_status: candidate.availability_status,
       ingestion_state: candidate.ingestion_state,

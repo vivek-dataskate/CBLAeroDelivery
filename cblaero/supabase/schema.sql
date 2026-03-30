@@ -250,6 +250,21 @@ create table if not exists cblaero_app.candidates (
 alter table cblaero_app.candidates
   add column if not exists extra_attributes jsonb not null default '{}'::jsonb;
 
+alter table cblaero_app.candidates
+  add column if not exists first_name text not null default '',
+  add column if not exists last_name text not null default '',
+  add column if not exists middle_name text,
+  add column if not exists home_phone text,
+  add column if not exists work_phone text,
+  add column if not exists address text,
+  add column if not exists city text,
+  add column if not exists state text,
+  add column if not exists country text,
+  add column if not exists postal_code text,
+  add column if not exists current_company text,
+  add column if not exists job_title text,
+  add column if not exists alternate_email text;
+
 create unique index if not exists uq_candidates_tenant_email
   on cblaero_app.candidates (tenant_id, email)
   where email is not null;
@@ -292,6 +307,20 @@ declare
   v_phone text;
   v_row_number int;
   v_raw_data jsonb;
+  v_first_name text;
+  v_last_name text;
+  v_middle_name text;
+  v_home_phone text;
+  v_work_phone text;
+  v_address text;
+  v_city text;
+  v_state text;
+  v_country text;
+  v_postal_code text;
+  v_current_company text;
+  v_job_title text;
+  v_alternate_email text;
+  v_computed_name text;
 begin
   for v_error in select value from jsonb_array_elements(coalesce(p_error_rows, '[]'::jsonb)) loop
     insert into cblaero_app.import_row_error (
@@ -317,6 +346,25 @@ begin
     v_phone := nullif(trim(v_candidate->>'phone'), '');
     v_row_number := nullif(v_candidate->>'row_number', '')::int;
     v_raw_data := coalesce(v_candidate->'raw_data', '{}'::jsonb);
+    v_first_name := nullif(trim(coalesce(v_candidate->>'first_name', '')), '');
+    v_last_name := nullif(trim(coalesce(v_candidate->>'last_name', '')), '');
+    v_middle_name := nullif(trim(coalesce(v_candidate->>'middle_name', '')), '');
+    v_home_phone := nullif(trim(coalesce(v_candidate->>'home_phone', '')), '');
+    v_work_phone := nullif(trim(coalesce(v_candidate->>'work_phone', '')), '');
+    v_address := nullif(trim(coalesce(v_candidate->>'address', '')), '');
+    v_city := nullif(trim(coalesce(v_candidate->>'city', '')), '');
+    v_state := nullif(trim(coalesce(v_candidate->>'state', '')), '');
+    v_country := nullif(trim(coalesce(v_candidate->>'country', '')), '');
+    v_postal_code := nullif(trim(coalesce(v_candidate->>'postal_code', '')), '');
+    v_current_company := nullif(trim(coalesce(v_candidate->>'current_company', '')), '');
+    v_job_title := nullif(trim(coalesce(v_candidate->>'job_title', '')), '');
+    v_alternate_email := nullif(trim(coalesce(v_candidate->>'alternate_email', '')), '');
+    -- Derive name: prefer first_name + last_name; fall back to explicit name field
+    v_computed_name := coalesce(
+      nullif(trim(coalesce(v_first_name, '') || ' ' || coalesce(v_last_name, '')), ''),
+      nullif(trim(coalesce(v_candidate->>'name', '')), ''),
+      ''
+    );
 
     if v_email is null and v_phone is null then
       insert into cblaero_app.import_row_error (
@@ -345,7 +393,20 @@ begin
           email,
           phone,
           name,
+          first_name,
+          last_name,
+          middle_name,
+          home_phone,
+          work_phone,
           location,
+          address,
+          city,
+          state,
+          country,
+          postal_code,
+          current_company,
+          job_title,
+          alternate_email,
           skills,
           certifications,
           experience,
@@ -360,8 +421,21 @@ begin
           v_candidate->>'tenant_id',
           v_email,
           v_phone,
-          coalesce(v_candidate->>'name', ''),
+          v_computed_name,
+          v_first_name,
+          v_last_name,
+          v_middle_name,
+          v_home_phone,
+          v_work_phone,
           nullif(v_candidate->>'location', ''),
+          v_address,
+          v_city,
+          v_state,
+          v_country,
+          v_postal_code,
+          v_current_company,
+          v_job_title,
+          v_alternate_email,
           coalesce(v_candidate->'skills', '[]'::jsonb),
           coalesce(v_candidate->'certifications', '[]'::jsonb),
           coalesce(v_candidate->'experience', '[]'::jsonb),
@@ -376,7 +450,20 @@ begin
         do update set
           phone = excluded.phone,
           name = excluded.name,
+          first_name = excluded.first_name,
+          last_name = excluded.last_name,
+          middle_name = excluded.middle_name,
+          home_phone = excluded.home_phone,
+          work_phone = excluded.work_phone,
           location = excluded.location,
+          address = excluded.address,
+          city = excluded.city,
+          state = excluded.state,
+          country = excluded.country,
+          postal_code = excluded.postal_code,
+          current_company = excluded.current_company,
+          job_title = excluded.job_title,
+          alternate_email = excluded.alternate_email,
           skills = excluded.skills,
           certifications = excluded.certifications,
           experience = excluded.experience,
@@ -392,7 +479,20 @@ begin
           email,
           phone,
           name,
+          first_name,
+          last_name,
+          middle_name,
+          home_phone,
+          work_phone,
           location,
+          address,
+          city,
+          state,
+          country,
+          postal_code,
+          current_company,
+          job_title,
+          alternate_email,
           skills,
           certifications,
           experience,
@@ -407,8 +507,21 @@ begin
           v_candidate->>'tenant_id',
           v_email,
           v_phone,
-          coalesce(v_candidate->>'name', ''),
+          v_computed_name,
+          v_first_name,
+          v_last_name,
+          v_middle_name,
+          v_home_phone,
+          v_work_phone,
           nullif(v_candidate->>'location', ''),
+          v_address,
+          v_city,
+          v_state,
+          v_country,
+          v_postal_code,
+          v_current_company,
+          v_job_title,
+          v_alternate_email,
           coalesce(v_candidate->'skills', '[]'::jsonb),
           coalesce(v_candidate->'certifications', '[]'::jsonb),
           coalesce(v_candidate->'experience', '[]'::jsonb),
@@ -423,7 +536,20 @@ begin
         do update set
           email = excluded.email,
           name = excluded.name,
+          first_name = excluded.first_name,
+          last_name = excluded.last_name,
+          middle_name = excluded.middle_name,
+          home_phone = excluded.home_phone,
+          work_phone = excluded.work_phone,
           location = excluded.location,
+          address = excluded.address,
+          city = excluded.city,
+          state = excluded.state,
+          country = excluded.country,
+          postal_code = excluded.postal_code,
+          current_company = excluded.current_company,
+          job_title = excluded.job_title,
+          alternate_email = excluded.alternate_email,
           skills = excluded.skills,
           certifications = excluded.certifications,
           experience = excluded.experience,

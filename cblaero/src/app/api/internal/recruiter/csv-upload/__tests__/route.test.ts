@@ -65,7 +65,7 @@ describe("POST /api/internal/recruiter/csv-upload", () => {
 
   it("returns 401 for unauthenticated requests", async () => {
     const request = await buildMultipartUploadRequest({
-      csv: buildCsv(["name,email", "Jane,jane@example.com"]),
+      csv: buildCsv(["first_name,last_name,email", "Jane,Doe,jane@example.com"]),
     });
 
     const response = await POST(request);
@@ -86,7 +86,7 @@ describe("POST /api/internal/recruiter/csv-upload", () => {
 
     const request = await buildMultipartUploadRequest({
       token: issued.token,
-      csv: buildCsv(["name,email", "Jane,jane@example.com"]),
+      csv: buildCsv(["first_name,last_name,email", "Jane,Doe,jane@example.com"]),
     });
 
     const response = await POST(request);
@@ -103,9 +103,9 @@ describe("POST /api/internal/recruiter/csv-upload", () => {
       rememberDevice: false,
     });
 
-    const rows = ["name,email"];
+    const rows = ["first_name,last_name,email"];
     for (let index = 0; index < 10001; index += 1) {
-      rows.push(`Candidate ${index},candidate${index}@example.com`);
+      rows.push(`Candidate,${index},candidate${index}@example.com`);
     }
 
     const request = await buildMultipartUploadRequest({
@@ -133,10 +133,10 @@ describe("POST /api/internal/recruiter/csv-upload", () => {
     const request = await buildMultipartUploadRequest({
       token: issued.token,
       csv: buildCsv([
-        "name,email,phone",
-        "Jane Doe,jane@example.com,5551112233",
-        "John Roe,john@example.com,5551113344",
-        "Mia Poe,mia@example.com,5551114455",
+        "first_name,last_name,email,mobile",
+        "Jane,Doe,jane@example.com,5551112233",
+        "John,Roe,john@example.com,5551113344",
+        "Mia,Poe,mia@example.com,5551114455",
       ]),
     });
 
@@ -162,9 +162,9 @@ describe("POST /api/internal/recruiter/csv-upload", () => {
     const request = await buildMultipartUploadRequest({
       token: issued.token,
       csv: buildCsv([
-        "name,email,phone",
-        "Jane Doe,jane@example.com,",
-        "John Roe,john@example.com,",
+        "first_name,last_name,email",
+        "Jane,Doe,jane@example.com",
+        "John,Roe,john@example.com",
         ",,",
       ]),
     });
@@ -189,11 +189,12 @@ describe("POST /api/internal/recruiter/csv-upload", () => {
     const request = await buildMultipartUploadRequest({
       token: issued.token,
       csv: buildCsv([
-        "name,email,Current Team,FavoriteTool",
-        "Jane Doe,jane@example.com,Blue Hawks,Torque Wrench",
+        "first_name,last_name,email,Current Team,FavoriteTool",
+        "Jane,Doe,jane@example.com,Blue Hawks,Torque Wrench",
       ]),
       columnMap: {
-        name: "name",
+        first_name: "first_name",
+        last_name: "last_name",
         email: "email",
       },
     });
@@ -261,11 +262,12 @@ describe("POST /api/internal/recruiter/csv-upload", () => {
     const request = await buildMultipartUploadRequest({
       token: issued.token,
       csv: buildCsv([
-        "name,email,password,token,secret,api_key",
-        "Jane Doe,jane@example.com,my-secret,abc123,s3cr3t,key-xyz",
+        "first_name,last_name,email,password,token,secret,api_key",
+        "Jane,Doe,jane@example.com,my-secret,abc123,s3cr3t,key-xyz",
       ]),
       columnMap: {
-        name: "name",
+        first_name: "first_name",
+        last_name: "last_name",
         email: "email",
       },
     });
@@ -295,11 +297,12 @@ describe("POST /api/internal/recruiter/csv-upload", () => {
     const request = await buildMultipartUploadRequest({
       token: issued.token,
       csv: buildCsv([
-        "name,email,Notes",
-        `Jane Doe,jane@example.com,${oversizedValue}`,
+        "first_name,last_name,email,Notes",
+        `Jane,Doe,jane@example.com,${oversizedValue}`,
       ]),
       columnMap: {
-        name: "name",
+        first_name: "first_name",
+        last_name: "last_name",
         email: "email",
       },
     });
@@ -310,6 +313,46 @@ describe("POST /api/internal/recruiter/csv-upload", () => {
     expect(response.status).toBe(200);
     expect(body.data.imported).toBe(0);
     expect(body.data.errors).toBe(1);
+  });
+
+  it("accepts '(ignore)' as columnMap wire value and populates extra_attributes (regression: client-server contract)", async () => {
+    const issued = await issueSessionToken({
+      actorId: "actor-recruiter-9",
+      email: "recruiter@cblsolutions.com",
+      tenantId: "tenant-alpha",
+      role: "recruiter",
+      rememberDevice: false,
+    });
+
+    // Simulate what CsvUploadWizard sends: explicit "(ignore)" for unmapped columns.
+    const request = await buildMultipartUploadRequest({
+      token: issued.token,
+      csv: buildCsv([
+        "first_name,last_name,email,Department,Seniority",
+        "Jane,Doe,jane@example.com,Engineering,Senior",
+      ]),
+      columnMap: {
+        first_name: "first_name",
+        last_name: "last_name",
+        email: "email",
+        Department: "(ignore)",
+        Seniority: "(ignore)",
+      },
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.data.imported).toBe(1);
+    expect(body.data.errors).toBe(0);
+
+    const candidates = listCsvCandidatesForTest();
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].extra_attributes).toMatchObject({
+      department: "Engineering",
+      seniority: "Senior",
+    });
   });
 
   it("returns 404 for cross-tenant error report access", async () => {
@@ -324,8 +367,8 @@ describe("POST /api/internal/recruiter/csv-upload", () => {
     const uploadRequest = await buildMultipartUploadRequest({
       token: uploader.token,
       csv: buildCsv([
-        "name,email,phone",
-        "Jane Doe,jane@example.com,",
+        "first_name,last_name,email",
+        "Jane,Doe,jane@example.com",
         ",,",
       ]),
     });
