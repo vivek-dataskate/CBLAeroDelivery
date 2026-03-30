@@ -60,7 +60,7 @@ development_status:
   1-4-build-admin-user-and-team-management-console: done
   1-5-add-step-up-auth-for-sensitive-operations: done
   1-6-enforce-usa-data-residency-policy-gates: review
-  1-7-add-active-client-context-safeguards: backlog
+  1-7-add-active-client-context-safeguards: review
   epic-1-retrospective: optional
 
   epic-2: backlog

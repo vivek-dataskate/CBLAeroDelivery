@@ -27,7 +27,7 @@ type AuthorizationDeny = {
 export type AuthorizationResult = AuthorizationAllow | AuthorizationDeny;
 
 const ROLE_ACTION_MAP: Record<SessionRole, ReadonlySet<ProtectedAction>> = {
-  recruiter: new Set(["dashboard:view", "candidate:read"]),
+  recruiter: new Set(["dashboard:view", "candidate:read", "candidate:write"]),
   "delivery-head": new Set(["dashboard:view", "candidate:read", "candidate:write"]),
   admin: new Set([
     "dashboard:view",
@@ -99,7 +99,8 @@ export async function authorizeAccess(
   }
 
   const requestedTenantId = input.requestedTenantId;
-  if (requestedTenantId && requestedTenantId !== session.tenantId) {
+  const allowedClientIds = session.clientIds ?? [session.tenantId];
+  if (requestedTenantId && !allowedClientIds.includes(requestedTenantId)) {
     return await deny(input, "tenant_mismatch", 403);
   }
 

@@ -35,7 +35,7 @@ describe("story 1.3 authorization guards", () => {
     expect(await listAuthorizationDenyEvents()).toEqual([]);
   });
 
-  it("denies forbidden role operation and records audit event", async () => {
+  it("allows recruiter write operation within tenant scope", async () => {
     const issued = await issueSessionToken({
       actorId: "actor-2",
       email: "recruiter@cblsolutions.com",
@@ -53,24 +53,8 @@ describe("story 1.3 authorization guards", () => {
       traceId: "trace-forbidden-role",
     });
 
-    expect(result).toEqual({
-      allowed: false,
-      status: 403,
-      reason: "forbidden_role",
-    });
-
-    const events = await listAuthorizationDenyEvents();
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({
-      traceId: "trace-forbidden-role",
-      actorId: "actor-2",
-      role: "recruiter",
-      sessionTenantId: "tenant-a",
-      requestedTenantId: "tenant-a",
-      reason: "forbidden_role",
-      path: "/api/internal/candidates",
-      method: "POST",
-    });
+    expect(result).toEqual({ allowed: true });
+    expect(await listAuthorizationDenyEvents()).toHaveLength(0);
   });
 
   it("denies cross-tenant request and records tenant mismatch", async () => {
@@ -107,5 +91,28 @@ describe("story 1.3 authorization guards", () => {
       requestedTenantId: "tenant-b",
       reason: "tenant_mismatch",
     });
+  });
+
+  it("allows explicitly assigned secondary client access", async () => {
+    const issued = await issueSessionToken({
+      actorId: "actor-4",
+      email: "delivery@cblsolutions.com",
+      tenantId: "tenant-a",
+      clientIds: ["tenant-a", "tenant-b"],
+      role: "delivery-head",
+      rememberDevice: false,
+    });
+
+    const result = await authorizeAccess({
+      session: issued.session,
+      action: "candidate:write",
+      requestedTenantId: "tenant-b",
+      path: "/api/internal/candidates",
+      method: "POST",
+      traceId: "trace-multi-client-allow",
+    });
+
+    expect(result).toEqual({ allowed: true });
+    expect(await listAuthorizationDenyEvents()).toHaveLength(0);
   });
 });
