@@ -18,7 +18,7 @@ inputDocuments:
 
 CBLAero transforms aviation recruiting from a reactive hunt-and-chase game into a proactive, candidate-driven delivery engine. The system inverts traditional recruiting: instead of recruiters spending 6 hours per day searching databases, candidates proactively signal availability, and CBLAero continuously engages them through automated scraping, enrichment, qualification, and delivery.
 
-The core innovation is **availability-first sequencing** — but critically, *availability is validated by motivation intensity*: how fast Sarah responded, how many questions she asked, whether she volunteered a start date. This distinguishes genuinely ready candidates from passive browsers. CBLAero layers domain-specific aviation intelligence (FAA certs, type ratings, tooling, badging) on top of these signals. This psychological shift — from being hunted to being heard — creates trust with candidates and enables recruiters to manage 3 clients simultaneously instead of 1.
+The core innovation is **availability-first sequencing** — but critically, _availability is validated by motivation intensity_: how fast Sarah responded, how many questions she asked, whether she volunteered a start date. This distinguishes genuinely ready candidates from passive browsers. CBLAero layers domain-specific aviation intelligence (FAA certs, type ratings, tooling, badging) on top of these signals. This psychological shift — from being hunted to being heard — creates trust with candidates and enables recruiters to manage 3 clients simultaneously instead of 1.
 
 **Success looks like:** Mike opens CBLAero at 8am Monday, sees 5 overnight candidates — ranked by "likely to close today" not just confidence score — each with rich context cards (match reasons, qualification transcript, what questions to ask, auto-booked call slot). He eliminates 2 immediately from visible disqualification reasons, calls 3, converts 1 by noon. Sarah received an SMS Sunday night about a captain role matching her A320 type rating, clicked the anonymous portal link, saw why she was a match, opted in with contact preferences ("mornings until 11am, evenings no later than 9pm"), answered 1 qualifier question ("Do you have personal tools?"), and got confirmation "Mike will call you Monday at 10am."
 
@@ -27,7 +27,7 @@ The core innovation is **availability-first sequencing** — but critically, *av
 **Primary User: Mike (Recruiter)**
 Aviation recruiter currently spending 6 hours/day manually hunting candidates. Needs to deliver 5 qualified candidates per job within 24 hours while managing multiple client accounts. His biggest fear: the system misses "the perfect candidate" who doesn't fit the algorithm. He needs **rich context** before calls — not just names, but match reasons, qualification transcripts, motivation signals, and auto-scheduled call slots.
 
-> **🚨 Critical Need (Focus Group):** Visibility into *why* candidates were auto-rejected, with ability to override when client requirements are flexible. Without this, Mike stops trusting the system.
+> **🚨 Critical Need (Focus Group):** Visibility into _why_ candidates were auto-rejected, with ability to override when client requirements are flexible. Without this, Mike stops trusting the system.
 
 > **🎯 Behavior Insight (Reverse Engineering):** Mike's Monday success depends on: intelligent "call today" prioritization, pre-booked calendar slots based on candidate preferences, qualification transcripts so calls aren't cold, and a feedback loop that validates confidence scores over time.
 
@@ -44,16 +44,16 @@ Airbus pilot between contracts, drowning in recruiter spam. Contacted via cold S
 
 **Supporting Personas (Phased — All from Day 1):**
 
-| Persona | Core Need | Critical Risk |
-|---|---|---|
-| **Elena (Delivery Head)** | Observability: alerts when Mike misses promised calls | No escalation path = operational promises broken at scale |
-| **David (Owner/CEO)** | Qualification layer improves conversion, not just moves dropouts | Must model full funnel before assuming net-positive |
-| **Alex (System Admin)** | Resilience: Teams outage fallback + retry logic | No fallback = single point of failure on Microsoft uptime |
+| Persona                   | Core Need                                                        | Critical Risk                                             |
+| ------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------- |
+| **Elena (Delivery Head)** | Observability: alerts when Mike misses promised calls            | No escalation path = operational promises broken at scale |
+| **David (Owner/CEO)**     | Qualification layer improves conversion, not just moves dropouts | Must model full funnel before assuming net-positive       |
+| **Alex (System Admin)**   | Resilience: Teams outage fallback + retry logic                  | No fallback = single point of failure on Microsoft uptime |
 
 ### Key Design Challenges
 
 **1. Dropout Prevention Architecture**
-CBLAero inserts a qualification layer *between* interest signal and recruiter call. When Sarah responds "I'm interested," the system probes readiness then schedules Mike's call.
+CBLAero inserts a qualification layer _between_ interest signal and recruiter call. When Sarah responds "I'm interested," the system probes readiness then schedules Mike's call.
 
 > **⚠️ Critical Design Constraint:** Every qualification gate historically causes 20-40% dropout. Reduce to the single most critical question per role (not 5 questions). For Comlux roles: "Do you have personal tools?" For badge-required roles: "Any criminal background preventing airport access?" Allow "Not sure? The recruiter will discuss" as a valid response — never auto-reject on ambiguity. Show progress ("Question 1 of 1") and explain why.
 
@@ -65,7 +65,7 @@ Sarah receives cold SMS/email → clicks anonymous portal link → sees job matc
 > **🎯 First Principles Redesign:** Show Sarah **recruiter reputation** before she opts in — "Mike has placed 47 candidates in 6 months. 4.8/5 candidate satisfaction." She can choose who calls her. Trust through transparency.
 
 **3. Context-Rich Recruiter Dashboard**
-Mike needs not just "5 candidates" but "3 to call today + 2 for later," ranked by *motivation intensity* (response speed, questions asked, start date volunteered) with full qualification transcripts and auto-booked calendar slots.
+Mike needs not just "5 candidates" but "3 to call today + 2 for later," ranked by _motivation intensity_ (response speed, questions asked, start date volunteered) with full qualification transcripts and auto-booked calendar slots.
 
 > **🎯 SCAMPER — Eliminate:** Consider removing confidence scores entirely in favor of match reasons only ("A&P cert + 5yr MRO + local + tools owned") to reduce black-box mistrust. Validate this in Tier 1 pilot via A/B test.
 
@@ -80,6 +80,7 @@ Job roles pull pre-defined probe questions automatically. System must match role
 SMS → Email → Teams notification cards → Web portal across 5 personas.
 
 > **🛡️ Failure Modes & Mitigations:**
+>
 > - Teams outage: fallback to email digest + SMS alert "Check dashboard"
 > - SMS spam flagging: official shortcode, warm up sending reputation, A/B test messaging
 > - Timezone mismatch: detect from IP + confirm with candidate
@@ -98,7 +99,7 @@ Not a database query — a prioritized action list. "Call Today (3)" + "Review L
 **7. Data Import and Sync Console (Admin / Recruiter)**
 The platform starts with 1M existing candidate records and grows via three ongoing ingestion paths:
 
-- **Bulk CSV upload** (recruiters, daily/weekly): drag-and-drop interface, column mapping wizard, live validation preview (duplicate detection, missing required fields), per-row error report download, and a progress tracker showing records imported/skipped/errors. Max 10,000 records per recruiter upload; initial 1M-record migration is admin-supervised one-time flow with rollback capability.
+- **Bulk CSV upload** (recruiters, daily/weekly): drag-and-drop interface, column mapping wizard, live validation preview (duplicate detection, missing required fields), per-row error report download, and a progress tracker showing records imported/skipped/errors. Columns not mapped to canonical fields are retained in candidate `extra_attributes` (`jsonb`) and surfaced in UX as "stored as additional attributes"; blocked sensitive keys are dropped. Max 10,000 records per recruiter upload; initial 1M-record migration is admin-supervised one-time flow with rollback capability.
 - **ATS connector sync** (automated, Tier 2): read-only polling of connected ATS system; new and updated records are upserted via the standard deduplication pipeline. Admin console shows last-sync timestamp, records synced, and error rate. Sync failures alert the admin; never silently skip records.
 - **Email inbox parsing** (automated, Tier 2): Microsoft Graph scans designated recruiter inboxes for forwarded resumes and candidate reply threads; extracted candidate stubs are queued for enrichment with source attribution ("from: recruiter email"). Recruiter reviews parsed batch before records are activated.
 
@@ -131,10 +132,10 @@ Both Mike and Sarah confirm interest before contact info is shared. Mike sees: "
 
 ### Critical Assumptions Requiring Tier 1 Validation
 
-| # | Assumption | Risk | Validation |
-|---|---|---|---|
-| 1 | Availability-first improves conversion | Weak signal; low motivation candidates | A/B test vs. motivation-first scoring |
-| 2 | See-before-share increases opt-in | Cold outreach still feels like spam without traffic driver | Track SMS → portal → opt-in funnel (target >15%/30%) |
-| 3 | Qualification layer reduces *total* dropouts | Moves dropout to earlier stage; no net gain | Model full funnel; compare placement conversion |
-| 4 | Mike trusts + acts on confidence scores | Ignores scores; uses gut; adds cognitive load | Track calling decisions vs. score correlation |
-| 5 | Role taxonomy enables automation | Intake questions too custom per client | Analyse Comlux job postings Week 1 |
+| #   | Assumption                                   | Risk                                                       | Validation                                           |
+| --- | -------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------- |
+| 1   | Availability-first improves conversion       | Weak signal; low motivation candidates                     | A/B test vs. motivation-first scoring                |
+| 2   | See-before-share increases opt-in            | Cold outreach still feels like spam without traffic driver | Track SMS → portal → opt-in funnel (target >15%/30%) |
+| 3   | Qualification layer reduces _total_ dropouts | Moves dropout to earlier stage; no net gain                | Model full funnel; compare placement conversion      |
+| 4   | Mike trusts + acts on confidence scores      | Ignores scores; uses gut; adds cognitive load              | Track calling decisions vs. score correlation        |
+| 5   | Role taxonomy enables automation             | Intake questions too custom per client                     | Analyse Comlux job postings Week 1                   |

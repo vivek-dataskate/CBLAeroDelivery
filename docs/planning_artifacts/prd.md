@@ -18,10 +18,10 @@ inputDocuments:
   - docs/planning_artifacts/source-inputs/aviation-product-brief.md
   - docs/planning_artifacts/source-inputs/aviation-talent-PRD.md
 classification:
-  projectType: "Web-based recruiter tool"
-  domain: "Aviation recruitment"
-  complexity: "High (domain complexity, reduced vendor surface)"
-  projectContext: "greenfield"
+  projectType: 'Web-based recruiter tool'
+  domain: 'Aviation recruitment'
+  complexity: 'High (domain complexity, reduced vendor surface)'
+  projectContext: 'greenfield'
 projectType: greenfield
 briefCount: 1
 existingPRDCount: 1
@@ -48,8 +48,8 @@ CBLAero is a recruiting delivery engine built for aviation staffing firms. It 
 
 The product’s core insight is that **availability is the primary signal**; candidates drive the process by announcing when they’re free, and the system continuously engages to maintain that signal. CBLAero self‑tests its matching performance and aims to deliver candidates with 95 % confidence that they meet most of the criteria. This allows one recruiter to handle three client accounts with sourcing largely handled by software, converting speed into revenue opportunities and tighter client relationships.
 
-
 **Project Classification:**
+
 - Web‑based recruiter tool
 - Aviation recruitment domain (high complexity)
 - Greenfield initiative
@@ -60,18 +60,18 @@ The product’s core insight is that **availability is the primary signal**; can
 
 **For busy stakeholders:** Does this deserve greenlight? Read this in <2 minutes.
 
-| Dimension | Target | Status |
-|---|---|---|
-| **Time-to-Candidate** | 5 qualified candidates in 24 hrs | MVP Tier 1 |
-| **Recruiter Productivity** | 1 recruiter → 3 clients by month 6 | 14-week phased delivery |
-| **Confidence Score** | ≥95% match accuracy | Validated via self-testing + conversion funnel |
-| **Placement Conversion** | 8–12% month 1 → 40% month 6 | Staged, realistic metrics (not overconfident) |
-| **Economics** | $800 margin/placement; break-even month 4 | At scale: 20 customers required |
-| **Unit Economics Risk** | Sourcing cost >$200/placement erodes margin | **CRITICAL:** Cost triggers + API fallback required |
-| **Launch Go/No-Go** | 4-week pilot with 1–2 ideal-fit customers | Week 4 decision point locked in |
-| **Technical Readiness** | 99.5% uptime; no cross-tenant data leakage | 8 pre-launch security/resilience gaps identified |
-| **Compliance Baseline** | Immutable audit, GDPR 30-day deletion, SOC 2 Q2 2027 | Phase 3 launch gate |
-| **MVP Scope** | 76 FR identifiers (including FR1a) across 3 tiers; 38 NFRs defined | Tier is defined per requirement tag (`[MVP Tier X]`) |
+| Dimension                  | Target                                                             | Status                                               |
+| -------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------- |
+| **Time-to-Candidate**      | 5 qualified candidates in 24 hrs                                   | MVP Tier 1                                           |
+| **Recruiter Productivity** | 1 recruiter → 3 clients by month 6                                 | 14-week phased delivery                              |
+| **Confidence Score**       | ≥95% match accuracy                                                | Validated via self-testing + conversion funnel       |
+| **Placement Conversion**   | 8–12% month 1 → 40% month 6                                        | Staged, realistic metrics (not overconfident)        |
+| **Economics**              | $800 margin/placement; break-even month 4                          | At scale: 20 customers required                      |
+| **Unit Economics Risk**    | Sourcing cost >$200/placement erodes margin                        | **CRITICAL:** Cost triggers + API fallback required  |
+| **Launch Go/No-Go**        | 4-week pilot with 1–2 ideal-fit customers                          | Week 4 decision point locked in                      |
+| **Technical Readiness**    | 99.5% uptime; no cross-tenant data leakage                         | 8 pre-launch security/resilience gaps identified     |
+| **Compliance Baseline**    | Immutable audit, GDPR 30-day deletion, SOC 2 Q2 2027               | Phase 3 launch gate                                  |
+| **MVP Scope**              | 76 FR identifiers (including FR1a) across 3 tiers; 38 NFRs defined | Tier is defined per requirement tag (`[MVP Tier X]`) |
 
 **Bottom Line:** ✅ Comprehensive, realistic, phased MVP. 🚩 Success requires: (1) committed pilot customer, (2) acceptance of 14-week timeline, (3) confidence-first approach (domain-logic → ML later), (4) strict cost governance.
 
@@ -82,6 +82,7 @@ The product’s core insight is that **availability is the primary signal**; can
 ### User Success
 
 **Recruiter Success:**
+
 - Deliver **5 qualified candidates (0.70+ confidence)** per req within 24 hrs (SLA with confidence warning).
 - **80 % of contacted candidates** receive interview requests (tiered by confidence; recruiters see 0.75+ by default).
 - **80 % interview attendance** rate for contacted candidates.
@@ -89,6 +90,7 @@ The product’s core insight is that **availability is the primary signal**; can
 - Recruiters spend <30 min/day on non-recruitment tasks (filtering, re-contacting).
 
 **Candidate Success:**
+
 - **85 % response rate** (SMS/email delivered within 24 hrs to availability intentions).
 - **≥70 % candidate satisfaction** (post-interaction NPS: "responsive" or better).
 - **<5 % opt-out rate** (trust proxy; >10% = messaging problem).
@@ -184,17 +186,18 @@ The product’s core insight is that **availability is the primary signal**; can
 
 ### Journey Capability Map
 
-| Actor | Role | Key Needs |
-|---|---|---|
-| **Sarah** | Candidate | Opt-in registration, relevant outreach, availability signaling, status visibility |
-| **Mike** | Recruiter | Job posting, Teams notifications, candidate prioritization, call scheduling, multi-client management |
-| **Elena** | Delivery Head | Performance dashboards, team drill-down, pipeline forecasting, compliance alerts |
-| **David** | Owner/CEO | ROI tracking, compliance audits, business intelligence, scale forecasting |
-| **Alex** | System Admin | API monitoring, health alerts, integration management, scaling controls, quota alerts |
+| Actor     | Role          | Key Needs                                                                                            |
+| --------- | ------------- | ---------------------------------------------------------------------------------------------------- |
+| **Sarah** | Candidate     | Opt-in registration, relevant outreach, availability signaling, status visibility                    |
+| **Mike**  | Recruiter     | Job posting, Teams notifications, candidate prioritization, call scheduling, multi-client management |
+| **Elena** | Delivery Head | Performance dashboards, team drill-down, pipeline forecasting, compliance alerts                     |
+| **David** | Owner/CEO     | ROI tracking, compliance audits, business intelligence, scale forecasting                            |
+| **Alex**  | System Admin  | API monitoring, health alerts, integration management, scaling controls, quota alerts                |
 
 ## Domain-Specific Requirements
 
 ### Compliance & Regulatory
+
 - **FAA Certifications & Type Ratings:** A&P License mandatory for maintenance roles; IA preferred. Must validate FAA Airframe/Avionics licenses.
 - **Airport Badging Requirements:** Criminal background checks to obtain Indianapolis Airport badge; no felony records allowed.
 - **Drug & Alcohol Testing:** Pre-employment FAA drug tests; random testing per FAA/DOT regulations.
@@ -203,6 +206,7 @@ The product’s core insight is that **availability is the primary signal**; can
 - **GDPR/CCPA/TCPA Compliance:** International candidates with geo-detected consent; SMS outreach with TCPA opt-outs.
 
 ### Technical Constraints
+
 - **Tooling Requirements:** Personal tools mandatory (drills, riveters, etc.); client provides partial tooling; specialty tools not required but preferred.
 - **Documentation Systems:** Must support FAA-compliant maintenance records, work packages, and inspection documentation.
 - **Real-time Availability:** Seasonal hiring patterns; winter weather deters candidates; need predictive availability for peak seasons.
@@ -210,6 +214,7 @@ The product’s core insight is that **availability is the primary signal**; can
 - **Performance Requirements:** Fast hiring cycles (decisions same day to 3 days; start within 2 weeks).
 
 ### Integration Requirements
+
 - **FAA Data Feeds:** Integration for certificate verification and drug test results.
 - **Aircraft OEM Systems:** Support for Boeing BBJ, Airbus ACJ service centers; PPI capabilities.
 - **Maintenance Environment:** Heavy MRO for VIP/WIP aircraft (Boeing 737/767/727; Airbus A319/A320/A321).
@@ -218,6 +223,7 @@ The product’s core insight is that **availability is the primary signal**; can
 - **Weather APIs:** Seasonal hiring intelligence for recruitment adjustments.
 
 ### Pre-Screening & Intake Requirements
+
 - **Mandatory Intake Questions** (before sourcing):
   - Which aircraft will the candidate touch in the first 30 days?
   - Is recent experience on that aircraft mandatory or flexible?
@@ -240,6 +246,7 @@ The product’s core insight is that **availability is the primary signal**; can
   - Background check workflow status (`not started`, `in progress`, `clear`, `conditional`, `failed`) before offer stage
 
 ### Risk Mitigations
+
 - **Tooling Readiness:** Screen for personal tool ownership before submission; reduce 50%+ rejection rate (Comlux learnings).
 - **Badge Clearance:** Avoid candidates with criminal backgrounds that prevent airport badging; flag in pre-screening.
 - **Experience Depth:** Require heavy MRO/completion center experience; reject general aviation-only candidates.
@@ -250,6 +257,7 @@ The product’s core insight is that **availability is the primary signal**; can
 - **Union Considerations:** Respect collective bargaining agreements in outreach.
 
 ### Domain Patterns & Best Practices
+
 - **Hard-to-Fill Roles:** Cabinet Fabricators and Upholstery Technicians require specialized skills; extended sourcing timelines.
 - **Hands-on Assessments:** Required for some roles to validate practical abilities; coordinate with client.
 - **Blueprint Reading:** Essential for structures, sheet metal, interior roles; note in candidate requirements.
@@ -262,22 +270,27 @@ The product’s core insight is that **availability is the primary signal**; can
 ### Detected Innovation Areas
 
 **1. Availability-First Sequencing**
+
 - Traditional recruitment matches skills/experience first, then checks availability. CBLAero inverts this: availability becomes the primary signal driver.
 - Innovation: Candidates proactively announce when they're ready; the system engages continuously, not reactively. This eliminates the "candidate is qualified but currently employed/unavailable" problem.
 
 **2. Candidate-Initiated Signal Architecture**
+
 - Instead of recruiters hunting candidates (pull model), CBLAero creates conditions where candidates self-identify as available and interested (push model).
 - Innovation: Flips recruiter control to candidate control, reducing friction and improving candidate fit (self-selection bias toward motivation).
 
 **3. Continuous Proactive Sourcing Engine**
+
 - Most recruiters source reactively (when a job posts). CBLAero sources continuously: daily scraping, engagement, and availability tracking regardless of inbound events.
 - Innovation: Transforms sourcing from event-driven to always-on, amortizing sourcing cost across multiple clients and jobs.
 
 **4. Pre-Qualification via Behavioral Probing**
+
 - Beyond resume matching, CBLAero probes seriousness (tool ownership, badge readiness, commitment level) before recruiter involvement.
 - Innovation: Reduces candidate fallout by pre-screening for domain-specific deal-breakers (e.g., Comlux: no personal tools = automatic fail).
 
 **5. Market Differentiation: Aviation MRO Focus**
+
 - Combines availability-first logic with domain-specific intelligence (FAA certs, type ratings, tooling requirements, seasonal patterns, badging).
 - Innovation: Availability-first approach applied to underserved, high-complexity domain where traditional ATS fails.
 - Competitive Advantage: No generic ATS vendor understands aviation MRO constraints; CBLAero automates what Comlux and similar firms do manually.
@@ -285,18 +298,21 @@ The product’s core insight is that **availability is the primary signal**; can
 ### Market Context & Competitive Landscape
 
 **Existing Market Gaps:**
+
 - Generic ATS platforms (Greenhouse, Workable): Built for corporate hiring; ignore aviation compliance, domain-specific constraints.
 - LinkedIn Recruiter: Volume-based; no domain intelligence; no continuous engagement model.
 - Aviation-specific platforms: Limited; focus on pilot hiring (not MRO technicians); no sourcing automation.
 - CBLAero Position: **First availability-first + domain-intelligent sourcing engine for aviation MRO staffing.**
 
 **Why This Matters:**
+
 - $800 margin/placement × placement velocity = Revenue multiplier. CBLAero's availability-first model + automation enables 3x recruiter productivity (vs. 1.2x typical ATS improvements).
 - Non-IT staffing boom: Market inflection point; CBLAero captures wave with differentiated technology.
 
 ### Validation Approach
 
 **Innovation Validation Strategy:**
+
 - **Pilot Phase (Month 1–2):** Test availability-first model with 5–10 recruiters on Comlux-like clients. Measure: availability signal accuracy, candidate drop-off at each stage.
 - **Proof of Concept:** Validate 40% placement conversion (vs. industry 8–15%). Track which innovation piece drives improvement (availability-first vs. pre-qualification vs. automation).
 - **Market Testing:** Launch with high-velocity segment (contract staffing, seasonal hiring). Validate model works before scaling.
@@ -304,9 +320,9 @@ The product’s core insight is that **availability is the primary signal**; can
 ### Risk Mitigation
 
 **Innovation Risks & Fallbacks:**
+
 - **Risk:** Candidate self-selection model doesn't work; candidates ignore system despite opt-in.
   - Mitigation: A/B test messaging/incentives. If <30% active engagement, pivot to hybrid model (mix self-initiated + recruiter-proactive).
-  
 - **Risk:** Availability signals decay too fast; stale data reduces match quality.
   - Mitigation: Real-time validation; 48-hour refresh max; candidate satisfaction tracking (if <70%, system needs retooling).
 
@@ -323,21 +339,27 @@ The product’s core insight is that **availability is the primary signal**; can
 **This PRD requires staged validation before proceeding.** Each gate locks in either continue or pivot decision:
 
 ### Week 4 Gate: Availability-First Model Validation
+
 **Decision:** Does the 5-candidates-in-24hrs delivery work with manual sourcing?
+
 - **Success Criteria:** ≥5 qualified candidates per job within 24 hrs; ≥70% SMS response rate
 - **Risk Signal:** <3 candidates/24hrs or <40% response → model assumption broken; pivot to hybrid sourcing earlier
 - **Decision Options:** (A) Proceed to Tier 2 automation (week 5), OR (B) Extend Tier 1 testing (weeks 5–6), OR (C) Stop and reassess
 - **Owner:** Product + engineering lead
 
 ### Week 10 Gate: Automation ROI & Operational Readiness
+
 **Decision:** Do automation (scraper + self-testing) deliver promised time savings without quality loss?
+
 - **Success Criteria:** ≥15% time savings (recruiter engagement hours), ≥90% accuracy of self-testing, <5% regression in candidate quality
 - **Risk Signal:** Time savings <10% or accuracy <85% → automation not ready for Tier 3 pilots
 - **Decision Options:** (A) Proceed to Tier 3 pilots (week 11), OR (B) Extend automation polish (weeks 11–12), OR (C) Revert to semi-manual approach
 - **Owner:** Product + ops lead
 
 ### Week 14 Gate: Break-Even Path & Unit Economics
+
 **Decision:** Is the $800 margin/placement sustainable at scale? Are pilots pointing to month 4 break-even?
+
 - **Success Criteria:** Confirmed cost-per-placement ≤$200; placement volume ≥6/recruiter/week; pilot revenue ≥$4,800/recruiter/week
 - **Risk Signal:** Costs >$250/placement OR volume <4/week OR revenue <$3,200/week → unit economics fail; requires pivot (pricing, efficiency, go-to-market)
 - **Decision Options:** (A) Scale to 20+ customers (month 4 break-even), OR (B) Pivot to higher-margin segments, OR (C) Extend pilot phase
@@ -351,46 +373,52 @@ The product’s core insight is that **availability is the primary signal**; can
 
 **Browser Support Matrix**
 
-| Browser | Minimum Version | Support Level | Notes |
-|---|---|---|---|
-| Chrome | 120 | Full | Primary desktop browser |
-| Edge | 120 | Full | Windows enterprise baseline |
-| Firefox | 121 | Full | Full recruiter workflow support |
-| Safari | 17 | Full | macOS and iPadOS support |
-| iOS Safari | 17 | Partial | Candidate portal and recruiter essentials |
-| Android Chrome | 120 | Partial | Candidate portal and recruiter essentials |
+| Browser        | Minimum Version | Support Level | Notes                                     |
+| -------------- | --------------- | ------------- | ----------------------------------------- |
+| Chrome         | 120             | Full          | Primary desktop browser                   |
+| Edge           | 120             | Full          | Windows enterprise baseline               |
+| Firefox        | 121             | Full          | Full recruiter workflow support           |
+| Safari         | 17              | Full          | macOS and iPadOS support                  |
+| iOS Safari     | 17              | Partial       | Candidate portal and recruiter essentials |
+| Android Chrome | 120             | Partial       | Candidate portal and recruiter essentials |
 
 **Compatibility policy:** Test latest and latest-minus-1 for all full-support browsers at each release.
 
 **Responsive Design Requirements**
+
 - Desktop (>=1200px): full multi-panel recruiter workflow.
 - Tablet (768px-1199px): condensed panels with persistent primary actions.
 - Mobile (<768px): candidate portal full support; recruiter critical actions only.
 - Minimum touch target size: 44x44 px.
 
 **Accessibility Level**
+
 - Target standard: WCAG 2.1 AA.
 - All critical workflows keyboard operable without pointer input.
 - Color contrast minimum 4.5:1 for body text and controls.
 - Screen-reader labels required for forms, navigation, status indicators, and alert banners.
 
 **SEO and Indexing Posture**
+
 - Product console is authenticated and non-indexed.
 - Candidate portal routes are noindex by default unless explicitly approved for public indexing.
 
 ### Authentication and Access Requirements
 
 **Identity and Session Management**
+
 - Primary identity provider: enterprise SSO for @cblsolutions.com users.
 - Session persistence target: 30-day remembered device for low-risk actions.
 - Step-up authentication required for sensitive actions (exports, role changes, cross-tenant admin actions).
 
 **Outage Fallback Requirement**
+
 - If SSO is unavailable for more than 2 hours, admin may issue time-boxed emergency access tokens.
 - Emergency access must follow a documented runbook, require out-of-band identity verification, and expire within 4 hours.
 - Every emergency access event must be audit logged and reviewed within 1 business day.
 
 **Authorization and Multi-Tenancy**
+
 - Enforce strict object-level tenant isolation for every read and write operation.
 - Sequential ID enumeration must not expose cross-tenant records.
 - Tenant-isolation adversarial test suite must pass in CI before release.
@@ -398,24 +426,29 @@ The product’s core insight is that **availability is the primary signal**; can
 ### Integration and Resilience Requirements
 
 **Provider Abstraction**
+
 - Candidate enrichment, SMS, and email capabilities must be provider-agnostic.
 - Provider selection and vendor specifics are architecture decisions and not part of this PRD contract.
 
 **Schedule Governance**
+
 - Recurring business cadences (connector syncs, digest generation, refresh sweeps, compliance sweeps, and recurring operational checks) must be centrally managed through a unified schedule control plane.
 - Retry delays and cooldown windows are not user-authored schedules; they are execution safety controls enforced by policy.
 - Schedule changes must follow a validated path: UI -> API validation -> versioned policy/schedule records -> backend scheduler -> emitted jobs.
 
 **Rate Limits and Quotas**
+
 - Per-tenant quotas must be configurable for enrichment, SMS, and email.
 - Alert thresholds at 80%, 90%, and 100% of configured monthly budgets.
 
 **Failure Handling and Degradation**
+
 - If external enrichment is unavailable or exceeds timeout, system queues records for asynchronous batch processing.
 - Recruiters see explicit status states: `Enrichment Pending`, `Retry Scheduled`, `Ready`.
 - Messaging failures trigger bounded retry policy and escalation to admin when retry ceiling is exceeded.
 
 **Circuit Breaker Requirements**
+
 - Open breaker when rolling error threshold is exceeded over 5 minutes.
 - While open, route requests to queue mode and suppress user-facing hard errors.
 - Attempt controlled half-open recovery after cool-down period.
@@ -423,25 +456,30 @@ The product’s core insight is that **availability is the primary signal**; can
 ### Data Residency and Compliance Boundaries
 
 **Residency Policy**
+
 - Customer data, operational logs, and backups must remain in approved USA regions.
 - Cross-region replication outside approved USA regions is prohibited.
 
 **Third-Party Data Handling**
+
 - Third-party processors must have documented residency posture and signed data processing terms.
 - If a provider cannot guarantee required residency posture, route through approved proxy pattern or mark provider unsupported.
 
 **Export-Control Boundary**
+
 - MVP does not perform automated ITAR or export-control adjudication.
 - Export-control and foreign-national eligibility decisions remain customer compliance responsibilities unless future scope explicitly adds them.
 
 ### Security and Audit Requirements
 
 **Audit Integrity**
+
 - All critical user and system actions must be recorded in immutable audit storage.
 - Audit records require cryptographic integrity controls and tamper-evident retention.
 - Retention target: 5-year hot queryability plus 7-year cold archive.
 
 **Anomaly Detection Requirements**
+
 - Detect and score anomalies across geo-shift, device-shift, volume-shift, and time-of-access signals.
 - Define alert thresholds for low, medium, and high severity actions.
 - Target false-positive rate below 5% after pilot calibration.
@@ -468,12 +506,14 @@ The product’s core insight is that **availability is the primary signal**; can
 
 **Core Insight from Advanced Elicitation:**
 Initial MVP scope (8-12 weeks, pure manual sourcing) was lean but risky: it deferred all automation to Phase 2, which meant Month 1-4 CBLAero would look like a faster ATS, not an availability-first platform. Red Team analysis revealed three critical flaws:
+
 1. Manual sourcing ≠ continuous value proposition; without automated scraping, we lose differentiation
 2. 95% confidence claimed but delivered as manual recruiter review (0-60% real accuracy)
 3. Unit economics wouldn't validate until Phase 2 automation; Phase 1 pilots would struggle to hit 8-12% conversion
 
 **Decision: Refined Hybrid Approach**
 Extend MVP to 14 weeks with phased tiers that **prove the hypothesis early**:
+
 - Tier 1 (Weeks 1-4): Validate core availability-first model with manual sourcing
 - Tier 2 (Weeks 5-10): Introduce lightweight automation (scraper, self-testing, pre-screening agent)
 - Tier 3 (Weeks 11-14): Real-world pilot validation with differentiated platform
@@ -483,9 +523,11 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 ### MVP Feature Set: 3-Tier Implementation (14 weeks)
 
 #### **Tier 1: Proof of Concept (Weeks 1-4)**
+
 **Goal:** Validate that availability-first model improves conversion vs. traditional recruiting
 
 **Must-Have Capabilities:**
+
 - Candidate sourcing: Manual research of 10-20 pre-qualified candidates per job (domain SME + researcher)
 - Outreach orchestration: SMS/email templates with preferred contact time scheduling
 - Teams notification pipeline: Daily digest of prioritized candidates with match reasons
@@ -496,6 +538,7 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 **Not Included:** Scraping automation, ML confidence scoring, pre-screening agents
 
 **Success Criteria:**
+
 - 5 candidates delivered per job within 24 hours (manual sourcing)
 - 80% of contacted candidates receive interview requests
 - 80% interview attendance rate
@@ -506,14 +549,17 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 ---
 
 #### **Tier 2: MVP Internals—Add Automation Evidence (Weeks 5-10)**
+
 **Goal:** Prove that automation reduces manual effort and improves scaling potential
 
 **New Capabilities:**
+
 - **Lightweight scraper (Weeks 5-6):** Automated daily pulls from approved external candidate sources. Targets: 30-50 candidates/day per customer
 - **Self-testing prototype (Weeks 7-8):** System validates match quality against historical conversions; adjusts confidence scoring monthly
 - **Pre-screening agent pilot (Weeks 9-10):** Automated checks for tooling ownership, A&P certification, airport badge eligibility
 
 **Enhanced Capabilities:**
+
 - Sourcing combines manual + automated candidates (hybrid approach)
 - Confidence scores now show transparent reasoning ("A&P cert + 5yr MRO exp + local + availability signal")
 - Pre-screening dashboard for domain SME review
@@ -521,6 +567,7 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 **Not Included:** Full continuous monitoring, anomaly detection, advanced ML, cost transparency dashboard
 
 **Success Criteria:**
+
 - Sourcing velocity increases 3x (50-100 candidates/day by week 10)
 - Pre-screening reduces manual recruiter time by 30%
 - Self-testing validates 90%+ match accuracy (vs. historical outcomes)
@@ -530,15 +577,18 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 ---
 
 #### **Tier 3: Pilot Ready—Real-World Validation (Weeks 11-14)**
+
 **Goal:** Prove unit economics work; collect data for scaling decision
 
 **Pilot Readiness:**
+
 - Select 1-2 ideal-fit customers (high-velocity hiring, strong processes, commitment to feedback)
 - Deploy hybrid sourcing + automation across full customer workflow
 - Establish metrics tracking: conversions, sourcing velocity, cost-per-hire, time-to-fill
 - Create operational playbook for scaling to 3-5 customers
 
 **Success Criteria:**
+
 - 1-2 pilots achieve 5-8% conversion rate (validates funnel)
 - Cost-per-hire: $600-800 (validates unit economics at $800 margin)
 - Time-to-fill: <7 days average (validates 24-hr candidate delivery)
@@ -550,12 +600,14 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 ### Phased Development Roadmap
 
 #### **Phase 1 (Weeks 1-14): MVP Launch**
+
 **Timeline:** 14 weeks (Tier 1-3 sequential build)
 **Team:** 4 engineers, 1 PM, 1 domain researcher
 **Budget:** ~$70K (engineering + infrastructure)
 **Outcome:** 1-2 live pilots, validated unit economics, proof of differentiation
 
 **Phase 1 Success Metrics:**
+
 - 5-8% conversion rate (realistic for Month 1-2)
 - <7 day time-to-fill (vs. industry 3-4 weeks)
 - 3x recruiter productivity gain (vs. 1.2x typical ATS)
@@ -566,9 +618,11 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 ---
 
 #### **Phase 2 (Weeks 15-30): Growth & Scale**
+
 **Focus:** Automation hardening + capacity scaling + additional customer onboarding
 
 **Features Added:**
+
 - Continuous daily scraping at full scale (100+ candidates/day per customer)
 - ML-powered confidence calibration (98%+ accuracy)
 - Anomaly detection (GPS, access patterns, fraud detection)
@@ -577,6 +631,7 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 - Admin tenant provisioning UI (no manual DB scripts)
 
 **Phase 2 Success Metrics:**
+
 - Scale to 5-10 active customers
 - 15-20% conversion rate (Month 3-4)
 - Enable 2 clients/recruiter (vs. 1 in Phase 1)
@@ -586,9 +641,11 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 ---
 
 #### **Phase 3 (Months 6+): Expansion & Platform**
+
 **Focus:** Market expansion + compliance automation + universal platform
 
 **Features Added:**
+
 - Compliance automation (drug test letters, background check integration)
 - Cost transparency dashboard (per-tenant metering)
 - Universal platform template (non-aviation staffing domains)
@@ -596,6 +653,7 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 - Stakeholder-specific dashboards (CFO margins, compliance audits, etc.)
 
 **Phase 3 Success Metrics:**
+
 - 40% conversion rate (Month 6+)
 - 3 clients/recruiter (full multi-client workflow)
 - 50+ active customers by Q4
@@ -608,43 +666,46 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 
 #### **Technical Risks**
 
-| Risk | Tier Introduced | Mitigation |
-|------|-----------------|-----------|
-| Manual sourcing doesn't scale (recruiter becomes bottleneck) | Tier 1 | Add lightweight scraper by week 5 (Tier 2) |
-| Pre-screening agents make wrong calls (too strict/loose) | Tier 2 | Start with 50% automation; manual review of borderline cases |
-| Confidence scoring unreliable | Tier 2 | Month 1-2: transparent reasoning only; don't claim 95% until validated |
-| Continuous scraper hits API limits | Tier 2 | Implement quota management + graceful degradation by week 6 |
+| Risk                                                         | Tier Introduced | Mitigation                                                             |
+| ------------------------------------------------------------ | --------------- | ---------------------------------------------------------------------- |
+| Manual sourcing doesn't scale (recruiter becomes bottleneck) | Tier 1          | Add lightweight scraper by week 5 (Tier 2)                             |
+| Pre-screening agents make wrong calls (too strict/loose)     | Tier 2          | Start with 50% automation; manual review of borderline cases           |
+| Confidence scoring unreliable                                | Tier 2          | Month 1-2: transparent reasoning only; don't claim 95% until validated |
+| Continuous scraper hits API limits                           | Tier 2          | Implement quota management + graceful degradation by week 6            |
 
 #### **Market Risks**
 
-| Risk | Validation Point | Mitigation |
-|------|-----------------|-----------|
-| Availability-first hypothesis doesn't improve conversion | End of Tier 1 (week 4) | Pilot with Comlux decision-makers; compare vs. their historical data |
-| Continuous outreach is perceived as spam | Tier 1 (week 2) | A/B test messaging; start conservative (1/week), ramp based on feedback |
-| Customers can't adopt due to process friction | Tier 1 (week 4) | Conduct on-site training; measure recruiter time-to-productivity |
-| Economics don't work (cost-per-hire > margin) | Tier 3 (week 14) | If unit economics fail, pause Phase 2; pivot to event-based sourcing model |
+| Risk                                                     | Validation Point       | Mitigation                                                                 |
+| -------------------------------------------------------- | ---------------------- | -------------------------------------------------------------------------- |
+| Availability-first hypothesis doesn't improve conversion | End of Tier 1 (week 4) | Pilot with Comlux decision-makers; compare vs. their historical data       |
+| Continuous outreach is perceived as spam                 | Tier 1 (week 2)        | A/B test messaging; start conservative (1/week), ramp based on feedback    |
+| Customers can't adopt due to process friction            | Tier 1 (week 4)        | Conduct on-site training; measure recruiter time-to-productivity           |
+| Economics don't work (cost-per-hire > margin)            | Tier 3 (week 14)       | If unit economics fail, pause Phase 2; pivot to event-based sourcing model |
 
 #### **Resource Risks**
 
-| Scenario | Contingency |
-|---------|-----------|
-| Domain researcher unavailable | Use Comlux partnership for sourcing; extend Tier 1 timeline by 1 week |
-| Backend engineer unavailable | Defer lightweight scraper to week 7; compress Tier 2 (5 weeks) |
-| Funding delayed | Reduce Tier 2 scope; launch Tier 1+MVP only (weeks 1-10); delay Tier 3 |
+| Scenario                      | Contingency                                                            |
+| ----------------------------- | ---------------------------------------------------------------------- |
+| Domain researcher unavailable | Use Comlux partnership for sourcing; extend Tier 1 timeline by 1 week  |
+| Backend engineer unavailable  | Defer lightweight scraper to week 7; compress Tier 2 (5 weeks)         |
+| Funding delayed               | Reduce Tier 2 scope; launch Tier 1+MVP only (weeks 1-10); delay Tier 3 |
 
 ---
 
 ### Success Gates & Go/No-Go Decision Points
 
 **End of Tier 1 (Week 4): Continue to Tier 2?**
+
 - ✅ Go if: Manual sourcing achieves 5-8% conversion; customers request automation
 - 🛑 No-go if: Manual sourcing <2% conversion; availability hypothesis unsupported
 
 **End of Tier 2 (Week 10): Continue to Tier 3?**
+
 - ✅ Go if: Scraper working; pre-screening accuracy >90%; team confident in reliability
 - 🛑 No-go if: Scraper unreliable; pre-screening false negatives >30%; engineering debt too high
 
 **End of Tier 3 (Week 14): Launch to Phase 2?**
+
 - ✅ Go if: 1-2 pilots at 5-8% conversion; cost-per-hire <$900; operational playbook ready
 - 🛑 No-go if: Pilots <3% conversion; cost-per-hire >$1,200; scaling plan unclear
 
@@ -653,12 +714,14 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 ### MVP vs. Phase 1 vs. Full Platform Clarity
 
 **What shipped in Phase 1 (after week 14):**
+
 - ✅ Proof-of-concept MVP with manual sourcing
 - ✅ Lightweight automation (scraper, pre-screening, self-testing)
 - ✅ 1-2 live pilots generating real ROI
 - ✅ Operational playbook for 3-5 customer scaling
 
 **What's NOT in MVP (deferred):**
+
 - ❌ Full continuous monitoring (99.5% SLA monitoring)
 - ❌ Anomaly detection (GPS/access patterns)
 - ❌ Advanced ML (98% confidence)
@@ -667,6 +730,7 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 - ❌ 100 recruiters at scale (focus on 1-2 customers)
 
 **Why this scope works:**
+
 - Validates core hypothesis (availability-first improves hiring velocity) by week 4
 - Proves differentiation (automation begins week 5, not week 16) by week 10
 - Demonstrates unit economics (realistic 5-8% conversion) by week 14
@@ -677,6 +741,7 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 **THE CAPABILITY CONTRACT:** Every feature listed below defines what CBLAero IS. Features not listed here will NOT exist in the final product unless explicitly added. This section binds all downstream design, architecture, and engineering work.
 
 **FR Allocation by Phase:**
+
 - **MVP Tier 1 (Weeks 1-4):** Core mission FRs + pre-screening + compliance basics = ~45 FRs
 - **MVP Tier 2 (Weeks 5-10):** Automation + advanced notifications + ML basics = +26-33 FRs
 - **MVP Tier 3 (Weeks 11-14):** Ops, scaling, pilot ops = +7-11 FRs
@@ -688,7 +753,7 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 
 ### Candidate Management
 
-- **FR1 [MVP Tier 1]:** System can ingest candidate records from bulk CSV upload (up to 1M records initial load, then daily/weekly recruiter uploads of 100–10,000 records); upload must validate, deduplicate, and report import errors per row with a downloadable error report
+- **FR1 [MVP Tier 1]:** System can ingest candidate records from bulk CSV upload (up to 1M records initial load, then daily/weekly recruiter uploads of 100–10,000 records); upload must validate, deduplicate, retain unmapped columns in candidate `extra_attributes` (JSONB), and report import errors per row with a downloadable error report. Guardrails: blocked sensitive keys (`password`, `token`, `secret`, `api_key`) are dropped; per-row `extra_attributes` payload is capped by key count and serialized size.
 - **FR1a [MVP Tier 1]:** System can perform initial bulk load of up to 1M existing candidate records via a one-time admin-supervised migration pipeline; load must complete within a time-bounded batch window with progress tracking and rollback capability
 - **FR2 [MVP Tier 2]:** System can ingest candidate data automatically from configured ATS system connectors (read-only API polling or webhook) and recruiter email inboxes (Microsoft Graph mail parsing); new or updated records are upserted via the standard deduplication pipeline with source attribution
 - **FR3 [MVP Tier 1]:** System can store and index candidate profiles with core attributes (name, phone, email, location, skills, certifications, experience, availability status) in Supabase Postgres as the system of record; candidate semantic-retrieval indexes use `pgvector` under tenant-scoped access controls
@@ -798,6 +863,7 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 
 **Tier 1 MVP (Weeks 1-4): 45 FRs**
 Core mission FRs (sourcing, outreach, workflow, scoring, compliance, audit, ops):
+
 - Candidate Management: FR1, 3, 4, 5, 6, 7 (all manual sourcing focus)
 - Outreach & Engagement: FR8-14, 16 (SMS/email outreach + opt-out compliance)
 - Recruiter Workflow: FR18-22, 25-27 (job posting, workflow, clients)
@@ -809,6 +875,7 @@ Core mission FRs (sourcing, outreach, workflow, scoring, compliance, audit, ops)
 
 **Tier 2 MVP (Weeks 5-10): +28 FRs**
 Automation evidence + advanced features:
+
 - Candidate Management: FR2 (scraper)
 - Outreach: FR15, 17 (retry, bulk)
 - Workflow: FR24 (bulk ops)
@@ -820,6 +887,7 @@ Automation evidence + advanced features:
 
 **Tier 3 MVP (Weeks 11-14): +2 FRs**
 Pilot ops + scaling:
+
 - Workflow: FR23 (offer management)
 - Compliance: FR62 (GDPR deletion workflow)
 
@@ -888,8 +956,8 @@ Design, architecture, and engineering teams should treat this section as the can
 **Threat Detection & Response:**
 
 - **NFR15 [MVP Tier 2]:** Anomaly detection alerts:
-  - >10 failed login attempts in 1 hour → Auto-lockout + Admin alert
-  - >100 bulk data downloads/day → Compliance Officer alert
+  - > 10 failed login attempts in 1 hour → Auto-lockout + Admin alert
+  - > 100 bulk data downloads/day → Compliance Officer alert
   - Geolocation shift >500 miles in <30 minutes → anomaly flag + manual review within 2 hours
 
 **API Security:**
@@ -928,7 +996,7 @@ Design, architecture, and engineering teams should treat this section as the can
 
 - **NFR24 [MVP Tier 1]:** TCPA compliance: Maintain opt-out requests per channel (SMS vs. email); enforce before outreach; process opt-out within 24 hours; audit trail of all opt-outs
 - **NFR25 [MVP Tier 1]:** Aviation domain: Maintain 5-year record of all A&P certifications verified, hiring decisions involving certifications, FAA compliance checks
-- **NFR26 [MVP Tier 2]:** SOC 2 Type II audit-ready: 
+- **NFR26 [MVP Tier 2]:** SOC 2 Type II audit-ready:
   - Access controls defined and enforced (RBAC documented)
   - Change management logged (all system changes in audit trail)
   - Incident response procedures documented (runbook for security incidents)
@@ -962,7 +1030,7 @@ Design, architecture, and engineering teams should treat this section as the can
 
 **Monitoring & Alerting:**
 
-- **NFR33 [MVP Tier 1]:** Critical error alerting: 
+- **NFR33 [MVP Tier 1]:** Critical error alerting:
   - Database connection errors → Admin alert within 5 minutes
   - API quota exceeded → Finance alert + Delivery Head alert
   - Authentication system unavailable → All leaders notified
@@ -1013,15 +1081,17 @@ Design, architecture, and engineering teams should treat this section as the can
 ### NFR Trade-offs & Assumptions
 
 **Performance vs. Cost:**
+
 - <2sec candidate load requires aggressive in-memory caching; additional infrastructure cost is an acceptable trade-off for user adoption.
 
 **Security vs. Usability:**
+
 - Step-up MFA for data exports is friction, but required for SOC 2. Acceptable; recruiter friction <1% of workflow time.
 
 **Compliance vs. Speed:**
+
 - GDPR deletion verification (30-day process) is slow, but required by law. Async process doesn't block recruiter operations.
 
 **Scalability vs. Simplicity:**
+
 - Horizontal data-partitioning plan deferred to Phase 2 (after 50M records); simpler MVP architecture acceptable for Tier 1-3.
-
-

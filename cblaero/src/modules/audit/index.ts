@@ -32,7 +32,11 @@ export type ImportBatchAccessEvent = {
   actorId: string;
   tenantId: string;
   batchId: string | null;
-  action: "list_import_batches" | "read_import_batch_detail";
+  action:
+    | "list_import_batches"
+    | "read_import_batch_detail"
+    | "csv_upload_access"
+    | "download_csv_error_report";
   occurredAtIso: string;
 };
 

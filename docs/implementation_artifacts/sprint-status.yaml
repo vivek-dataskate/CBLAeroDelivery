@@ -65,7 +65,7 @@ development_status:
 
   epic-2: in-progress
   2-1-build-admin-supervised-initial-1m-record-migration-pipeline: done
-  2-2-implement-recruiter-csv-upload-wizard-and-validation: backlog
+  2-2-implement-recruiter-csv-upload-wizard-and-validation: done
   2-3-implement-ats-and-email-ingestion-connectors: backlog
   2-4-implement-candidate-profile-storage-and-indexing: backlog
   2-5-implement-deterministic-deduplication-and-manual-review-queue: backlog
@@ -130,4 +130,3 @@ development_status:
   9-4-implement-candidate-lifecycle-notifications: backlog
   9-5-implement-candidate-offer-and-document-download: backlog
   epic-9-retrospective: optional
-
