@@ -59,6 +59,22 @@ export type StepUpAttemptEvent = {
   occurredAtIso: string;
 };
 
+export type ClientContextConfirmationOutcome = "required" | "confirmed";
+
+export type ClientContextConfirmationEvent = {
+  traceId: string;
+  actorId: string;
+  role: string;
+  tenantId: string;
+  activeClientId: string;
+  targetClientId: string;
+  action: string;
+  path: string;
+  method: string;
+  outcome: ClientContextConfirmationOutcome;
+  occurredAtIso: string;
+};
+
 export type DataResidencyCheckStatus = "pass" | "fail";
 
 export type DataResidencyCheckTargets = {
@@ -81,10 +97,12 @@ export type DataResidencyCheckEvent = {
 const AUTHORIZATION_DENY_EVENT_LIMIT = 1000;
 const ADMIN_ACTION_EVENT_LIMIT = 1000;
 const STEP_UP_ATTEMPT_EVENT_LIMIT = 1000;
+const CLIENT_CONTEXT_CONFIRMATION_EVENT_LIMIT = 1000;
 const DATA_RESIDENCY_CHECK_EVENT_LIMIT = 1000;
 const authorizationDenyEvents: AuthorizationDenyEvent[] = [];
 const adminActionEvents: AdminActionEvent[] = [];
 const stepUpAttemptEvents: StepUpAttemptEvent[] = [];
+const clientContextConfirmationEvents: ClientContextConfirmationEvent[] = [];
 const dataResidencyCheckEvents: DataResidencyCheckEvent[] = [];
 
 function vectorAuditEnabled(): boolean {
@@ -425,6 +443,121 @@ export async function clearStepUpAttemptEventsForTest(): Promise<void> {
   const { error } = await client.from("audit_step_up_attempts").delete().gte("id", 0);
   if (error) {
     throw new Error(`Failed to clear step-up attempt events: ${error.message}`);
+  }
+}
+
+export async function recordClientContextConfirmationEvent(
+  input: Omit<ClientContextConfirmationEvent, "occurredAtIso">,
+): Promise<ClientContextConfirmationEvent> {
+  const event: ClientContextConfirmationEvent = {
+    ...input,
+    occurredAtIso: new Date().toISOString(),
+  };
+
+  if (isInMemoryMode()) {
+    clientContextConfirmationEvents.push(event);
+    if (clientContextConfirmationEvents.length > CLIENT_CONTEXT_CONFIRMATION_EVENT_LIMIT) {
+      clientContextConfirmationEvents.splice(
+        0,
+        clientContextConfirmationEvents.length - CLIENT_CONTEXT_CONFIRMATION_EVENT_LIMIT,
+      );
+    }
+
+    return event;
+  }
+
+  const client = getSupabaseAdminClient();
+  const { data, error } = await client
+    .from("audit_client_context_confirmations")
+    .insert({
+      trace_id: event.traceId,
+      actor_id: event.actorId,
+      role: event.role,
+      tenant_id: event.tenantId,
+      active_client_id: event.activeClientId,
+      target_client_id: event.targetClientId,
+      action: event.action,
+      path: event.path,
+      method: event.method,
+      outcome: event.outcome,
+      occurred_at: event.occurredAtIso,
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to persist client context confirmation event: ${error.message}`);
+  }
+
+  await insertVectorAudit(
+    "audit_client_context_confirmations",
+    Number(data.id),
+    event.tenantId,
+    JSON.stringify(event),
+  );
+
+  return event;
+}
+
+export async function listClientContextConfirmationEvents(
+  tenantId?: string,
+): Promise<ClientContextConfirmationEvent[]> {
+  if (isInMemoryMode()) {
+    const events = [...clientContextConfirmationEvents];
+    return tenantId ? events.filter((event) => event.tenantId === tenantId) : events;
+  }
+
+  const client = getSupabaseAdminClient();
+  const query = tenantId
+    ? client
+        .from("audit_client_context_confirmations")
+        .select(
+          "trace_id, actor_id, role, tenant_id, active_client_id, target_client_id, action, path, method, outcome, occurred_at",
+        )
+        .eq("tenant_id", tenantId)
+    : client
+        .from("audit_client_context_confirmations")
+        .select(
+          "trace_id, actor_id, role, tenant_id, active_client_id, target_client_id, action, path, method, outcome, occurred_at",
+        );
+
+  const { data, error } = await query
+    .order("occurred_at", { ascending: false })
+    .limit(CLIENT_CONTEXT_CONFIRMATION_EVENT_LIMIT);
+
+  if (error) {
+    throw new Error(`Failed to list client context confirmation events: ${error.message}`);
+  }
+
+  return (data ?? []).map((row) => ({
+    traceId: row.trace_id,
+    actorId: row.actor_id,
+    role: row.role,
+    tenantId: row.tenant_id,
+    activeClientId: row.active_client_id,
+    targetClientId: row.target_client_id,
+    action: row.action,
+    path: row.path,
+    method: row.method,
+    outcome: row.outcome,
+    occurredAtIso: row.occurred_at,
+  }));
+}
+
+export async function clearClientContextConfirmationEventsForTest(): Promise<void> {
+  clientContextConfirmationEvents.length = 0;
+
+  if (isInMemoryMode()) {
+    return;
+  }
+
+  const client = getSupabaseAdminClient();
+  const { error } = await client
+    .from("audit_client_context_confirmations")
+    .delete()
+    .gte("id", 0);
+  if (error) {
+    throw new Error(`Failed to clear client context confirmation events: ${error.message}`);
   }
 }
 
