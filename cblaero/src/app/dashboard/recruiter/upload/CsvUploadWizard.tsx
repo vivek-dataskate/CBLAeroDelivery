@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 
 import BatchProgressCard from "./BatchProgressCard";
 
+// "(ignore)" is the server API contract value for unmapped columns — displayed as "Additional Attribute" in the UI.
 type CanonicalField =
   | "name"
   | "email"
@@ -11,7 +12,7 @@ type CanonicalField =
   | "location"
   | "skills"
   | "availability_status"
-  | "(additional_attribute)";
+  | "(ignore)";
 
 type ValidationSummary = {
   totalRows: number;
@@ -40,7 +41,7 @@ const FIELD_OPTIONS: CanonicalField[] = [
   "location",
   "skills",
   "availability_status",
-  "(additional_attribute)",
+  "(ignore)",
 ];
 
 const FIELD_ALIASES: Record<string, CanonicalField> = {
@@ -116,7 +117,7 @@ function normalizeHeader(value: string): string {
 function inferMapping(headers: string[]): Record<string, CanonicalField> {
   const map: Record<string, CanonicalField> = {};
   for (const header of headers) {
-    map[header] = FIELD_ALIASES[normalizeHeader(header)] ?? "(additional_attribute)";
+    map[header] = FIELD_ALIASES[normalizeHeader(header)] ?? "(ignore)";
   }
   return map;
 }
@@ -310,7 +311,7 @@ export default function CsvUploadWizard() {
               <label key={header} className="flex items-center justify-between gap-3 text-sm">
                 <span className="truncate text-slate-200">{header}</span>
                 <select
-                  value={mapping[header] ?? "(additional_attribute)"}
+                  value={mapping[header] ?? "(ignore)"}
                   onChange={(event) => {
                     const value = event.target.value as CanonicalField;
                     setMapping((current) => ({ ...current, [header]: value }));
@@ -319,7 +320,7 @@ export default function CsvUploadWizard() {
                 >
                   {FIELD_OPTIONS.map((option) => (
                     <option key={option} value={option}>
-                      {option === "(additional_attribute)" ? "Additional Attribute" : option}
+                      {option === "(ignore)" ? "Additional Attribute" : option}
                     </option>
                   ))}
                 </select>

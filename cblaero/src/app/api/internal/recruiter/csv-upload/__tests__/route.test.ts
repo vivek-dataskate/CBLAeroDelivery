@@ -210,6 +210,45 @@ describe("POST /api/internal/recruiter/csv-upload", () => {
     });
   });
 
+  it("accepts '(ignore)' as columnMap wire value and populates extra_attributes (regression: client-server contract)", async () => {
+    const issued = await issueSessionToken({
+      actorId: "actor-recruiter-9",
+      email: "recruiter@cblsolutions.com",
+      tenantId: "tenant-alpha",
+      role: "recruiter",
+      rememberDevice: false,
+    });
+
+    // Simulate what CsvUploadWizard sends: explicit "(ignore)" for unmapped columns.
+    const request = await buildMultipartUploadRequest({
+      token: issued.token,
+      csv: buildCsv([
+        "name,email,Department,Seniority",
+        "Jane Doe,jane@example.com,Engineering,Senior",
+      ]),
+      columnMap: {
+        name: "name",
+        email: "email",
+        Department: "(ignore)",
+        Seniority: "(ignore)",
+      },
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.data.imported).toBe(1);
+    expect(body.data.errors).toBe(0);
+
+    const candidates = listCsvCandidatesForTest();
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].extra_attributes).toMatchObject({
+      department: "Engineering",
+      seniority: "Senior",
+    });
+  });
+
   it("drops blocked sensitive keys from extra_attributes", async () => {
     const issued = await issueSessionToken({
       actorId: "actor-recruiter-5",
