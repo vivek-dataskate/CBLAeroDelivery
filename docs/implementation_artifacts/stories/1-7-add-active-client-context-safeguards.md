@@ -1,6 +1,6 @@
 # Story 1.7: Add Active Client Context Safeguards
 
-Status: review
+Status: done
 
 ## Story
 
