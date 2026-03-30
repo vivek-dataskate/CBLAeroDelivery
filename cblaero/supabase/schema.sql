@@ -461,9 +461,12 @@ $$;
 
 -- ============================================================
 -- Permissions
--- Grant table and function access to Supabase roles.
+-- Grant schema usage + table/function access to Supabase roles.
 -- Re-run after adding new tables — grants are not retroactive.
+-- schema usage is required for PostgREST to route into cblaero_app.
 -- ============================================================
+
+grant usage on schema cblaero_app to anon, authenticated, service_role;
 
 grant select, insert on cblaero_app.audit_import_batch_accesses
   to anon, authenticated, service_role;
