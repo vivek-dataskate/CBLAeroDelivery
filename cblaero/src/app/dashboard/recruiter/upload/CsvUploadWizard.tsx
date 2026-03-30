@@ -6,10 +6,21 @@ import BatchProgressCard from "./BatchProgressCard";
 
 // "(ignore)" is the server API contract value for unmapped columns — displayed as "Additional Attribute" in the UI.
 type CanonicalField =
-  | "name"
+  | "first_name"
+  | "last_name"
+  | "middle_name"
   | "email"
-  | "phone"
-  | "location"
+  | "alternate_email"
+  | "mobile"
+  | "home_phone"
+  | "work_phone"
+  | "address"
+  | "city"
+  | "state"
+  | "country"
+  | "postal_code"
+  | "current_company"
+  | "job_title"
   | "skills"
   | "availability_status"
   | "(ignore)";
@@ -35,36 +46,99 @@ const MAX_ROWS = 10_000;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const FIELD_OPTIONS: CanonicalField[] = [
-  "name",
+  "first_name",
+  "last_name",
+  "middle_name",
   "email",
-  "phone",
-  "location",
+  "alternate_email",
+  "mobile",
+  "home_phone",
+  "work_phone",
+  "address",
+  "city",
+  "state",
+  "country",
+  "postal_code",
+  "current_company",
+  "job_title",
   "skills",
   "availability_status",
   "(ignore)",
 ];
 
 const FIELD_LABELS: Record<CanonicalField, string> = {
-  name: "Name",
+  first_name: "First Name",
+  last_name: "Last Name",
+  middle_name: "Middle Name",
   email: "Email",
-  phone: "Phone",
-  location: "Location",
+  alternate_email: "Alternate Email",
+  mobile: "Mobile",
+  home_phone: "Home Phone",
+  work_phone: "Work Phone",
+  address: "Address",
+  city: "City",
+  state: "State",
+  country: "Country",
+  postal_code: "Postal Code",
+  current_company: "Current Company",
+  job_title: "Job Title",
   skills: "Skills",
   availability_status: "Availability Status",
   "(ignore)": "Additional Attribute",
 };
 
 const FIELD_ALIASES: Record<string, CanonicalField> = {
-  name: "name",
-  full_name: "name",
-  fullname: "name",
+  // Name
+  first_name: "first_name",
+  firstname: "first_name",
+  given_name: "first_name",
+  last_name: "last_name",
+  lastname: "last_name",
+  surname: "last_name",
+  family_name: "last_name",
+  middle_name: "middle_name",
+  middlename: "middle_name",
+  // Email
   email: "email",
   email_address: "email",
-  phone: "phone",
-  phone_number: "phone",
-  mobile: "phone",
-  location: "location",
-  city: "location",
+  alternate_email: "alternate_email",
+  alternate_email_address: "alternate_email",
+  secondary_email: "alternate_email",
+  other_email: "alternate_email",
+  // Phone
+  mobile: "mobile",
+  mobile_phone: "mobile",
+  mobile_number: "mobile",
+  cell: "mobile",
+  cell_phone: "mobile",
+  phone: "mobile",
+  phone_number: "mobile",
+  home_phone: "home_phone",
+  home_phone_number: "home_phone",
+  work_phone: "work_phone",
+  work_phone_number: "work_phone",
+  office_phone: "work_phone",
+  // Location
+  address: "address",
+  street_address: "address",
+  city: "city",
+  state: "state",
+  province: "state",
+  country: "country",
+  postal_code: "postal_code",
+  zip: "postal_code",
+  zip_code: "postal_code",
+  postcode: "postal_code",
+  // Professional
+  current_company: "current_company",
+  company: "current_company",
+  employer: "current_company",
+  organization: "current_company",
+  job_title: "job_title",
+  title: "job_title",
+  position: "job_title",
+  role: "job_title",
+  // Skills / availability
   skills: "skills",
   skill: "skills",
   availability: "availability_status",
@@ -163,23 +237,24 @@ function validateRows(
       return header ? row[header] ?? "" : "";
     };
 
-    const name = mappedValue("name").trim();
+    const firstName = mappedValue("first_name").trim();
+    const lastName = mappedValue("last_name").trim();
     const email = mappedValue("email").trim().toLowerCase();
-    const phone = mappedValue("phone").trim();
+    const mobile = mappedValue("mobile").trim();
 
-    if (!name || (!email && !phone)) {
+    if (!firstName || !lastName || (!email && !mobile)) {
       summary.byErrorCode.missing_identity += 1;
       summary.invalidRows += 1;
       continue;
     }
 
-    if ((email && !EMAIL_REGEX.test(email)) || (phone && !phoneLooksValid(phone))) {
+    if ((email && !EMAIL_REGEX.test(email)) || (mobile && !phoneLooksValid(mobile))) {
       summary.byErrorCode.invalid_format += 1;
       summary.invalidRows += 1;
       continue;
     }
 
-    const identityKey = email || phone.replace(/\D+/g, "");
+    const identityKey = email || mobile.replace(/\D+/g, "");
     if (seenIdentity.has(identityKey)) {
       summary.duplicateDetectedCount += 1;
     } else {
@@ -194,7 +269,11 @@ function validateRows(
 
 function requiredMappingsSatisfied(mapping: Record<string, CanonicalField>): boolean {
   const values = Object.values(mapping);
-  return values.includes("name") && (values.includes("email") || values.includes("phone"));
+  return (
+    values.includes("first_name") &&
+    values.includes("last_name") &&
+    (values.includes("email") || values.includes("mobile"))
+  );
 }
 
 export default function CsvUploadWizard() {
@@ -340,7 +419,7 @@ export default function CsvUploadWizard() {
 
           {!requiredMappingsSatisfied(mapping) ? (
             <p className="mt-3 text-xs text-amber-300">
-              Required mapping: name and at least one of email or phone.
+              Required mapping: First Name, Last Name, and at least one of Email or Mobile.
             </p>
           ) : null}
 
