@@ -75,6 +75,22 @@ Set CBL_SSO_ISSUER as:
 - Set CBL_APP_URL to your Render service URL.
 - Redeploy after saving env variables.
 
+### 3.1) Render data residency runbook (required)
+
+If login/runtime fails with a USA data residency policy gate error, verify these values in Render service environment:
+
+- CBL_APPROVED_US_REGIONS=us-east-1,us-west-2
+- CBL_DATA_REGION=us-west-2
+- CBL_LOG_REGION=us-west-2
+- CBL_BACKUP_REGION=us-west-2
+
+Operational checks:
+
+- Use lowercase region identifiers only.
+- Keep all region values inside CBL_APPROVED_US_REGIONS.
+- Do not wrap values in quotes.
+- Redeploy after any change.
+
 ### 4) Supabase schema setup (non-default schema)
 
 This app is configured to use a dedicated Postgres schema, not `public`.
@@ -102,6 +118,16 @@ Recommended usage:
 - Before running Supabase schema operations
 - Before environment provisioning/promotion to staging/production
 - In CI/CD prior to migration/apply steps
+
+## Active-Client Contract Checklist
+
+When adding or changing candidate operations in later epics, keep UX and API scope controls in lockstep:
+
+- UI must surface the current active client explicitly.
+- Requests must include activeClientId when operation scope is client-sensitive.
+- API handlers must validate activeClientId against authenticated client memberships.
+- Cross-client high-impact actions must keep server-enforced confirmation requirements.
+- Tests must include positive and negative active-client scope cases.
 
 ## Learn More
 

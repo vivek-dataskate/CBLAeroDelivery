@@ -65,17 +65,26 @@ export async function GET(request: NextRequest) {
   const validation = evaluateUsaDataResidencyPolicy();
   const status = validation.valid ? "pass" : "fail";
 
-  await recordDataResidencyCheckEvent({
-    traceId,
-    actorId: session.actorId,
-    tenantId,
-    status,
-    approvedRegions: validation.approvedRegions,
-    checkedTargets: validation.targets,
-    violations: validation.violations,
-  });
-
   if (!validation.valid) {
+    // Never turn an explicit policy failure into a 500 due to audit persistence issues.
+    try {
+      await recordDataResidencyCheckEvent({
+        traceId,
+        actorId: session.actorId,
+        tenantId,
+        status,
+        approvedRegions: validation.approvedRegions,
+        checkedTargets: validation.targets,
+        violations: validation.violations,
+      });
+    } catch (error) {
+      console.error("[compliance/data-residency] failed to persist failed-policy audit event", {
+        traceId,
+        tenantId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+
     return NextResponse.json(
       {
         data: {
@@ -99,6 +108,16 @@ export async function GET(request: NextRequest) {
       { status: 412 },
     );
   }
+
+  await recordDataResidencyCheckEvent({
+    traceId,
+    actorId: session.actorId,
+    tenantId,
+    status,
+    approvedRegions: validation.approvedRegions,
+    checkedTargets: validation.targets,
+    violations: validation.violations,
+  });
 
   const events = await listDataResidencyCheckEvents(tenantId);
   const latestChecks = events.slice(0, 50).reverse();
