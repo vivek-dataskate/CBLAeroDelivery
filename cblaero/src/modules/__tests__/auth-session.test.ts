@@ -33,7 +33,26 @@ describe("auth session controls", () => {
     const verified = await verifySessionToken(issued.token, nowMs + 1_000);
     expect(verified?.actorId).toBe("actor-1");
     expect(verified?.tenantId).toBe("tenant-1");
+    expect(verified?.clientIds).toEqual(["tenant-1"]);
     expect(verified?.rememberDevice).toBe(false);
+  });
+
+  it("includes explicit client context list in session token", async () => {
+    const nowMs = Date.UTC(2026, 2, 11, 12, 0, 0);
+    const issued = await issueSessionToken(
+      {
+        actorId: "actor-multi",
+        email: "multi@cblsolutions.com",
+        tenantId: "tenant-a",
+        clientIds: ["tenant-a", "tenant-b", "tenant-b"],
+        role: "delivery-head",
+        rememberDevice: false,
+      },
+      nowMs,
+    );
+
+    const verified = await verifySessionToken(issued.token, nowMs + 1_000);
+    expect(verified?.clientIds).toEqual(["tenant-a", "tenant-b"]);
   });
 
   it("issues 30-day session TTL when remember-device is enabled", async () => {

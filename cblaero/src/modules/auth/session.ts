@@ -25,6 +25,7 @@ export type AuthSession = {
   actorId: string;
   email: string;
   tenantId: string;
+  clientIds?: string[];
   role: SessionRole;
   rememberDevice: boolean;
   issuedAtEpochSec: number;
@@ -40,6 +41,7 @@ export type IssueSessionInput = {
   actorId: string;
   email: string;
   tenantId: string;
+  clientIds?: string[];
   role: SessionRole;
   rememberDevice: boolean;
 };
@@ -54,6 +56,7 @@ type SessionTokenPayload = JWTPayload & {
   actor_id: string;
   email: string;
   tenant_id: string;
+  client_ids?: string[];
   role: SessionRole;
   remember_device: boolean;
 };
@@ -102,6 +105,21 @@ function asNonEmptyString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function normalizeClientIds(input: unknown, fallbackTenantId: string): string[] {
+  const values = Array.isArray(input) ? input : [];
+  const unique = new Set<string>();
+
+  for (const value of values) {
+    const normalized = asNonEmptyString(value);
+    if (normalized) {
+      unique.add(normalized);
+    }
+  }
+
+  unique.add(fallbackTenantId);
+  return [...unique];
+}
+
 function toSession(payload: SessionTokenPayload): AuthSession | null {
   const sessionId = asNonEmptyString(payload.jti);
   const actorId = asNonEmptyString(payload.actor_id);
@@ -123,11 +141,14 @@ function toSession(payload: SessionTokenPayload): AuthSession | null {
     return null;
   }
 
+  const clientIds = normalizeClientIds(payload.client_ids, tenantId);
+
   return {
     sessionId,
     actorId,
     email,
     tenantId,
+    clientIds,
     role,
     rememberDevice: payload.remember_device === true,
     issuedAtEpochSec,
@@ -147,11 +168,13 @@ export async function issueSessionToken(
   const ttlSeconds = getSessionTtlSeconds(input.rememberDevice);
   const expiresAtEpochSec = nowEpochSec + ttlSeconds;
   const sessionId = crypto.randomUUID();
+  const clientIds = normalizeClientIds(input.clientIds, input.tenantId);
 
   const token = await new SignJWT({
     actor_id: input.actorId,
     email: input.email,
     tenant_id: input.tenantId,
+    client_ids: clientIds,
     role: input.role,
     remember_device: input.rememberDevice,
   })
@@ -171,6 +194,7 @@ export async function issueSessionToken(
       actorId: input.actorId,
       email: input.email,
       tenantId: input.tenantId,
+      clientIds,
       role: input.role,
       rememberDevice: input.rememberDevice,
       issuedAtEpochSec: nowEpochSec,

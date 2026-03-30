@@ -35,10 +35,10 @@ describe("authorization deny audit API", () => {
 
     await authorizeAccess({
       session: recruiter.session,
-      action: "candidate:write",
+      action: "audit:read-denials",
       requestedTenantId: "tenant-a",
       path: "/api/internal/candidates",
-      method: "POST",
+      method: "GET",
       traceId: "trace-deny-seed",
     });
 
