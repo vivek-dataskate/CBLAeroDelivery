@@ -458,3 +458,27 @@ begin
   select v_chunk_imported, 0, v_chunk_errors;
 end;
 $$;
+
+-- ============================================================
+-- Permissions
+-- Grant table and function access to Supabase roles.
+-- Re-run after adding new tables — grants are not retroactive.
+-- ============================================================
+
+grant select, insert on cblaero_app.audit_import_batch_accesses
+  to anon, authenticated, service_role;
+
+grant select, insert, update on cblaero_app.import_batch
+  to anon, authenticated, service_role;
+
+grant select, insert on cblaero_app.import_row_error
+  to anon, authenticated, service_role;
+
+grant select, insert, update, delete on cblaero_app.candidates
+  to anon, authenticated, service_role;
+
+grant execute on function cblaero_app.process_import_chunk(uuid, jsonb, jsonb, int, int, int)
+  to anon, authenticated, service_role;
+
+grant usage on all sequences in schema cblaero_app
+  to anon, authenticated, service_role;
