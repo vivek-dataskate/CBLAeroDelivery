@@ -160,6 +160,8 @@ NFR38: Horizontal scaling supports independently scaled processing services with
 - Recruiter experience must support motivation-first ranking context and visible rejection reasons with controlled override path.
 - Dashboard UX must scale from top-5 action view to larger queues via progressive disclosure without overwhelming users.
 - Teams outage and provider outage fallback UX must route users to alternate channel notifications and visible status.
+- All recurring business schedules must use the global scheduler control plane backed by versioned schedule and policy records; feature workers may own retry timers, but not product-visible cadences.
+- Schedule taxonomy must stay explicit in implementation work: business schedules are centrally managed, retry timers remain execution-local, and lock/cooldown windows are enforced from policy/domain state rather than modeled as recurring jobs.
 
 ### FR Coverage Map
 
@@ -301,6 +303,7 @@ Enable candidates to securely self-serve profile, status, and document workflows
 - Story 2.4: S
 - Story 2.5: M
 - Story 2.6: S
+- Story 2.7: M
 - Story 3.1: S
 - Story 3.2: S
 - Story 3.3: M
@@ -381,7 +384,7 @@ This mapping is reference-only for decomposition visibility. Planning, ownership
 | X4 | Initial Migration Path | Epic 2 | 2.1 |
 | X5 | CSV Ingestion and Indexing | Epic 2 | 2.2, 2.4 |
 | X6 | External Sync and Deduplication | Epic 2 | 2.3, 2.5 |
-| X7 | Availability Lifecycle and Refresh | Epic 2 | 2.6 |
+| X7 | Availability Lifecycle, Refresh, and Scheduler Foundation | Epic 2 | 2.6, 2.7 |
 | X8 | Outbound Messaging Foundations | Epic 3 | 3.1, 3.2 |
 | X9 | Consent and Channel Preferences | Epic 3 | 3.3 |
 | X10 | Response Capture and Delivery Reliability | Epic 3 | 3.4, 3.5 |
@@ -549,7 +552,7 @@ So that candidate records are continuously synchronized from external sources.
 **Acceptance Criteria:**
 
 **Given** configured ATS and inbox connectors
-**When** sync jobs execute
+**When** scheduler-emitted sync jobs execute
 **Then** new or updated candidates are upserted through standard ingestion pipeline
 **And** sync failures are surfaced with source-attributed error tracking
 
@@ -591,6 +594,25 @@ So that candidate readiness reflects fresh information when automation lags.
 **When** availability state is recalculated or manually refreshed
 **Then** active/passive/unavailable states are updated with timestamped provenance
 **And** stale state detection is visible in recruiter views
+**And** manual refresh creates an ad hoc job without mutating recurring schedule definitions
+
+### Story 2.7: Implement Global Scheduler Control Plane
+
+As a platform engineer,
+I want one auditable scheduler for recurring business jobs,
+So that ATS syncs, inbox scans, refresh sweeps, and future digests do not rely on per-worker timers.
+
+**Acceptance Criteria:**
+
+**Given** due recurring business schedules
+**When** the scheduler claims work
+**Then** it emits outbox jobs idempotently and records schedule-run history with tenant and policy version context
+**And** workers remain event-driven consumers instead of owning business-level timers
+
+**Given** admin-authored cadence changes
+**When** validated updates are saved
+**Then** new versions apply only to subsequent scheduled runs
+**And** prior runs remain auditable against the schedule and policy version in effect at execution time
 
 ## Epic 3: Outreach Orchestration and Candidate Engagement
 
@@ -608,6 +630,7 @@ So that outreach is fast, personalized, and sent within candidate contact window
 **When** outreach is scheduled
 **Then** send windows enforce candidate time preferences
 **And** all outbound messages carry campaign and template version metadata
+**And** due sends are emitted by the global scheduler rather than feature-local timers
 
 ### Story 3.2: Build Email Outreach Templates with Role Permissions
 
@@ -854,6 +877,7 @@ So that I can begin execution from prioritized opportunities.
 **When** digest generation runs
 **Then** each active job publishes top-5 candidates with reason snippets
 **And** digest includes links/actions for immediate follow-up
+**And** digest runs are emitted from the centralized scheduler with tenant-local cadence handling
 
 ### Story 6.2: Implement Rich Teams Action Cards
 
@@ -892,7 +916,7 @@ So that notification noise and urgency can be tuned by operating context.
 **Given** role and customer notification policies
 **When** admin updates configuration
 **Then** policy validation prevents invalid combinations
-**And** policy changes are versioned and applied to subsequent events
+**And** policy changes are versioned and applied to subsequent scheduler-emitted events only
 
 ## Epic 7: Metrics, Cost Governance, and Forecasting
 
@@ -1018,6 +1042,7 @@ So that workflows continue with clear delay expectations instead of hard errors.
 **When** resilience policy triggers
 **Then** operations enter queue/retry mode with ETA messaging
 **And** no critical communication or processing event is silently dropped
+**And** scheduler lag, missed runs, and duplicate-dispatch prevention are observable during degraded operation
 
 ### Story 8.5: Implement Provider Health and API Metering Alerts
 

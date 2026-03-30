@@ -5,7 +5,7 @@ Source of truth: `docs/planning_artifacts/architecture.md` -> `Stack-Mapped Impl
 ## Gate Summary
 
 - Gate decision: `PENDING`
-- Last updated: `2026-03-10`
+- Last updated: `2026-03-30`
 - Release target: `TBD`
 - Program owner: `TBD`
 
@@ -31,6 +31,7 @@ Source of truth: `docs/planning_artifacts/architecture.md` -> `Stack-Mapped Impl
 | D-03 | Supabase Data | Implement append-only audit + hash-chain verification | TBD | TBD | NOT-STARTED | TBD |  |
 | D-04 | Supabase Data | Enforce TLS for all app and worker DB connections | TBD | TBD | NOT-STARTED | TBD |  |
 | D-05 | Supabase Data | Apply 3-year retention policy for call recordings/transcripts | TBD | TBD | NOT-STARTED | TBD |  |
+| D-06 | Supabase Data | Implement `schedule_definitions` and `schedule_runs` tables with tenant-safe claiming, run history, and policy-version linkage | TBD | TBD | NOT-STARTED | TBD |  |
 | I-01 | Identity Access | Configure Microsoft Entra SSO for internal users | TBD | TBD | NOT-STARTED | TBD |  |
 | I-02 | Identity Access | Implement SMS/email magic-link login for candidates | TBD | TBD | NOT-STARTED | TBD |  |
 | I-03 | Identity Access | Enforce step-up auth for sensitive operations | TBD | TBD | NOT-STARTED | TBD |  |
@@ -59,7 +60,8 @@ Source of truth: `docs/planning_artifacts/architecture.md` -> `Stack-Mapped Impl
 | O-05 | Observability | Validate outage runbook for queue fallback mode | TBD | TBD | NOT-STARTED | TBD |  |
 | O-06 | Observability | Implement end-to-end `trace_id`/`span_id` instrumentation across web, queue, workers, providers, and audit events | TBD | TBD | NOT-STARTED | TBD |  |
 | O-07 | Observability | Publish provider outage runbook covering kill switch, degraded mode, queue fallback, and failback approval | TBD | TBD | NOT-STARTED | TBD |  |
-| O-08 | Observability | Publish versioned policy registry for scoring weights, reassignment thresholds, cooldowns, and provider failover rules | TBD | TBD | NOT-STARTED | TBD |  |
+| O-08 | Observability | Publish versioned policy registry for scoring weights, reassignment thresholds, cooldowns, schedule policies, and provider failover rules | TBD | TBD | NOT-STARTED | TBD |  |
+| O-09 | Observability | Monitor global scheduler lag, missed runs, paused schedules, and duplicate-dispatch claim failures | TBD | TBD | NOT-STARTED | TBD |  |
 | T-01 | Testing Gate | Pass unit/integration/e2e suites in staging | TBD | TBD | NOT-STARTED | TBD |  |
 | T-02 | Testing Gate | Pass tenant-isolation adversarial tests with zero leakage | TBD | TBD | NOT-STARTED | TBD |  |
 | T-03 | Testing Gate | Pass external-provider outage drill and recovery validation | TBD | TBD | NOT-STARTED | TBD |  |
@@ -68,6 +70,7 @@ Source of truth: `docs/planning_artifacts/architecture.md` -> `Stack-Mapped Impl
 | T-06 | Testing Gate | Pass synthetic Tier 2 automation load profile (100 recruiters, 1M records, outreach burst, provider callbacks) | TBD | TBD | NOT-STARTED | TBD |  |
 | T-07 | Testing Gate | Pass synthetic Tier 3 pilot load profile (200 recruiters, 1-2M records, re-verification sweep, queue catch-up) | TBD | TBD | NOT-STARTED | TBD |  |
 | T-08 | Testing Gate | Pass gold-dataset scoring regression gate before prompt/model promotion | TBD | TBD | NOT-STARTED | TBD |  |
+| T-09 | Testing Gate | Pass scheduler correctness tests for due-run claiming, no double dispatch, pause/resume semantics, and versioned schedule changes | TBD | TBD | NOT-STARTED | TBD |  |
 
 ## Accepted MVP Risks (Track and Monitor)
 
@@ -79,6 +82,6 @@ Source of truth: `docs/planning_artifacts/architecture.md` -> `Stack-Mapped Impl
 
 ## Gate Decision Rule
 
-- `PASS`: All critical items complete (`R-01..R-06`, `D-01..D-05`, `I-01..I-04`, `M-01..M-08`, `S-01..S-04`, `O-01..O-08`, `T-01..T-08`).
+- `PASS`: All critical items complete (`R-01..R-06`, `D-01..D-06`, `I-01..I-04`, `M-01..M-08`, `S-01..S-04`, `O-01..O-09`, `T-01..T-09`).
 - `CONCERNS`: Non-critical items pending with owner and target date assigned.
 - `FAIL`: Any critical security, tenant isolation, audit integrity, or core messaging item incomplete.
