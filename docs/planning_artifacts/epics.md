@@ -245,38 +245,47 @@ FR75: Epic 9 - Offer/document download in candidate portal
 ## Epic List
 
 ### Epic 1: Platform Foundation, Access, and Tenant Security
+
 Establish the deployable baseline with enterprise authentication, role-safe access boundaries, and tenant/data-residency controls so all future epics can build safely.
 **FRs covered:** FR26, FR41, FR42, FR43, FR44, FR45, FR70
 
 ### Epic 2: Candidate Data Ingestion and Profile Lifecycle
+
 Enable trusted candidate ingestion from migration, recruiter uploads, ATS, and inbox channels with deduplication, indexing, and profile lifecycle operations.
 **FRs covered:** FR1, FR1a, FR2, FR3, FR4, FR5, FR7, FR68
 
 ### Epic 3: Outreach Orchestration and Candidate Engagement
+
 Enable compliant outbound communication and inbound candidate response handling for single-send and bulk campaign operations.
 **FRs covered:** FR8, FR9, FR10, FR11, FR12, FR13, FR15, FR16, FR17
 
 ### Epic 4: Recruiter Delivery Workflow and Offer Management
+
 Enable recruiters to intake jobs, operate daily pipelines, move candidates through journey states, and execute offer workflows.
 **FRs covered:** FR18, FR19, FR21, FR22, FR23, FR24, FR25, FR56
 
 ### Epic 5: Matching Intelligence and Domain Qualification
+
 Provide transparent ranking, readiness scoring, and aviation-specific qualification intelligence that guides recruiter action.
 **FRs covered:** FR20, FR28, FR29, FR30, FR31, FR32, FR33, FR34, FR35, FR57, FR58, FR59, FR61
 
 ### Epic 6: Collaboration and Notification Workflows
+
 Deliver role-aware notifications and action cards so recruiters and delivery heads can respond quickly without dashboard thrash.
 **FRs covered:** FR36, FR37, FR38, FR39, FR40
 
 ### Epic 7: Metrics, Cost Governance, and Forecasting
+
 Provide operational, financial, and performance insights with thresholding and forecasting for recruiter and leadership decision-making.
 **FRs covered:** FR27, FR46, FR47, FR48, FR49, FR50, FR51, FR52, FR54, FR55
 
 ### Epic 8: Compliance, Reliability, and Operational Guardrails
+
 Implement immutable auditability, retention/deletion obligations, resilience controls, and security monitoring to keep operations compliant and trustworthy.
 **FRs covered:** FR6, FR14, FR53, FR60, FR62, FR63, FR64, FR65, FR66, FR67, FR69
 
 ### Epic 9: Candidate Self-Service Portal Experience
+
 Enable candidates to securely self-serve profile, status, and document workflows from token-based portal access.
 **FRs covered:** FR71, FR72, FR73, FR74, FR75
 
@@ -360,51 +369,51 @@ Enable candidates to securely self-serve profile, status, and document workflows
 
 ### 9-Epic Calendar
 
-| Epic | Owner | Start | Finish | Dependency Gate |
-| --- | --- | --- | --- | --- |
-| Epic 1: Platform Foundation, Access, and Tenant Security | squad-member-1 | Week 1 | Week 2 | None |
-| Epic 2: Candidate Data Ingestion and Profile Lifecycle | squad-member-2 | Week 1 | Week 2 | Core platform contracts from Epic 1 frozen |
-| Epic 3: Outreach Orchestration and Candidate Engagement | squad-member-1 | Week 1 | Week 2 | Core platform contracts from Epic 1 frozen |
-| Epic 4: Recruiter Delivery Workflow and Offer Management | squad-member-2 | Week 3 | Week 3 | Candidate ingestion and outreach interfaces complete |
-| Epic 5: Matching Intelligence and Domain Qualification | squad-member-1 | Week 3 | Week 4 | Candidate signals available and Epic 4 workflow contracts frozen |
-| Epic 6: Collaboration and Notification Workflows | squad-member-2 | Week 4 | Week 4 | Epic 4 and Epic 5 payload contracts frozen |
-| Epic 7: Metrics, Cost Governance, and Forecasting | squad-member-1 | Week 3 | Week 3 | Workflow event streams and initial scoring outputs available |
-| Epic 8: Compliance, Reliability, and Operational Guardrails | squad-member-2 | Week 3 | Week 4 | Security baseline from Epic 1 complete |
-| Epic 9: Candidate Self-Service Portal Experience | squad-member-1 | Week 4 | Week 4 | Outreach tokens and Epic 4 workflow status APIs available |
+| Epic                                                        | Owner          | Start  | Finish | Dependency Gate                                                  |
+| ----------------------------------------------------------- | -------------- | ------ | ------ | ---------------------------------------------------------------- |
+| Epic 1: Platform Foundation, Access, and Tenant Security    | squad-member-1 | Week 1 | Week 2 | None                                                             |
+| Epic 2: Candidate Data Ingestion and Profile Lifecycle      | squad-member-2 | Week 1 | Week 2 | Core platform contracts from Epic 1 frozen                       |
+| Epic 3: Outreach Orchestration and Candidate Engagement     | squad-member-1 | Week 1 | Week 2 | Core platform contracts from Epic 1 frozen                       |
+| Epic 4: Recruiter Delivery Workflow and Offer Management    | squad-member-2 | Week 3 | Week 3 | Candidate ingestion and outreach interfaces complete             |
+| Epic 5: Matching Intelligence and Domain Qualification      | squad-member-1 | Week 3 | Week 4 | Candidate signals available and Epic 4 workflow contracts frozen |
+| Epic 6: Collaboration and Notification Workflows            | squad-member-2 | Week 4 | Week 4 | Epic 4 and Epic 5 payload contracts frozen                       |
+| Epic 7: Metrics, Cost Governance, and Forecasting           | squad-member-1 | Week 3 | Week 3 | Workflow event streams and initial scoring outputs available     |
+| Epic 8: Compliance, Reliability, and Operational Guardrails | squad-member-2 | Week 3 | Week 4 | Security baseline from Epic 1 complete                           |
+| Epic 9: Candidate Self-Service Portal Experience            | squad-member-1 | Week 4 | Week 4 | Outreach tokens and Epic 4 workflow status APIs available        |
 
 ### FYI Package Mapping (X1-X27 -> Epics)
 
 This mapping is reference-only for decomposition visibility. Planning, ownership, and execution remain epic-based.
 
-| Package | Brief Name | Mapped Epic | Story Coverage |
-| --- | --- | --- | --- |
-| X1 | Platform Bootstrap and SSO | Epic 1 | 1.1, 1.2 |
-| X2 | Authorization and Admin Controls | Epic 1 | 1.3, 1.4 |
-| X3 | Security Hardening and Client Safety | Epic 1 | 1.5, 1.6, 1.7 |
-| X4 | Initial Migration Path | Epic 2 | 2.1 |
-| X5 | CSV Ingestion and Indexing | Epic 2 | 2.2, 2.4 |
-| X6 | External Sync and Deduplication | Epic 2 | 2.3, 2.5 |
-| X7 | Availability Lifecycle, Refresh, and Scheduler Foundation | Epic 2 | 2.6, 2.7 |
-| X8 | Outbound Messaging Foundations | Epic 3 | 3.1, 3.2 |
-| X9 | Consent and Channel Preferences | Epic 3 | 3.3 |
-| X10 | Response Capture and Delivery Reliability | Epic 3 | 3.4, 3.5 |
-| X11 | Token Onboarding and Bulk Campaigns | Epic 3 | 3.6, 3.7 |
-| X12 | Job Intake and Candidate Queue | Epic 4 | 4.1, 4.2 |
-| X13 | Recruiter Execution and Bulk Ops | Epic 4 | 4.3, 4.4 |
-| X14 | Offer Workflow Completion | Epic 4 | 4.5 |
-| X15 | Scoring and Freshness Signals | Epic 5 | 5.1, 5.2 |
-| X16 | Domain Screening and FAA Verification | Epic 5 | 5.3, 5.4 |
-| X17 | Drug Compliance and Recalibration | Epic 5 | 5.5, 5.6 |
-| X18 | Teams Collaboration Surface | Epic 6 | 6.1, 6.2 |
-| X19 | Delivery Oversight and Policy Controls | Epic 6 | 6.3, 6.4 |
-| X20 | Operational and Trend Analytics | Epic 7 | 7.1, 7.2 |
-| X21 | Cost Governance and Peer Support | Epic 7 | 7.3, 7.4 |
-| X22 | Forecasting and KPI Alerts | Epic 7 | 7.5 |
-| X23 | Audit and Retention Controls | Epic 8 | 8.1, 8.2 |
-| X24 | GDPR and Reliability Degradation | Epic 8 | 8.3, 8.4 |
-| X25 | Health Monitoring and Security Escalation | Epic 8 | 8.5, 8.6 |
-| X26 | Portal Access and Status Visibility | Epic 9 | 9.1, 9.3 |
-| X27 | Candidate Updates and Documents | Epic 9 | 9.2, 9.4, 9.5 |
+| Package | Brief Name                                                | Mapped Epic | Story Coverage |
+| ------- | --------------------------------------------------------- | ----------- | -------------- |
+| X1      | Platform Bootstrap and SSO                                | Epic 1      | 1.1, 1.2       |
+| X2      | Authorization and Admin Controls                          | Epic 1      | 1.3, 1.4       |
+| X3      | Security Hardening and Client Safety                      | Epic 1      | 1.5, 1.6, 1.7  |
+| X4      | Initial Migration Path                                    | Epic 2      | 2.1            |
+| X5      | CSV Ingestion and Indexing                                | Epic 2      | 2.2, 2.4       |
+| X6      | External Sync and Deduplication                           | Epic 2      | 2.3, 2.5       |
+| X7      | Availability Lifecycle, Refresh, and Scheduler Foundation | Epic 2      | 2.6, 2.7       |
+| X8      | Outbound Messaging Foundations                            | Epic 3      | 3.1, 3.2       |
+| X9      | Consent and Channel Preferences                           | Epic 3      | 3.3            |
+| X10     | Response Capture and Delivery Reliability                 | Epic 3      | 3.4, 3.5       |
+| X11     | Token Onboarding and Bulk Campaigns                       | Epic 3      | 3.6, 3.7       |
+| X12     | Job Intake and Candidate Queue                            | Epic 4      | 4.1, 4.2       |
+| X13     | Recruiter Execution and Bulk Ops                          | Epic 4      | 4.3, 4.4       |
+| X14     | Offer Workflow Completion                                 | Epic 4      | 4.5            |
+| X15     | Scoring and Freshness Signals                             | Epic 5      | 5.1, 5.2       |
+| X16     | Domain Screening and FAA Verification                     | Epic 5      | 5.3, 5.4       |
+| X17     | Drug Compliance and Recalibration                         | Epic 5      | 5.5, 5.6       |
+| X18     | Teams Collaboration Surface                               | Epic 6      | 6.1, 6.2       |
+| X19     | Delivery Oversight and Policy Controls                    | Epic 6      | 6.3, 6.4       |
+| X20     | Operational and Trend Analytics                           | Epic 7      | 7.1, 7.2       |
+| X21     | Cost Governance and Peer Support                          | Epic 7      | 7.3, 7.4       |
+| X22     | Forecasting and KPI Alerts                                | Epic 7      | 7.5            |
+| X23     | Audit and Retention Controls                              | Epic 8      | 8.1, 8.2       |
+| X24     | GDPR and Reliability Degradation                          | Epic 8      | 8.3, 8.4       |
+| X25     | Health Monitoring and Security Escalation                 | Epic 8      | 8.5, 8.6       |
+| X26     | Portal Access and Status Visibility                       | Epic 9      | 9.1, 9.3       |
+| X27     | Candidate Updates and Documents                           | Epic 9      | 9.2, 9.4, 9.5  |
 
 ### Weekly Objectives
 

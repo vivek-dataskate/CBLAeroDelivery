@@ -1,27 +1,31 @@
-  - `pending_asset_deletions` (SharePoint erasure cleanup queue with retry state — see _Resilience §14_)
-  - `provider_rate_counters` (per-provider leaky bucket for enrichment rate limiting — see _Resilience §15_)
-  - `goal_approval_requests` (HITL approval records linking goal_states to actor decisions — see _Resilience §16_)
+- `pending_asset_deletions` (SharePoint erasure cleanup queue with retry state — see _Resilience §14_)
+- `provider_rate_counters` (per-provider leaky bucket for enrichment rate limiting — see _Resilience §15_)
+- `goal_approval_requests` (HITL approval records linking goal*states to actor decisions — see \_Resilience §16*)
+
 ---
+
 stepsCompleted: [1, 2, 3, 4, 5, 6, 7, 8]
 inputDocuments:
-  - docs/planning_artifacts/prd.md
-  - docs/planning_artifacts/ux-design-specification.md
-  - docs/planning_artifacts/prd-validation-report.md
-  - docs/planning_artifacts/source-inputs/aviation-product-brief.md
-  - docs/planning_artifacts/source-inputs/aviation-marketing-copy.md
-  - docs/planning_artifacts/source-inputs/aviation-product-slides.md
-  - docs/planning_artifacts/source-inputs/aviation-talent-PRD.md
-  - docs/planning_artifacts/analysis/cblAero-advanced-elicitation-FR-analysis.md
-  - docs/planning_artifacts/analysis/cblAero-FR-analysis-executive-brief.md
-  - docs/planning_artifacts/analysis/cblAero-MVP-Elicitation-Analysis.md
-  - docs/planning_artifacts/analysis/cblAero-PRD-polish-analysis.md
-workflowType: 'architecture'
-project_name: 'CBLAero'
-user_name: 'vivek'
-date: '2026-03-10'
-lastStep: 8
-status: 'complete'
-completedAt: '2026-03-10'
+
+- docs/planning_artifacts/prd.md
+- docs/planning_artifacts/ux-design-specification.md
+- docs/planning_artifacts/prd-validation-report.md
+- docs/planning_artifacts/source-inputs/aviation-product-brief.md
+- docs/planning_artifacts/source-inputs/aviation-marketing-copy.md
+- docs/planning_artifacts/source-inputs/aviation-product-slides.md
+- docs/planning_artifacts/source-inputs/aviation-talent-PRD.md
+- docs/planning_artifacts/analysis/cblAero-advanced-elicitation-FR-analysis.md
+- docs/planning_artifacts/analysis/cblAero-FR-analysis-executive-brief.md
+- docs/planning_artifacts/analysis/cblAero-MVP-Elicitation-Analysis.md
+- docs/planning_artifacts/analysis/cblAero-PRD-polish-analysis.md
+  workflowType: 'architecture'
+  project_name: 'CBLAero'
+  user_name: 'vivek'
+  date: '2026-03-10'
+  lastStep: 8
+  status: 'complete'
+  completedAt: '2026-03-10'
+
 ---
 
 # Architecture Decision Document
@@ -115,6 +119,7 @@ Runtimes: Node.js v24 LTS · Next.js 16.x · Supabase Postgres (PostgreSQL 18-co
 Three ingestion paths are supported; all funnel through the same deduplication and enrichment pipeline.
 
 **Path 1 — Initial bulk load (one-time, admin-supervised):**
+
 - 1M existing records loaded via a Python migration script (not the live web app).
 - Runs as a rate-limited batch against the Supabase service role from a Render one-off job.
 - Chunks of 1,000 rows per transaction; progress written to `import_batch` table.
@@ -123,6 +128,7 @@ Three ingestion paths are supported; all funnel through the same deduplication a
 - Enrichment of the initial 1M runs as an overnight batch job at 100 candidates/sec; not a real-time process.
 
 **Path 2 — Recruiter CSV uploads (daily/weekly, ongoing):**
+
 - Web UI: drag-and-drop CSV with column mapping wizard and live validation preview.
 - Max 10,000 records per recruiter upload; larger batches must be split or handled via admin migration path.
 - Validated rows are written to `import_batch` table; a background worker processes the batch.
@@ -132,6 +138,7 @@ Three ingestion paths are supported; all funnel through the same deduplication a
 - Imported records enter `pending_enrichment` state; enrichment worker picks them up via outbox.
 
 **Path 3 — ATS connector and email inbox sync (automated, Tier 2):**
+
 - ATS connector: the global scheduler owns connector cadence and emits due `ats_sync.requested` jobs at scheduled intervals (minimum 15-minute interval per connector). The sync worker then polls the configured ATS API and upserts new or updated records through the standard deduplication pipeline with `source: ats_sync` attribution.
 - Email inbox parsing: the global scheduler emits due `inbox_parse.requested` jobs for designated recruiter inboxes. The parse worker then uses Microsoft Graph to read forwarded resumes and candidate reply threads, extracting candidate stubs that are queued for recruiter review before activation (not auto-activated).
 - Both paths write to `import_batch` with source attribution; sync errors alert the admin and never silently discard records.
@@ -345,23 +352,23 @@ sequenceDiagram
 
 ### Confirmed Integration System Matrix
 
-| Capability | Selected System | MVP Notes |
-|---|---|---|
-| SMS (two-way) | Telnyx | Primary provider; Twilio warm standby supported for Day 2 failover, disabled by default at launch |
-| Voice calling | Telnyx Voice | Dial + call recording + transcription |
-| Email campaigns | Instantly | Primary campaign provider; degraded fallback uses Graph for critical/manual messages if campaign provider is kill-switched |
-| Ad hoc recruiter email | Microsoft Graph/Outlook | One-click recruiter email actions |
-| Teams collaboration | Microsoft Teams | Notification cards, task creation, scheduling, recruiter communication |
-| Identity | Microsoft Entra ID + magic links | Internal SSO for staff, SMS/email magic links for candidates |
-| Candidate enrichment | Internal DB, Clay, RapidAPI sources | Provider-agnostic connector layer remains mandatory |
-| FAA verification | Official FAA public data + manual workflow | Automated third-party FAA API deferred |
-| Background checks | Manual only | No background-check API integration in MVP |
-| Job queue and retries | Render background workers | Async processing and retry handling on worker services |
-| Monitoring and alerting | Render + Supabase native | No external APM in MVP |
-| Secrets management | Render environment secrets | External vault deferred |
-| Audit immutability | DB append-only + hash chain | Tamper-evidence implemented in audit model |
-| Document/file storage | SharePoint folder | `https://cblsolution-my.sharepoint.com/:f:/g/personal/vivek_cblsolutions_com/IgDKIFYS0joSSbhgfpiY6XA_AbVtySkMKVQAIZwkiyZblTg?e=QTy2dU` |
-| Analytics/BI | In-app only | External BI warehouse/tools deferred |
+| Capability              | Selected System                            | MVP Notes                                                                                                                              |
+| ----------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| SMS (two-way)           | Telnyx                                     | Primary provider; Twilio warm standby supported for Day 2 failover, disabled by default at launch                                      |
+| Voice calling           | Telnyx Voice                               | Dial + call recording + transcription                                                                                                  |
+| Email campaigns         | Instantly                                  | Primary campaign provider; degraded fallback uses Graph for critical/manual messages if campaign provider is kill-switched             |
+| Ad hoc recruiter email  | Microsoft Graph/Outlook                    | One-click recruiter email actions                                                                                                      |
+| Teams collaboration     | Microsoft Teams                            | Notification cards, task creation, scheduling, recruiter communication                                                                 |
+| Identity                | Microsoft Entra ID + magic links           | Internal SSO for staff, SMS/email magic links for candidates                                                                           |
+| Candidate enrichment    | Internal DB, Clay, RapidAPI sources        | Provider-agnostic connector layer remains mandatory                                                                                    |
+| FAA verification        | Official FAA public data + manual workflow | Automated third-party FAA API deferred                                                                                                 |
+| Background checks       | Manual only                                | No background-check API integration in MVP                                                                                             |
+| Job queue and retries   | Render background workers                  | Async processing and retry handling on worker services                                                                                 |
+| Monitoring and alerting | Render + Supabase native                   | No external APM in MVP                                                                                                                 |
+| Secrets management      | Render environment secrets                 | External vault deferred                                                                                                                |
+| Audit immutability      | DB append-only + hash chain                | Tamper-evidence implemented in audit model                                                                                             |
+| Document/file storage   | SharePoint folder                          | `https://cblsolution-my.sharepoint.com/:f:/g/personal/vivek_cblsolutions_com/IgDKIFYS0joSSbhgfpiY6XA_AbVtySkMKVQAIZwkiyZblTg?e=QTy2dU` |
+| Analytics/BI            | In-app only                                | External BI warehouse/tools deferred                                                                                                   |
 
 ### C4 Container Diagram (MVP)
 
@@ -915,12 +922,14 @@ Closed decisions for 8 operational risk areas identified during architecture rev
 **Decision:** The Compliance Worker produces a structured erasure receipt on every erasure request regardless of hold status.
 
 Erasure receipt fields:
+
 - `erased_fields`: list of field names nulled/pseudonymized (e.g. `name`, `phone`, `email`, `address`)
 - `retained_fields`: list of field names retained and the legal basis (e.g. `audit_event_skeleton` retained under `legal_hold_id`)
 - `hold_reference`: hold ID, hold type, estimated hold expiry date (if known)
 - `erasure_status`: `COMPLETE` | `PARTIAL_HOLD` | `DEFERRED`
 
 The Web App surfaces this receipt as a two-panel compliance summary:
+
 - Left: "Deleted" (green) — personal identifiers removed
 - Right: "Retained" (amber) — retained data with the legal basis and estimated hold duration
 
@@ -941,6 +950,7 @@ The recruiter/admin cannot dismiss this view without acknowledging it; the ackno
 **Decision:** Consent revocation is a synchronous, highest-priority operation — it must complete before the Telnyx webhook response is returned.
 
 Processing order on inbound opt-out:
+
 1. Telnyx webhook received by webhook receiver worker.
 2. **Synchronously** within the request handler: write `consent_record` revocation row to DB with `revoked_at`, `channel`, and `source_message_id`. This write must commit before the 200 OK is returned to Telnyx.
 3. The outbox relay's dispatch step checks `consent_record` status on every job dequeue — if revoked, the job is cancelled before any API call is made. This means even tasks already in the queue will not execute.
@@ -1058,16 +1068,19 @@ Processing order on inbound opt-out:
 **Decision:** Teams Action Card is the primary HITL path; the Web App "Agent Pending" tab is the authoritative entry point, required fallback, and audit owner. The Web App owns all state transitions — Teams is a delivery channel only.
 
 **Teams Action Card (primary path):**
+
 - When a goal requires human approval, the Orchestrator creates a `goal_approval_requests` record and the Reporting Agent sends an Adaptive Card to the recruiter/delivery lead Teams channel.
 - Card shows: goal summary, pause reason, cost-at-pause, and action buttons: "Approve & Resume" / "Abandon" / "View Details in App".
 - Button actions POST to `POST /api/v1/agent-approvals/:approval_id/action` on the Web App. The Web App validates the actor's Entra token, writes the decision, updates `goal_states.status`, and enqueues the resume job. The Teams card is then updated to a confirmation message.
 
 **Web App "Agent Pending" tab (authoritative fallback):**
+
 - Lists all `goal_approval_requests` with `status = awaiting_approval` for the tenant, ordered by urgency and elapsed wait time.
 - Required during Teams outage: if the Teams card delivery dead-letters (per Teams timeout decision §5), the escalation path notifies the delivery lead via email (Graph) with a direct link to this tab.
 - High-sensitivity approvals (bulk-erasure overrides, compliance holds) never appear on Teams cards — Web App only, with step-up authentication required.
 
 **Audit trail:**
+
 - Every decision (source: `teams_card` or `webapp_tab`) is written as `agent.goal.approved` / `agent.goal.abandoned` with actor, source, tenant, elapsed wait time, and cost-at-decision.
 - Approval SLA: any `goal_approval_requests` item awaiting approval for > 30 minutes triggers auto-escalation to the delivery head via both channels.
 - New entities: `goal_approval_requests(approval_id, goal_id, tenant_id, triggered_by, status, created_at, decided_at, decided_by_actor_id, decision_source, cost_at_trigger)`.
@@ -1518,6 +1531,7 @@ Use this checklist as the pre-build and pre-release gate for the chosen stack.
 - [ ] Rollback procedure documented and tested for both web and worker services.
 
 Evidence:
+
 - Render service configuration exports/screenshots
 - Deployment pipeline config and last successful staging run
 
@@ -1531,6 +1545,7 @@ Evidence:
 - [ ] 3-year retention policy for call recordings/transcripts configured and documented.
 
 Evidence:
+
 - SQL migrations for RLS and audit models
 - Access test report proving cross-tenant denial
 - Connection settings showing TLS requirement
@@ -1543,6 +1558,7 @@ Evidence:
 - [ ] Emergency access runbook documented and audit logging verified.
 
 Evidence:
+
 - Auth flow test cases and runbook
 - Audit sample showing privileged action traces
 
@@ -1556,6 +1572,7 @@ Evidence:
 - [ ] Retry policy (max retries, delay strategy, terminal state) implemented and tested across integrations.
 
 Evidence:
+
 - Integration smoke-test report per provider
 - Message delivery and callback logs
 - Teams card/task end-to-end test capture
@@ -1568,6 +1585,7 @@ Evidence:
 - [ ] Background check path documented as manual-only in MVP operations SOP.
 
 Evidence:
+
 - Connector contract tests
 - FAA verification workflow documentation and sample execution
 
@@ -1580,6 +1598,7 @@ Evidence:
 - [ ] Secret scanning active in CI; no plaintext credentials in repository.
 
 Evidence:
+
 - Security config snapshots
 - MCP policy definitions and deny-path test results
 - CI security scan reports
@@ -1593,6 +1612,7 @@ Evidence:
 - [ ] Operational runbook exists for provider outage and queue fallback mode.
 
 Evidence:
+
 - Alert policy export
 - Test alert triggers and runbook execution notes
 
@@ -1605,6 +1625,7 @@ Evidence:
 - [ ] Accessibility baseline checks pass for critical workflows.
 
 Gate rule:
+
 - `PASS`: all critical items complete.
 - `CONCERNS`: non-critical items pending with approved mitigation owner/date.
 - `FAIL`: any critical security, tenant isolation, or audit integrity item incomplete.
