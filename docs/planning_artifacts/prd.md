@@ -688,7 +688,7 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 
 ### Candidate Management
 
-- **FR1 [MVP Tier 1]:** System can ingest candidate records from bulk CSV upload (up to 1M records initial load, then daily/weekly recruiter uploads of 100–10,000 records); upload must validate, deduplicate, and report import errors per row with a downloadable error report
+- **FR1 [MVP Tier 1]:** System can ingest candidate records from bulk CSV upload (up to 1M records initial load, then daily/weekly recruiter uploads of 100–10,000 records); upload must validate, deduplicate, retain unmapped columns in candidate `extra_attributes` (JSONB), and report import errors per row with a downloadable error report. Guardrails: blocked sensitive keys (`password`, `token`, `secret`, `api_key`) are dropped; per-row `extra_attributes` payload is capped by key count and serialized size.
 - **FR1a [MVP Tier 1]:** System can perform initial bulk load of up to 1M existing candidate records via a one-time admin-supervised migration pipeline; load must complete within a time-bounded batch window with progress tracking and rollback capability
 - **FR2 [MVP Tier 2]:** System can ingest candidate data automatically from configured ATS system connectors (read-only API polling or webhook) and recruiter email inboxes (Microsoft Graph mail parsing); new or updated records are upserted via the standard deduplication pipeline with source attribution
 - **FR3 [MVP Tier 1]:** System can store and index candidate profiles with core attributes (name, phone, email, location, skills, certifications, experience, availability status) in Supabase Postgres as the system of record; candidate semantic-retrieval indexes use `pgvector` under tenant-scoped access controls

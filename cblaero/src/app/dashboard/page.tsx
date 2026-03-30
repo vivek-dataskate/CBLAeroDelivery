@@ -138,6 +138,16 @@ export default async function DashboardPage({
             <Link href="/" className="text-emerald-200 hover:text-emerald-100">
               Return to Home
             </Link>
+            {effectiveRole === "recruiter" ||
+            effectiveRole === "delivery-head" ||
+            effectiveRole === "admin" ? (
+              <Link
+                href={`/dashboard/recruiter/upload?activeClientId=${encodeURIComponent(activeClientId)}`}
+                className="text-emerald-200 hover:text-emerald-100"
+              >
+                Open Recruiter CSV Upload
+              </Link>
+            ) : null}
             {effectiveRole === "admin" ? (
               <Link
                 href={`/dashboard/admin?activeClientId=${encodeURIComponent(activeClientId)}`}
