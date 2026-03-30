@@ -401,6 +401,11 @@ The product’s core insight is that **availability is the primary signal**; can
 - Candidate enrichment, SMS, and email capabilities must be provider-agnostic.
 - Provider selection and vendor specifics are architecture decisions and not part of this PRD contract.
 
+**Schedule Governance**
+- Recurring business cadences (connector syncs, digest generation, refresh sweeps, compliance sweeps, and recurring operational checks) must be centrally managed through a unified schedule control plane.
+- Retry delays and cooldown windows are not user-authored schedules; they are execution safety controls enforced by policy.
+- Schedule changes must follow a validated path: UI -> API validation -> versioned policy/schedule records -> backend scheduler -> emitted jobs.
+
 **Rate Limits and Quotas**
 - Per-tenant quotas must be configurable for enrichment, SMS, and email.
 - Alert thresholds at 80%, 90%, and 100% of configured monthly budgets.
@@ -726,7 +731,7 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 - **FR31 [MVP Tier 1]:** System can screen for mandatory domain requirements (A&P certification, airport badge eligibility, no felony records)
 - **FR32 [MVP Tier 1]:** System can flag candidates who don't meet hard requirements (missing certs, criminal history, unavailable tools) with explicit rejection reason code (`missing_certification`, `badging_ineligible`, `tooling_missing`, `availability_mismatch`)
 - **FR33 [MVP Tier 2]:** System can test match confidence against prior 90-day conversion outcomes, recalibrate scoring monthly, and achieve >=90% precision in the top confidence quintile by end of Tier 2 (Month 1-2 manual, Month 3+ ML-assisted)
-- **FR34 [MVP Tier 1]:** System can refresh candidate data (availability, location, skills) on a 4-hour cadence (Tier 1) or continuous with caching (Tier 2+)
+- **FR34 [MVP Tier 1]:** System can refresh candidate data (availability, location, skills) on a 4-hour cadence (Tier 1) or continuous with caching (Tier 2+) using centrally managed schedule policies rather than worker-local timers
 - **FR35 [MVP Tier 1]:** System can apply seasonal hiring adjustments with configurable weighting (+/-15%) by month and geography, with override controls for delivery head users
 
 ### Team Collaboration & Notifications
@@ -735,7 +740,7 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 - **FR37 [MVP Tier 2]:** System can embed rich notification cards in Teams with candidate summary, confidence score, and one-click call/email actions
 - **FR38 [MVP Tier 1]:** System can notify Delivery Head on explicit events: interview scheduled, interview attended/missed, offer accepted/declined, placement started, and cost threshold breach
 - **FR39 [MVP Tier 2]:** Delivery Head can drill into recruiter performance metrics from notifications, view workload imbalance indicators by recruiter, and receive reassignment recommendations when workload variance exceeds 20% from team median for 3 consecutive days
-- **FR40 [MVP Tier 2]:** Admin can configure notification channels, cadence (daily/weekly/immediate), and metric thresholds per role and per customer
+- **FR40 [MVP Tier 2]:** Admin can configure notification channels, cadence (daily/weekly/immediate), schedule state (pause/resume), and metric thresholds per role and per customer through a centralized configuration console
 
 ### User Authentication & Access Control
 
@@ -775,7 +780,7 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 - **FR65 [MVP Tier 1]:** System can gracefully degrade if APIs fail: queue candidates for batch processing; notify recruiter of delay with ETA
 - **FR66 [MVP Tier 1]:** System can log all user actions (user, timestamp, action, resource, change delta) in immutable append-only audit trail (5-year hot, 7-year cold) persisted in Supabase Postgres with multi-instance-safe write semantics (no process-local-only state)
 - **FR67 [MVP Tier 2]:** System can detect anomalies (unusual access patterns, bulk data export, impossible geolocation changes) using severity thresholds and alert Compliance Officer within 15 minutes for high-severity events; semantic anomaly correlation may use RAG over tenant-scoped audit history in `pgvector`
-- **FR68 [MVP Tier 1]:** Admin can manually refresh candidate data from external sources if scheduled refresh fails
+- **FR68 [MVP Tier 1]:** Admin can manually refresh candidate data from external sources if scheduled refresh fails; the manual action creates an ad hoc refresh job without mutating the recurring schedule definition
 - **FR69 [MVP Tier 1]:** System can backup data daily to immutable cold archive with encryption and integrity verification
 - **FR70 [MVP Tier 1]:** System can enforce USA-only data residency for customer data, logs, and backups within approved USA regions
 

@@ -11,6 +11,7 @@ import {
 import { listAdminActionEvents, listStepUpAttemptEvents } from "@/modules/audit";
 
 import AdminGovernanceConsole from "./AdminGovernanceConsole";
+import MigrationStatusCard from "./MigrationStatusCard";
 
 type AdminDashboardSearchParams = {
   activeClientId?: string | string[];
@@ -145,6 +146,8 @@ export default async function AdminDashboardPage({
           user invitation, role transition governance, and team assignment controls with
           auditable action tracking.
         </div>
+
+        <MigrationStatusCard tenantId={activeClientId} actorId={session.actorId} />
 
         <AdminGovernanceConsole
           tenantId={activeClientId}

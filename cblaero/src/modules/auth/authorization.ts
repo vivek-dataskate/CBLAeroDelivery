@@ -12,6 +12,7 @@ export type ProtectedAction =
   | "candidate:write"
   | "audit:read-denials"
   | "admin:manage-users"
+  | "admin:read-import-batches"
   | "compliance:read-data-residency";
 
 type AuthorizationAllow = {
@@ -36,6 +37,7 @@ const ROLE_ACTION_MAP: Record<SessionRole, ReadonlySet<ProtectedAction>> = {
     "candidate:write",
     "audit:read-denials",
     "admin:manage-users",
+    "admin:read-import-batches",
     "compliance:read-data-residency",
   ]),
   "compliance-officer": new Set([
