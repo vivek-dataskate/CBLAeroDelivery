@@ -10,6 +10,7 @@ export type ProtectedAction =
   | "dashboard:admin"
   | "candidate:read"
   | "candidate:write"
+  | "recruiter:csv-upload"
   | "audit:read-denials"
   | "admin:manage-users"
   | "admin:read-import-batches"
@@ -28,13 +29,24 @@ type AuthorizationDeny = {
 export type AuthorizationResult = AuthorizationAllow | AuthorizationDeny;
 
 const ROLE_ACTION_MAP: Record<SessionRole, ReadonlySet<ProtectedAction>> = {
-  recruiter: new Set(["dashboard:view", "candidate:read", "candidate:write"]),
-  "delivery-head": new Set(["dashboard:view", "candidate:read", "candidate:write"]),
+  recruiter: new Set([
+    "dashboard:view",
+    "candidate:read",
+    "candidate:write",
+    "recruiter:csv-upload",
+  ]),
+  "delivery-head": new Set([
+    "dashboard:view",
+    "candidate:read",
+    "candidate:write",
+    "recruiter:csv-upload",
+  ]),
   admin: new Set([
     "dashboard:view",
     "dashboard:admin",
     "candidate:read",
     "candidate:write",
+    "recruiter:csv-upload",
     "audit:read-denials",
     "admin:manage-users",
     "admin:read-import-batches",
