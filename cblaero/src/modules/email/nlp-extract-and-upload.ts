@@ -1,6 +1,5 @@
 // Pluggable NLP-based candidate extraction and OneDrive upload integration
-import { Client } from "@microsoft/microsoft-graph-client";
-import "isomorphic-fetch";
+// TODO: Install @microsoft/microsoft-graph-client and isomorphic-fetch when wiring up real Graph auth
 
 export interface Candidate {
   firstName: string;
@@ -24,22 +23,15 @@ export async function extractCandidateFromEmailBody(body: string): Promise<Candi
 }
 
 export async function uploadAttachmentToOneDrive(
-  accessToken: string,
-  buffer: Buffer,
-  filename: string,
-  inbox: string,
-  emailIdOrDate: string
+  _accessToken: string,
+  _buffer: Buffer,
+  _filename: string,
+  _inbox: string,
+  _emailIdOrDate: string
 ): Promise<string> {
-  const client = Client.init({
-    authProvider: (done) => done(null, accessToken),
-  });
-  // Organize by inbox and email
-  const safeInbox = inbox.replace(/[^a-zA-Z0-9@.]/g, '_');
-  const safeEmailId = emailIdOrDate.replace(/[^a-zA-Z0-9-_]/g, '_');
-  const folder = `/CBLAeroAttachments/${safeInbox}/${safeEmailId}`;
-  const uploadPath = `${folder}/${filename}`;
-  const response = await client.api(`/me/drive/root:${uploadPath}:/content`).put(buffer);
-  return response['webUrl'] as string;
+  // TODO: Implement using @microsoft/microsoft-graph-client once package is installed
+  // Uses Client.init with authProvider, uploads to /CBLAeroAttachments/{inbox}/{emailId}/{filename}
+  throw new Error("uploadAttachmentToOneDrive not yet implemented");
 }
 
 export async function processEmailRecord(
