@@ -10,8 +10,11 @@ import {
 } from "@/modules/admin";
 import { listAdminActionEvents, listStepUpAttemptEvents } from "@/modules/audit";
 
+import { listRecentSyncErrors } from "@/modules/ingestion";
+
 import AdminGovernanceConsole from "./AdminGovernanceConsole";
 import MigrationStatusCard from "./MigrationStatusCard";
+import SyncErrorStatusCard from "./SyncErrorStatusCard";
 
 type AdminDashboardSearchParams = {
   activeClientId?: string | string[];
@@ -91,6 +94,7 @@ export default async function AdminDashboardPage({
     .filter((event) => event.tenantId === activeClientId)
     .slice(-50)
     .reverse();
+  const syncErrors = listRecentSyncErrors();
 
   return (
     <div className="min-h-screen bg-slate-950 px-6 py-10 text-slate-100 md:px-10">
@@ -147,6 +151,7 @@ export default async function AdminDashboardPage({
           auditable action tracking.
         </div>
 
+        <SyncErrorStatusCard errors={syncErrors} />
         <MigrationStatusCard tenantId={activeClientId} actorId={session.actorId} />
 
         <AdminGovernanceConsole
