@@ -30,11 +30,12 @@ export class ATSIngestionJob implements SchedulerJob {
 export class EmailIngestionJob implements SchedulerJob {
   name = 'EmailIngestionJob';
   private parser = new MicrosoftGraphEmailParser();
-  // Configurable list of inbound email addresses
-  private inboxAddresses = [
-    'submissions@cbl.aero',
-    // Add more addresses as needed
-  ];
+  // Configurable list of inbound email addresses — override via CBL_SUBMISSION_INBOXES env var (comma-separated)
+  private get inboxAddresses(): string[] {
+    const env = process.env.CBL_SUBMISSION_INBOXES;
+    if (env) return env.split(',').map((s) => s.trim()).filter(Boolean);
+    return ['submissions@cbl.aero'];
+  }
 
   async run() {
     try {
