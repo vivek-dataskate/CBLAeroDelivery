@@ -35,7 +35,10 @@ so that candidate records are continuously synchronized from external sources.
 - [ ] [AI-Review][HIGH] AC2: `GlobalScheduler.register()` is a no-op stub. Integrate with real scheduler (BullMQ, node-cron) and call `registerIngestionJobs` at app startup. [cblaero/src/modules/ingestion/jobs.ts:55-62]
 - [ ] [AI-Review][HIGH] AC1: `MicrosoftGraphEmailParser.parseInbox()` returns hardcoded mock data. Implement real Microsoft Graph auth and mail fetch. [cblaero/src/modules/email/index.ts:22-46]
 - [ ] [AI-Review][MEDIUM] `IngestionEnvelope` is never passed through the upsert functions — source attribution metadata is dropped. Thread envelope through upsert calls. [cblaero/src/modules/ats/index.ts:33-38]
-- [ ] [AI-Review][MEDIUM] `candidate: any` in ATSRecord and EmailCandidateRecord bypasses the expanded candidate schema (added in feat(candidates)). Type these against the full candidate model. [cblaero/src/modules/ats/index.ts:10, cblaero/src/modules/email/index.ts:9]
+- [x] [AI-Review][MEDIUM] `candidate: any` in ATSRecord bypasses the expanded candidate schema. Fixed: typed to `Record<string, unknown>`. [cblaero/src/modules/ats/index.ts:10]
+- [x] [AI-Review][MEDIUM] `GreenhouseATSConnector` mock returned `name` field but `normalizeCandidate` reads `firstName`/`lastName` — silent data loss. Fixed mock to use `firstName`/`lastName`. [cblaero/src/modules/ats/index.ts:23]
+- [x] [AI-Review][MEDIUM] Dead export `upsertCandidateFromEmail` never called anywhere. Removed. [cblaero/src/modules/ingestion/index.ts]
+- [x] [AI-Review][MEDIUM] `SyncErrorStatusCard` used `toLocaleString()` causing server/client hydration mismatch. Fixed to stable UTC string format. [cblaero/src/app/dashboard/admin/SyncErrorStatusCard.tsx]
 - [ ] [AI-Review][MEDIUM] No tests for any new module. Add unit tests for connector polling, ingestion jobs, and sync error store. [cblaero/src/modules/__tests__/]
 
 ## Dev Notes

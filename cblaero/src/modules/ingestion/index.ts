@@ -23,6 +23,9 @@ export type SyncError = {
 };
 
 const SYNC_ERROR_MAX = 100;
+// NOTE: Module-level state — does not persist across serverless cold starts or
+// multiple instances. Suitable for development; replace with a persistent store
+// (e.g., Supabase table) for production multi-instance deployments.
 const recentSyncErrors: SyncError[] = [];
 
 export function recordSyncFailure(source: string, recordId: string, err: unknown): void {
@@ -70,13 +73,6 @@ export async function upsertCandidateFromATS(record: Record<string, unknown>): P
   // TODO: Persist to candidates table via Supabase (getSupabaseAdminClient())
   // Once candidates module lands (Story 2.4), replace with: await upsertCandidate(normalized)
   console.log('Upserting ATS candidate', normalized);
-}
-
-export async function upsertCandidateFromEmail(record: Record<string, unknown>): Promise<void> {
-  const normalized = normalizeCandidate(record);
-  // TODO: Persist to candidates table via Supabase (getSupabaseAdminClient())
-  // Once candidates module lands (Story 2.4), replace with: await upsertCandidate(normalized)
-  console.log('Upserting Email candidate', normalized);
 }
 
 export async function upsertCandidateFromEmailFull(record: {
