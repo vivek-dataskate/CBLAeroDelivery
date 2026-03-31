@@ -7,7 +7,7 @@ export interface ATSConnector {
 
 export interface ATSRecord {
   id: string;
-  candidate: any; // Replace with actual candidate type
+  candidate: Record<string, unknown>;
   updatedAt: string;
 }
 
@@ -21,7 +21,8 @@ export class GreenhouseATSConnector implements ATSConnector {
       {
         id: 'gh-123',
         candidate: {
-          name: 'Jane Doe',
+          firstName: 'Jane',
+          lastName: 'Doe',
           email: 'jane.doe@example.com',
         },
         updatedAt: new Date().toISOString(),
