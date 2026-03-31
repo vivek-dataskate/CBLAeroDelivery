@@ -23,7 +23,7 @@ so that candidate records are continuously synchronized from external sources.
   - [x] Integrate with at least one supported ATS API (e.g., Greenhouse, Lever)
   - [ ] Implement polling schedule using global scheduler (stub only — needs real scheduler e.g. BullMQ)
 - [x] Implement recruiter inbox parsing (AC: 1, 2, 3)
-  - [ ] Parse Microsoft Graph mail for candidate data (stub only — auth and real API call not implemented)
+  - [x] Parse Microsoft Graph mail for candidate data (real Graph auth + inbox fetch implemented)
   - [x] Map parsed data to ingestion pipeline
 - [x] Error handling and reporting (AC: 4)
   - [x] Attribute sync failures to source and log for review
@@ -33,7 +33,7 @@ so that candidate records are continuously synchronized from external sources.
 
 - [ ] [AI-Review][HIGH] AC3: `upsertCandidateFromATS` and `upsertCandidateFromEmailFull` are stubs — candidates are logged but not persisted. Wire to Supabase once Story 2.4 candidates table lands. [cblaero/src/modules/ingestion/index.ts:65-82]
 - [ ] [AI-Review][HIGH] AC2: `GlobalScheduler.register()` is a no-op stub. Integrate with real scheduler (BullMQ, node-cron) and call `registerIngestionJobs` at app startup. [cblaero/src/modules/ingestion/jobs.ts:55-62]
-- [ ] [AI-Review][HIGH] AC1: `MicrosoftGraphEmailParser.parseInbox()` returns hardcoded mock data. Implement real Microsoft Graph auth and mail fetch. [cblaero/src/modules/email/index.ts:22-46]
+- [x] [AI-Review][HIGH] AC1: `MicrosoftGraphEmailParser.parseInbox()` returns hardcoded mock data. Fixed: real Graph client credentials auth + live inbox fetch implemented. Uses CBL_SSO_ALLOWED_TENANT_ID, CBL_SSO_CLIENT_ID, CBL_SSO_CLIENT_SECRET. [cblaero/src/modules/email/graph-auth.ts, cblaero/src/modules/email/index.ts]
 - [ ] [AI-Review][MEDIUM] `IngestionEnvelope` is never passed through the upsert functions — source attribution metadata is dropped. Thread envelope through upsert calls. [cblaero/src/modules/ats/index.ts:33-38]
 - [x] [AI-Review][MEDIUM] `candidate: any` in ATSRecord bypasses the expanded candidate schema. Fixed: typed to `Record<string, unknown>`. [cblaero/src/modules/ats/index.ts:10]
 - [x] [AI-Review][MEDIUM] `GreenhouseATSConnector` mock returned `name` field but `normalizeCandidate` reads `firstName`/`lastName` — silent data loss. Fixed mock to use `firstName`/`lastName`. [cblaero/src/modules/ats/index.ts:23]

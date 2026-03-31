@@ -1,4 +1,6 @@
 import { IngestionEnvelope } from '../ingestion';
+export { fetchCeipalApplicants, mapCeipalApplicantToCandidate } from './ceipal';
+export type { CeipalApplicant } from './ceipal';
 
 export interface ATSConnector {
   name: string;
