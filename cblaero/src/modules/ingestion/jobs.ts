@@ -39,10 +39,13 @@ export class EmailIngestionJob implements SchedulerJob {
     if (!isSupabaseConfigured()) return new Set();
     try {
       const db = getSupabaseAdminClient();
+      // Only load recent IDs — inbox fetch is $top=50 so older IDs won't match
       const { data } = await db
         .from('candidate_submissions')
         .select('email_message_id')
-        .not('email_message_id', 'is', null);
+        .not('email_message_id', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(500);
       return new Set((data ?? []).map((r: { email_message_id: string }) => r.email_message_id));
     } catch {
       return new Set();
