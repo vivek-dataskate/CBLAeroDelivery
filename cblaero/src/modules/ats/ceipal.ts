@@ -13,8 +13,9 @@
  * Default page size: 100 records per page.
  */
 
-const CEIPAL_AUTH_URL = 'https://api.ceipal.com/v1/createAuthtoken/';
-const CEIPAL_PAGE_SIZE = 100;
+const CEIPAL_DEFAULT_AUTH_URL = 'https://api.ceipal.com/v1/createAuthtoken/';
+const CEIPAL_DEFAULT_DATA_URL = 'https://api.ceipal.com/getCustomApplicantDetails';
+const CEIPAL_PAGE_SIZE = 50;
 
 type CeipalTokenCache = {
   token: string;
@@ -28,6 +29,8 @@ function getCeipalConfig() {
   const username = process.env.CEIPAL_USERNAME;
   const password = process.env.CEIPAL_PASSWORD;
   const endpointKey = process.env.CEIPAL_ENDPOINT_KEY;
+  const authUrl = process.env.CEIPAL_AUTH_URL || CEIPAL_DEFAULT_AUTH_URL;
+  const dataUrl = process.env.CEIPAL_DATA_URL || CEIPAL_DEFAULT_DATA_URL;
 
   if (!apiKey || !username || !password || !endpointKey) {
     throw new Error(
@@ -35,7 +38,7 @@ function getCeipalConfig() {
     );
   }
 
-  return { apiKey, username, password, endpointKey };
+  return { apiKey, username, password, endpointKey, authUrl, dataUrl };
 }
 
 async function acquireCeipalToken(): Promise<string> {
@@ -44,12 +47,12 @@ async function acquireCeipalToken(): Promise<string> {
     return tokenCache.token;
   }
 
-  const { apiKey, username, password } = getCeipalConfig();
+  const { apiKey, username, password, authUrl } = getCeipalConfig();
 
-  const response = await fetch(CEIPAL_AUTH_URL, {
+  const response = await fetch(authUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ api_key: apiKey, username, password, json: 1 }),
+    body: JSON.stringify({ api_key: apiKey, email: username, password, json: 1 }),
   });
 
   if (!response.ok) {
@@ -57,15 +60,28 @@ async function acquireCeipalToken(): Promise<string> {
     throw new Error(`Ceipal auth failed (${response.status}): ${text}`);
   }
 
-  const data = await response.json() as { token?: string; access_token?: string; expires_in?: number };
-  const token = data.token ?? data.access_token;
-  if (!token) {
-    throw new Error(`Ceipal auth response missing token: ${JSON.stringify(data)}`);
+  const text = await response.text();
+
+  // Response may be XML or JSON — try both
+  let token: string | undefined;
+  const xmlMatch = text.match(/<access_token>([^<]+)<\/access_token>/);
+  if (xmlMatch) {
+    token = xmlMatch[1];
+  } else {
+    try {
+      const data = JSON.parse(text) as { token?: string; access_token?: string };
+      token = data.token ?? data.access_token;
+    } catch {
+      // not JSON either
+    }
   }
 
-  // Default 1 hour expiry if not provided
-  const expiresIn = (data.expires_in ?? 3600) * 1000;
-  tokenCache = { token, expiresAt: Date.now() + expiresIn };
+  if (!token) {
+    throw new Error(`Ceipal auth response missing token: ${text.slice(0, 200)}`);
+  }
+
+  // Default 1 hour expiry
+  tokenCache = { token, expiresAt: Date.now() + 3600_000 };
 
   return token;
 }
@@ -101,7 +117,27 @@ export type CeipalApplicant = {
   veteran_status?: string;
   work_authorization_expiry?: string;
   linkedin_profile_url?: string;
+  facebook_profile_url?: string;
+  twitter_profile_url?: string;
   additional_comments?: string;
+  expected_pay?: string;
+  applicant_id?: string;
+  resume_path?: string;
+  referred_by?: string;
+  applicant_group?: string;
+  ownership?: string;
+  tax_terms?: number;
+  race_ethnicity?: string;
+  disability?: string;
+  gpa?: string;
+  referral_employee?: string;
+  video_reference?: string;
+  skype_id?: string;
+  ssn?: string;
+  modified_date?: string;
+  created_on?: string;
+  created_by?: string;
+  modified_by?: string;
 };
 
 /**
@@ -111,18 +147,23 @@ export type CeipalApplicant = {
 export async function fetchCeipalApplicants(options?: {
   since?: Date;
   maxPages?: number;
+  startPage?: number;
 }): Promise<CeipalApplicant[]> {
   const token = await acquireCeipalToken();
-  const { endpointKey } = getCeipalConfig();
-  const baseUrl = `https://api.ceipal.com/getCustomApplicantDetails/${endpointKey}`;
+  const { endpointKey, dataUrl } = getCeipalConfig();
+  const baseUrl = `${dataUrl}/${endpointKey}`;
 
   const all: CeipalApplicant[] = [];
-  let page = 1;
-  const maxPages = options?.maxPages ?? 50; // safety cap: 50 pages × 100 = 5,000 records per run
+  let page = options?.startPage ?? 1;
+  const maxPages = options?.maxPages ?? 50;
+  const endPage = page + maxPages - 1;
 
-  while (page <= maxPages) {
+  while (page <= endPage) {
     const url = `${baseUrl}?json=1&paging_length=${CEIPAL_PAGE_SIZE}&page=${page}` +
       (options?.since ? `&modified_after=${options.since.toISOString().slice(0, 10)}` : '');
+
+    // Delay between pages to avoid connection resets
+    if (page > 1) await new Promise((r) => setTimeout(r, 1_000));
 
     const response = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
@@ -155,25 +196,50 @@ export async function fetchCeipalApplicants(options?: {
  * Map a Ceipal applicant to the ingestion candidate shape.
  */
 export function mapCeipalApplicantToCandidate(a: CeipalApplicant): Record<string, unknown> {
+  const clean = (v?: string | number | null) => {
+    if (v == null) return undefined;
+    const s = String(v).trim();
+    return s && s !== 'NA' ? s : undefined;
+  };
+
   return {
-    firstName: a.first_name?.trim() ?? '',
-    lastName: a.last_name?.trim() ?? '',
-    middleName: a.middle_name?.trim() ?? undefined,
-    email: a.email_address?.trim() ?? '',
-    alternateEmail: a.alternate_email_address?.trim() ?? undefined,
-    phone: a.mobile_number?.trim() || a.home_phone_number?.trim() || undefined,
-    homePhone: a.home_phone_number?.trim() ?? undefined,
-    workPhone: a.work_phone_number?.trim() ?? undefined,
-    address: a.address?.trim() ?? undefined,
-    city: a.city?.trim() ?? undefined,
-    state: a.state?.trim() ?? undefined,
-    country: a.country?.trim() ?? undefined,
-    postalCode: a.zip_code?.trim() ?? undefined,
-    jobTitle: a.job_title?.trim() ?? undefined,
+    firstName: clean(a.first_name) ?? '',
+    lastName: clean(a.last_name) ?? '',
+    middleName: clean(a.middle_name),
+    email: clean(a.email_address) ?? '',
+    alternateEmail: clean(a.alternate_email_address),
+    phone: clean(a.mobile_number) || clean(a.home_phone_number) || undefined,
+    homePhone: clean(a.home_phone_number),
+    workPhone: clean(a.work_phone_number),
+    address: clean(a.address),
+    city: clean(a.city),
+    state: clean(a.state),
+    country: clean(a.country),
+    postalCode: clean(a.zip_code),
+    jobTitle: clean(a.job_title),
     skills: a.skills ? a.skills.split(',').map((s) => s.trim()).filter(Boolean) : [],
-    workAuthorization: a.work_authorization?.trim() ?? undefined,
-    clearance: a.clearance?.trim() ?? undefined,
+    workAuthorization: clean(a.work_authorization),
+    clearance: clean(a.clearance),
+    yearsOfExperience: a.experience != null ? String(a.experience) : undefined,
+    currentRate: clean(a.expected_pay),
+    veteranStatus: clean(a.veteran_status),
+    ceipalId: clean(a.applicant_id),
+    createdByActorId: clean(a.created_by),
     source: 'ceipal',
+    // Additional fields stored in extra_attributes via additionalFields
+    additionalFields: {
+      ...(clean(a.linkedin_profile_url) ? { linkedinUrl: a.linkedin_profile_url } : {}),
+      ...(clean(a.resume_path) ? { resumeUrl: a.resume_path } : {}),
+      ...(clean(a.applicant_status) ? { applicantStatus: a.applicant_status } : {}),
+      ...(clean(a.source) ? { originalSource: a.source } : {}),
+      ...(clean(a.relocation) ? { relocation: a.relocation } : {}),
+      ...(clean(a.referred_by) ? { referredBy: a.referred_by } : {}),
+      ...(clean(a.primary_skills) ? { primarySkills: a.primary_skills } : {}),
+      ...(clean(a.technology) ? { technology: a.technology } : {}),
+      ...(clean(a.work_authorization_expiry) ? { workAuthorizationExpiry: a.work_authorization_expiry } : {}),
+      ...(clean(a.additional_comments) ? { comments: a.additional_comments } : {}),
+      ...(a.date_of_birth ? { dateOfBirth: a.date_of_birth } : {}),
+    },
   };
 }
 

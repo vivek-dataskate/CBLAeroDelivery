@@ -644,7 +644,7 @@ So that ATS syncs, inbox scans, refresh sweeps, and future digests do not rely o
 **Implementation Notes (from Story 2.3):**
 - `registerIngestionJobs(scheduler)` in `cblaero/src/modules/ingestion/jobs.ts` registers two jobs that must be called at startup:
   - `EmailIngestionJob` — polls `submissions-inbox@cblsolutions.com` via Microsoft Graph, LLM-parses new emails, upserts candidates + submissions with attachments. Recommended cadence: **15 minutes**. Dedup by `email_message_id` — safe to re-run.
-  - `CeipalIngestionJob` — polls Ceipal ATS v1 API with incremental `lastRunAt` tracking. Recommended cadence: **15 minutes**. Blocked until Ceipal activates API key.
+  - `CeipalIngestionJob` — polls Ceipal ATS v1 API with incremental `lastRunAt` tracking. Recommended cadence: **daily** (733K total records, 50 per page, maxPages=50 = 2,500 records per run). Dedup by candidate email. API key now active. Auth uses `email` field (not `username`). URLs configurable via `CEIPAL_AUTH_URL` and `CEIPAL_DATA_URL` env vars with defaults.
 - Both jobs implement the `SchedulerJob` interface (`name: string`, `run(): Promise<void>`)
 - `GlobalScheduler` class in same file is the stub to replace with the Postgres-backed `schedule_definitions`/`schedule_runs` implementation
 **And** prior runs remain auditable against the schedule and policy version in effect at execution time

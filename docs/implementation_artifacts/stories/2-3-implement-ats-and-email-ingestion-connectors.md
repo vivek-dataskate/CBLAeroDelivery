@@ -1,6 +1,6 @@
 # Story 2.3: Implement ATS and Email Ingestion Connectors
 
-Status: done (scheduler deferred to Story 2.7, Ceipal auth blocked on vendor)
+Status: done (scheduler deferred to Story 2.7)
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -23,7 +23,7 @@ so that candidate records are continuously synchronized from external sources.
   - [x] Integrate with at least one supported ATS API (e.g., Greenhouse, Lever)
   - [x] Implement Ceipal ATS v1 connector with pagination, token caching, full field mapping
   - [ ] Implement polling schedule using global scheduler (stub only — needs real scheduler e.g. BullMQ)
-  - [ ] Ceipal auth endpoint not responding — waiting on Ceipal support to activate API key
+  - [x] Ceipal auth fixed — field was `email` not `username`, XML token response parsed, API active
 - [x] Implement recruiter inbox parsing (AC: 1, 2, 3)
   - [x] Parse Microsoft Graph mail for candidate data (real Graph auth + inbox fetch implemented)
   - [x] Map parsed data to ingestion pipeline
@@ -116,6 +116,13 @@ GPT-4.1 / claude-sonnet-4-6 (code review fixes)
 - Implemented: Schema migration — 16 new columns on candidates + candidate_submissions table
 - Initial load: 50 real submission emails → 49 candidates, 51 submissions with attachments in Supabase Storage
 - New ingestion source identified: Folder upload (bulk resume PDF/DOCX parsing) — not yet implemented
+- Ceipal auth fixed: field name is `email` (not `username`), response is XML (parsed with regex), `json:1` flag required
+- Ceipal connector: 733K applicants available, batch upsert at 50 records/page, auto-resume from last page
+- Ceipal field mapping expanded: 25+ fields including resume_path, experience, expected_pay, applicant_status, linkedin_profile_url, created_by_actor_id
+- Configurable Ceipal URLs via CEIPAL_AUTH_URL and CEIPAL_DATA_URL env vars
+- Phone unique constraint dropped — shared phones between candidates caused batch upsert failures
+- Added `candidates_tenant_email_unique` constraint for batch upsert compatibility
+- Initial Ceipal load: 1,100 candidates ingested, resumable page-by-page (50/page, ~12s each)
 
 ### File List
 
