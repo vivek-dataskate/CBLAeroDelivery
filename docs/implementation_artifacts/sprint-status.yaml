@@ -65,7 +65,7 @@ development_status:
 
   epic-2: in-progress
   2-1-build-admin-supervised-initial-1m-record-migration-pipeline: done
-  2-2-implement-recruiter-csv-upload-wizard-and-validation: done
+  2-2-implement-recruiter-csv-upload-wizard-and-validation: done  # 2026-03-31: production ingestion (6,150 candidates), extra_attributes deployed, CLI script PR #29
   2-3-implement-ats-and-email-ingestion-connectors: done
   2-2a-implement-recruiter-pdf-resume-upload-with-llm-extraction: in-progress
   2-4-implement-candidate-profile-storage-and-indexing: done
