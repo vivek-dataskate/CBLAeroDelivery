@@ -260,7 +260,7 @@ export class OneDriveResumePollerJob implements SchedulerJob {
     const user = encodeURIComponent(this.driveUser);
     const path = this.folderPath;
     const url = `https://graph.microsoft.com/v1.0/users/${user}/drive/root:/${path}:/children` +
-      `?$select=id,name,size,file,@microsoft.graph.downloadUrl&$top=200`;
+      `?$top=200`;
 
     const response = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
