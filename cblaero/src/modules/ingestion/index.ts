@@ -93,6 +93,74 @@ const DEFAULT_TENANT_ID = 'cbl-aero';
 
 // --- Candidate upsert (real Supabase persistence) ---
 
+/**
+ * Batch upsert candidates from ATS. Uses Supabase .upsert() with email as conflict key.
+ * Much faster than individual inserts for bulk loads.
+ */
+export async function batchUpsertCandidatesFromATS(records: Record<string, unknown>[]): Promise<{ inserted: number; failed: number }> {
+  if (!isSupabaseConfigured() || records.length === 0) return { inserted: 0, failed: 0 };
+
+  const db = getSupabaseAdminClient();
+  let failed = 0;
+
+  // Filter out records with no email and no phone
+  const validRecords: Record<string, unknown>[] = [];
+  for (const record of records) {
+    const email = typeof record.email === 'string' ? record.email.trim() : '';
+    const phone = typeof record.phone === 'string' ? record.phone.trim() : '';
+    if (!email && !phone) {
+      recordSyncFailure(String(record.source ?? 'ats'), String(record.firstName ?? 'unknown'),
+        new Error('Candidate has no email or phone — cannot insert'));
+      failed++;
+      continue;
+    }
+    validRecords.push(record);
+  }
+
+  if (validRecords.length === 0) return { inserted: 0, failed };
+
+  const rows = validRecords.map((r) => {
+    const source = typeof r.source === 'string' ? r.source : 'ats';
+    return mapToCandidateRow(r, source);
+  });
+
+  // Split into rows with email (can upsert) and without (insert only)
+  const withEmail = rows.filter((r) => r.email);
+  const withoutEmail = rows.filter((r) => !r.email);
+
+  let totalInserted = 0;
+
+  // Batch upsert rows that have email — uses partial unique index
+  if (withEmail.length > 0) {
+    const { error: upsertErr } = await db.from('candidates').upsert(withEmail, { onConflict: 'tenant_id,email' });
+    if (upsertErr) {
+      console.error(`[Ingestion] Batch upsert (with email) failed: ${upsertErr.message}`);
+      // Fall back to individual inserts
+      for (const record of validRecords.filter((r) => r.email)) {
+        try { await upsertCandidateFromATS(record); totalInserted++; } catch (err) {
+          recordSyncFailure(String(record.source ?? 'ats'), String(record.email ?? 'unknown'), err); failed++;
+        }
+      }
+    } else {
+      totalInserted += withEmail.length;
+    }
+  }
+
+  // Insert rows without email (no dedup possible)
+  if (withoutEmail.length > 0) {
+    const { error: insertErr } = await db.from('candidates').insert(withoutEmail);
+    if (insertErr) {
+      console.error(`[Ingestion] Batch insert (no email) failed: ${insertErr.message}`);
+      failed += withoutEmail.length;
+    } else {
+      totalInserted += withoutEmail.length;
+    }
+  }
+
+  console.log(`[Ingestion] Batch upserted ${totalInserted} candidates`);
+  return { inserted: totalInserted, failed };
+}
+
 export async function upsertCandidateFromATS(record: Record<string, unknown>): Promise<void> {
   if (!isSupabaseConfigured()) {
     console.log('[Ingestion] Supabase not configured — skipping persist:', record.email ?? record.firstName);
@@ -287,5 +355,6 @@ function mapToCandidateRow(record: Record<string, unknown>, source: string) {
     certifications: Array.isArray(record.certifications) ? record.certifications : [],
     availability_status: 'active',
     ingestion_state: 'active',
+    created_by_actor_id: str('createdByActorId'),
   };
 }
