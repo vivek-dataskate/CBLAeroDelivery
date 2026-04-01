@@ -193,8 +193,9 @@ export function appendInMemoryCsvErrors(
   }
 }
 
-export function upsertInMemoryCandidates(rows: CsvCandidateRow[]): number {
-  let imported = 0;
+export function upsertInMemoryCandidates(rows: CsvCandidateRow[]): { inserted: number; updated: number } {
+  let inserted = 0;
+  let updated = 0;
 
   for (const row of rows) {
     const existingIndex = inMemoryCandidates.findIndex((candidate) => {
@@ -214,14 +215,14 @@ export function upsertInMemoryCandidates(rows: CsvCandidateRow[]): number {
         ...inMemoryCandidates[existingIndex],
         ...row,
       };
+      updated += 1;
     } else {
       inMemoryCandidates.push(row);
+      inserted += 1;
     }
-
-    imported += 1;
   }
 
-  return imported;
+  return { inserted, updated };
 }
 
 export function toBatchStatusPayload(batch: CsvUploadBatchRow) {
