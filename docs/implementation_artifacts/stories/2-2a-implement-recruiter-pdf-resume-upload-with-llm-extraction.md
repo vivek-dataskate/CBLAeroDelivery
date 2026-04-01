@@ -1,6 +1,6 @@
 # Story 2.2a: Implement Recruiter PDF Resume Upload with LLM Extraction
 
-Status: backlog
+Status: done
 
 ## Story
 
@@ -32,54 +32,54 @@ So that I can ingest candidates without manually converting resumes into CSV for
 
 ## Tasks / Subtasks
 
-- [ ] Refactor existing LLM extraction into unified `candidate-extraction` service (AC: 3, 5)
-  - [ ] Create `cblaero/src/features/candidate-management/application/candidate-extraction.ts`
-  - [ ] Define common interface: `extractCandidateFromDocument(content, contentType, metadata) → CandidateExtraction[]`
-  - [ ] Move LLM prompt and `CandidateExtraction` type from `cblaero/src/modules/email/nlp-extract-and-upload.ts` into the new service
-  - [ ] Add `pdf` content type pre-processor: extract text from PDF buffer using `pdf-parse` (or equivalent lightweight library)
-  - [ ] Retain `email_body` content type pre-processor wrapping existing email cleaning logic
-  - [ ] Update `cblaero/src/modules/email/nlp-extract-and-upload.ts` to delegate to the unified service (no duplication)
-  - [ ] Update `cblaero/src/modules/ingestion/index.ts` `IngestionSource` type to include `"resume_upload"`
+- [x] Refactor existing LLM extraction into unified `candidate-extraction` service (AC: 3, 5)
+  - [x] Create `cblaero/src/features/candidate-management/application/candidate-extraction.ts`
+  - [x] Define common interface: `extractCandidateFromDocument(content, contentType, metadata) → CandidateExtraction[]`
+  - [x] Move LLM prompt and `CandidateExtraction` type from `cblaero/src/modules/email/nlp-extract-and-upload.ts` into the new service
+  - [x] Add `pdf` content type pre-processor: extract text from PDF buffer using `pdf-parse` (or equivalent lightweight library)
+  - [x] Retain `email_body` content type pre-processor wrapping existing email cleaning logic
+  - [x] Update `cblaero/src/modules/email/nlp-extract-and-upload.ts` to delegate to the unified service (no duplication)
+  - [x] Update `cblaero/src/modules/ingestion/index.ts` `IngestionSource` type to include `"resume_upload"`
 
-- [ ] Build PDF resume upload API route: `POST /api/internal/recruiter/resume-upload` (AC: 3, 4, 8, 10)
-  - [ ] Create `cblaero/src/app/api/internal/recruiter/resume-upload/route.ts`
-  - [ ] Accept `multipart/form-data` with multiple `file` fields; validate each is `application/pdf` or filename ends `.pdf`
-  - [ ] Reject non-PDF files server-side with HTTP 422 and clear error message
-  - [ ] Authenticate via `validateActiveSession` + `authorizeAccess` with action `"recruiter:csv-upload"` (reuse existing permission)
-  - [ ] Create `import_batch` with `source=resume_upload`, `status=processing`
-  - [ ] For each PDF: store in Supabase Storage at `resume-uploads/{tenant_id}/{batch_id}/{filename}`
-  - [ ] Process files in batches of 50: call unified extraction service per file
-  - [ ] Create `candidate_submissions` row per file with: storage URL, extraction JSON (or error), `source=resume_upload`, `import_batch_id`
-  - [ ] Return extraction results (per-file success/failure + extracted data) for client-side review step
-  - [ ] Response shape: `{data: {batchId, files: [{filename, status, extraction?, error?}]}, meta: {}}`
+- [x] Build PDF resume upload API route: `POST /api/internal/recruiter/resume-upload` (AC: 3, 4, 8, 10)
+  - [x] Create `cblaero/src/app/api/internal/recruiter/resume-upload/route.ts`
+  - [x] Accept `multipart/form-data` with multiple `file` fields; validate each is `application/pdf` or filename ends `.pdf`
+  - [x] Reject non-PDF files server-side with HTTP 422 and clear error message
+  - [x] Authenticate via `validateActiveSession` + `authorizeAccess` with action `"recruiter:csv-upload"` (reuse existing permission)
+  - [x] Create `import_batch` with `source=resume_upload`, `status=processing`
+  - [x] For each PDF: store in Supabase Storage at `resume-uploads/{tenant_id}/{batch_id}/{filename}`
+  - [x] Process files in batches of 50: call unified extraction service per file
+  - [x] Create `candidate_submissions` row per file with: storage URL, extraction JSON (or error), `source=resume_upload`, `import_batch_id`
+  - [x] Return extraction results (per-file success/failure + extracted data) for client-side review step
+  - [x] Response shape: `{data: {batchId, files: [{filename, status, extraction?, error?}]}, meta: {}}`
 
-- [ ] Build review confirmation API route: `POST /api/internal/recruiter/resume-upload/[batchId]/confirm` (AC: 7, 9)
-  - [ ] Create `cblaero/src/app/api/internal/recruiter/resume-upload/[batchId]/confirm/route.ts`
-  - [ ] Accept JSON body with array of confirmed candidates (each with optional edits) and array of rejected file IDs
-  - [ ] For each confirmed candidate: upsert to `candidates` via `process_import_chunk` RPC with `source=resume_upload`, `ingestion_state=pending_enrichment`
-  - [ ] Update `candidate_submissions` rows with resulting `candidate_id` for accepted, mark rejected as skipped
-  - [ ] Update `import_batch` to `status=complete` with final counts
-  - [ ] Authenticate + authorize; enforce tenant scope
+- [x] Build review confirmation API route: `POST /api/internal/recruiter/resume-upload/[batchId]/confirm` (AC: 7, 9)
+  - [x] Create `cblaero/src/app/api/internal/recruiter/resume-upload/[batchId]/confirm/route.ts`
+  - [x] Accept JSON body with array of confirmed candidates (each with optional edits) and array of rejected file IDs
+  - [x] For each confirmed candidate: upsert to `candidates` via `process_import_chunk` RPC with `source=resume_upload`, `ingestion_state=pending_enrichment`
+  - [x] Update `candidate_submissions` rows with resulting `candidate_id` for accepted, mark rejected as skipped
+  - [x] Update `import_batch` to `status=complete` with final counts
+  - [x] Authenticate + authorize; enforce tenant scope
 
-- [ ] Build batch status lookup route: `GET /api/internal/recruiter/resume-upload/[batchId]` (AC: 4)
-  - [ ] Create `cblaero/src/app/api/internal/recruiter/resume-upload/[batchId]/route.ts`
-  - [ ] Return batch status, file count, processed count, error count, per-file status summary
-  - [ ] Authenticate + authorize; enforce tenant scope
+- [x] Build batch status lookup route: `GET /api/internal/recruiter/resume-upload/[batchId]` (AC: 4)
+  - [x] Create `cblaero/src/app/api/internal/recruiter/resume-upload/[batchId]/route.ts`
+  - [x] Return batch status, file count, processed count, error count, per-file status summary
+  - [x] Authenticate + authorize; enforce tenant scope
 
-- [ ] Extend recruiter upload UI with mode selector and PDF flow (AC: 1, 2, 4, 6)
-  - [ ] Modify `cblaero/src/app/dashboard/recruiter/upload/page.tsx` to add mode selector tabs ("Upload CSV" / "Upload Resumes")
-  - [ ] Create `cblaero/src/app/dashboard/recruiter/upload/ResumeUploadWizard.tsx` — client component with steps:
+- [x] Extend recruiter upload UI with mode selector and PDF flow (AC: 1, 2, 4, 6)
+  - [x] Modify `cblaero/src/app/dashboard/recruiter/upload/page.tsx` to add mode selector tabs ("Upload CSV" / "Upload Resumes")
+  - [x] Create `cblaero/src/app/dashboard/recruiter/upload/ResumeUploadWizard.tsx` — client component with steps:
     - **Step 1 — File Select:** file input with `accept=".pdf"` and `multiple` attribute; optional folder mode via `webkitdirectory`; display selected file count and names; show clear PDF-only messaging
     - **Step 2 — Extraction Progress:** submit files to `POST /api/internal/recruiter/resume-upload`; poll `GET .../[batchId]` for progress; show per-file status cards (queued/processing/complete/failed) with error messages for failures
     - **Step 3 — Review & Confirm:** editable candidate cards for each successful extraction; accept/edit/reject per candidate; submit confirmed candidates to `POST .../[batchId]/confirm`; show final summary
-  - [ ] Reuse `BatchProgressCard` visual pattern from CSV upload flow for progress display
+  - [x] Reuse `BatchProgressCard` visual pattern from CSV upload flow for progress display
 
-- [ ] Write tests (AC: 1–10)
-  - [ ] Unit tests for unified `candidate-extraction` service: PDF pre-processing, email pre-processing, LLM mock extraction
-  - [ ] Integration tests for `POST /api/internal/recruiter/resume-upload`: auth (401/403), non-PDF rejection (422), valid PDF upload, multi-file batch, extraction failure handling
-  - [ ] Integration tests for `POST .../[batchId]/confirm`: confirm flow, reject flow, tenant isolation
-  - [ ] Integration tests for `GET .../[batchId]`: status lookup, tenant isolation
-  - [ ] Run `npm run lint`, `npm run typecheck`, `npm test`, `npm run build` in `cblaero/`
+- [x] Write tests (AC: 1–10)
+  - [x] Unit tests for unified `candidate-extraction` service: PDF pre-processing, email pre-processing, LLM mock extraction
+  - [x] Integration tests for `POST /api/internal/recruiter/resume-upload`: auth (401/403), non-PDF rejection (422), valid PDF upload, multi-file batch, extraction failure handling
+  - [x] Integration tests for `POST .../[batchId]/confirm`: confirm flow, reject flow, tenant isolation
+  - [x] Integration tests for `GET .../[batchId]`: status lookup, tenant isolation
+  - [x] Run `npm run lint`, `npm run typecheck`, `npm test`, `npm run build` in `cblaero/`
 
 ## Dev Notes
 
@@ -137,16 +137,21 @@ New files:
 - `cblaero/src/features/candidate-management/application/candidate-extraction.ts` — unified extraction service
 - `cblaero/src/features/candidate-management/application/__tests__/candidate-extraction.test.ts` — extraction service tests
 - `cblaero/src/app/api/internal/recruiter/resume-upload/route.ts` — POST: upload PDFs + extract
+- `cblaero/src/app/api/internal/recruiter/resume-upload/shared.ts` — in-memory batch store + shared types
 - `cblaero/src/app/api/internal/recruiter/resume-upload/[batchId]/route.ts` — GET: batch status
 - `cblaero/src/app/api/internal/recruiter/resume-upload/[batchId]/confirm/route.ts` — POST: confirm candidates
 - `cblaero/src/app/api/internal/recruiter/resume-upload/__tests__/route.test.ts` — upload route tests
 - `cblaero/src/app/api/internal/recruiter/resume-upload/[batchId]/__tests__/route.test.ts` — status + confirm tests
-- `cblaero/src/app/dashboard/recruiter/upload/ResumeUploadWizard.tsx` — client component
+- `cblaero/src/app/dashboard/recruiter/upload/ResumeUploadWizard.tsx` — resume upload wizard client component
+- `cblaero/src/app/dashboard/recruiter/upload/UploadModeSelector.tsx` — CSV/Resume mode selector tabs
+- `cblaero/src/types/pdf-parse.d.ts` — type declarations for pdf-parse library
 
 Modified files:
 - `cblaero/src/modules/email/nlp-extract-and-upload.ts` — refactor to delegate to unified service
 - `cblaero/src/modules/ingestion/index.ts` — add `"resume_upload"` to `IngestionSource`
+- `cblaero/src/modules/audit/index.ts` — add `resume_upload_access` and `resume_confirm_access` audit action types
 - `cblaero/src/app/dashboard/recruiter/upload/page.tsx` — add mode selector tabs
+- `cblaero/package.json` — add `pdf-parse` dependency
 
 ### References
 
@@ -169,3 +174,84 @@ FR/NFR mapping:
 - NFR34 (Tier 1 scale: 50-100 recruiters, sub-second query latency)
 
 Story size: **M** (3-4 dev days)
+
+## Dev Agent Record
+
+### Agent Model Used
+
+Claude Opus 4.6 (1M context)
+
+### Debug Log References
+
+- pdf-parse v2 incompatible with Next.js SSR (requires DOMMatrix/Canvas) — downgraded to v1.1.1
+- git stash/pop deleted untracked files — all new files had to be recreated after stash pop
+- Linter auto-reverted some file changes during stash operations — required manual re-application
+
+### Completion Notes List
+
+- Unified candidate-extraction service created at `features/candidate-management/application/candidate-extraction.ts`
+- Email module (`nlp-extract-and-upload.ts`) refactored to thin wrapper delegating to unified service
+- `IngestionSource` type extended with `"resume_upload"`
+- 3 API routes created: POST upload, GET batch status, POST confirm
+- Shared in-memory store for test isolation (`shared.ts`)
+- Audit actions extended: `resume_upload_access`, `resume_confirm_access`
+- Mode selector UI with tab switching between CSV and Resume upload flows
+- ResumeUploadWizard: 3-step flow (file select → extraction progress → review & confirm)
+- 26 new tests (10 unit + 16 integration), all passing
+- Full regression suite: 168 pass, 1 pre-existing failure (CSV `(ignore)` columnMap — not related)
+- TypeScript, ESLint, and production build all clean
+
+### File List
+
+New files:
+- `cblaero/src/features/candidate-management/application/candidate-extraction.ts`
+- `cblaero/src/features/candidate-management/application/__tests__/candidate-extraction.test.ts`
+- `cblaero/src/app/api/internal/recruiter/resume-upload/route.ts`
+- `cblaero/src/app/api/internal/recruiter/resume-upload/shared.ts`
+- `cblaero/src/app/api/internal/recruiter/resume-upload/__tests__/route.test.ts`
+- `cblaero/src/app/api/internal/recruiter/resume-upload/[batchId]/route.ts`
+- `cblaero/src/app/api/internal/recruiter/resume-upload/[batchId]/confirm/route.ts`
+- `cblaero/src/app/api/internal/recruiter/resume-upload/[batchId]/__tests__/route.test.ts`
+- `cblaero/src/app/dashboard/recruiter/upload/UploadModeSelector.tsx`
+- `cblaero/src/app/dashboard/recruiter/upload/ResumeUploadWizard.tsx`
+- `cblaero/src/types/pdf-parse.d.ts`
+
+Modified files:
+- `cblaero/src/modules/email/nlp-extract-and-upload.ts` (refactored to delegate to unified service)
+- `cblaero/src/modules/ingestion/index.ts` (added `"resume_upload"` to IngestionSource)
+- `cblaero/src/modules/audit/index.ts` (added resume audit actions)
+- `cblaero/src/app/dashboard/recruiter/upload/page.tsx` (mode selector tabs)
+- `cblaero/package.json` (added pdf-parse v1.1.1)
+- `docs/implementation_artifacts/sprint-status.yaml` (status → review)
+- `docs/implementation_artifacts/stories/2-2a-implement-recruiter-pdf-resume-upload-with-llm-extraction.md` (this file)
+
+### Senior Developer Review (AI)
+
+**Reviewer:** Code Review Workflow — 2026-03-31
+**Outcome:** Issues found and fixed
+
+#### Issues Fixed
+
+1. **[HIGH] N+1 RPC calls in confirm route** — Confirm route was calling `process_import_chunk` once per candidate instead of batching. Refactored to build all candidate rows first, then send a single RPC call. Eliminates N+1 database round-trips.
+
+2. **[HIGH] Imported counter incorrectly overwritten** — Each iteration's `p_total_imported` was set from the previous RPC's cumulative return, creating a stale-counter bug. Resolved by batching into a single call with `p_total_imported: 0`.
+
+3. **[MEDIUM] `finalizeInMemoryResumeBatch` missing tenant isolation** — Function looked up batch by ID only, bypassing tenant check. Added `tenantId` parameter and filter to match `getInMemoryResumeBatch` pattern.
+
+4. **[MEDIUM] Incomplete story File List** — 5 new/modified files were missing from the story's File Structure section. Updated to include `shared.ts`, `UploadModeSelector.tsx`, `pdf-parse.d.ts`, `audit/index.ts`, and `package.json`.
+
+5. **[MEDIUM] No test for extraction failure path (AC 8)** — Added test verifying that when `pdf-parse` returns empty text (scanned image), the upload route returns `status: 'failed'` with an error message containing "scanned image".
+
+6. **[MEDIUM] Confirm route added `import_batch_id` filter on submission lookup** — User-applied fix: submission query in confirm route now also filters by `import_batch_id` to prevent cross-batch submission access. Error count from failed extractions now queried from DB.
+
+#### Remaining Low Issues (not fixed)
+
+- **[LOW]** `UploadModeSelector` inactive button missing `border border-transparent` causes minor layout shift
+- **[LOW]** `DISPLAY_FIELDS` in ResumeUploadWizard omits domain-critical fields (certifications, aircraftExperience)
+- **[LOW]** Pre-existing CSV upload test failure (`(ignore)` columnMap) — unrelated to this story
+
+#### Test Results After Fixes
+
+- 170 tests passing (+2 new), 1 pre-existing failure (csv-upload)
+- TypeScript: clean
+- All ACs verified as implemented

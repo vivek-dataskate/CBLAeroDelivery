@@ -36,7 +36,9 @@ export type ImportBatchAccessEvent = {
     | "list_import_batches"
     | "read_import_batch_detail"
     | "csv_upload_access"
-    | "download_csv_error_report";
+    | "download_csv_error_report"
+    | "resume_upload_access"
+    | "resume_confirm_access";
   occurredAtIso: string;
 };
 
