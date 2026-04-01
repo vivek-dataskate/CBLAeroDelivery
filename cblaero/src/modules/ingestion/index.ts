@@ -1,7 +1,7 @@
 import { getSupabaseAdminClient, isSupabaseConfigured } from '../persistence';
 import { uploadAttachmentToStorage } from '../email/nlp-extract-and-upload';
 
-export type IngestionSource = "csv" | "ats" | "email" | "ceipal";
+export type IngestionSource = "csv" | "ats" | "email" | "ceipal" | "resume_upload";
 
 export type IngestionEnvelope = {
   source: IngestionSource;
@@ -26,9 +26,7 @@ export type SyncError = {
 };
 
 const SYNC_ERROR_MAX = 100;
-// NOTE: Module-level state — does not persist across serverless cold starts or
-// multiple instances. Suitable for development; replace with a persistent store
-// (e.g., Supabase table) for production multi-instance deployments.
+// In-memory buffer for fast reads; also persisted to Supabase when configured.
 const recentSyncErrors: SyncError[] = [];
 
 export function recordSyncFailure(source: string, recordId: string, err: unknown): void {
@@ -43,9 +41,43 @@ export function recordSyncFailure(source: string, recordId: string, err: unknown
   if (recentSyncErrors.length > SYNC_ERROR_MAX) {
     recentSyncErrors.splice(SYNC_ERROR_MAX);
   }
+  // Persist to Supabase (fire-and-forget — don't block the caller)
+  if (isSupabaseConfigured()) {
+    const db = getSupabaseAdminClient();
+    Promise.resolve(
+      db.from('sync_errors').insert({
+        source,
+        record_id: recordId,
+        message: error.message,
+        occurred_at: error.timestamp,
+      })
+    ).then(({ error: dbErr }) => {
+      if (dbErr) console.error('[SyncError] Failed to persist:', dbErr.message);
+    }).catch((e: unknown) => {
+      console.error('[SyncError] Persist transport error:', e instanceof Error ? e.message : e);
+    });
+  }
 }
 
-export function listRecentSyncErrors(): SyncError[] {
+export async function listRecentSyncErrors(): Promise<SyncError[]> {
+  // Prefer Supabase if configured; fall back to in-memory
+  if (isSupabaseConfigured()) {
+    const db = getSupabaseAdminClient();
+    const { data } = await db
+      .from('sync_errors')
+      .select('id, source, record_id, message, occurred_at')
+      .order('occurred_at', { ascending: false })
+      .limit(SYNC_ERROR_MAX);
+    if (data && data.length > 0) {
+      return data.map((r: { id: string; source: string; record_id: string; message: string; occurred_at: string }) => ({
+        id: String(r.id),
+        source: r.source,
+        recordId: r.record_id,
+        message: r.message,
+        timestamp: r.occurred_at,
+      }));
+    }
+  }
   return [...recentSyncErrors];
 }
 
@@ -66,7 +98,14 @@ export async function upsertCandidateFromATS(record: Record<string, unknown>): P
 
   const db = getSupabaseAdminClient();
   const email = typeof record.email === 'string' ? record.email.trim().toLowerCase() : '';
+  const phone = typeof record.phone === 'string' ? record.phone.trim() : '';
   const source = typeof record.source === 'string' ? record.source : 'ats';
+
+  // Pre-validate: candidates table requires email or phone
+  if (!email && !phone) {
+    recordSyncFailure(source, String(record.firstName ?? 'unknown'), new Error('Candidate has no email or phone — cannot insert'));
+    return;
+  }
 
   // Upsert candidate by email (dedup key)
   const candidateRow = mapToCandidateRow(record, source);
@@ -80,7 +119,8 @@ export async function upsertCandidateFromATS(record: Record<string, unknown>): P
       .maybeSingle();
 
     if (existing) {
-      await db.from('candidates').update({ ...candidateRow, updated_at: new Date().toISOString() }).eq('id', existing.id);
+      const { error } = await db.from('candidates').update({ ...candidateRow, updated_at: new Date().toISOString() }).eq('id', existing.id);
+      if (error) throw new Error(`Candidate update failed: ${error.message}`);
       console.log(`[Ingestion] Updated candidate ${email} (${existing.id})`);
     } else {
       const { error } = await db.from('candidates').insert(candidateRow);
@@ -125,7 +165,8 @@ export async function upsertCandidateFromEmailFull(record: {
       .maybeSingle();
 
     if (existing) {
-      await db.from('candidates').update({ ...candidateRow, updated_at: new Date().toISOString() }).eq('id', existing.id);
+      const { error: updateErr } = await db.from('candidates').update({ ...candidateRow, updated_at: new Date().toISOString() }).eq('id', existing.id);
+      if (updateErr) throw new Error(`Candidate update failed: ${updateErr.message}`);
       candidateId = existing.id;
       console.log(`[Ingestion] Updated candidate ${email} from email`);
     } else {
@@ -140,7 +181,19 @@ export async function upsertCandidateFromEmailFull(record: {
     candidateId = data.id;
   }
 
-  // 2. Insert submission first to get its ID for attachment paths
+  // 2. Skip if this email was already processed (dedup by message ID)
+  const { data: existingSub } = await db
+    .from('candidate_submissions')
+    .select('id')
+    .eq('email_message_id', record.id)
+    .eq('tenant_id', DEFAULT_TENANT_ID)
+    .maybeSingle();
+  if (existingSub) {
+    console.log(`[Ingestion] Skipping already-processed email: ${record.subject}`);
+    return;
+  }
+
+  // 3. Insert submission with attachment paths
   const submissionId = crypto.randomUUID();
   const submissionRow = {
     id: submissionId,
@@ -154,7 +207,7 @@ export async function upsertCandidateFromEmailFull(record: {
     email_received_at: record.receivedAt,
     extracted_data: record.candidate,
     attachments: [] as Array<{ filename: string; url?: string; size?: number }>,
-    extraction_model: record.candidate.source === 'email' ? 'claude-haiku-4-5-20251001' : 'regex-fallback',
+    extraction_model: record.candidate.extractionMethod === 'llm' ? 'claude-haiku-4-5-20251001' : 'regex-fallback',
   };
 
   // 3. Upload attachments to Supabase Storage

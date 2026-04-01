@@ -940,6 +940,10 @@ sequenceDiagram
 - `docs/planning_artifacts/adr/0004-supabase-access-for-python-workers.md`
 - `docs/planning_artifacts/adr/0005-transport-and-tls-standards.md`
 
+## Development Standards Reference
+
+All stories must follow the coding standards and best practices documented in [development-standards.md](development-standards.md). Key areas: external API retry/backoff patterns, LLM integration safety, data ingestion dedup, Supabase error handling, token caching, and evidence preservation. Code reviews should verify compliance.
+
 ## Architecture Resilience Decisions
 
 Closed decisions for 8 operational risk areas identified during architecture review.
