@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { CeipalIngestionJob, EmailIngestionJob } from '@/modules/ingestion/jobs';
+import { CeipalIngestionJob, EmailIngestionJob, OneDriveResumePollerJob } from '@/modules/ingestion/jobs';
 import { getSupabaseAdminClient, isSupabaseConfigured } from '@/modules/persistence';
 
 const JOBS_SECRET = process.env.CBL_JOBS_SECRET;
@@ -17,10 +17,10 @@ export async function POST(request: NextRequest) {
   };
 
   const jobName = body.job;
-  if (!jobName || !['ceipal-sync', 'email-sync'].includes(jobName)) {
+  if (!jobName || !['ceipal-sync', 'email-sync', 'onedrive-sync'].includes(jobName)) {
     return NextResponse.json({
       error: 'Invalid job',
-      available: ['ceipal-sync', 'email-sync'],
+      available: ['ceipal-sync', 'email-sync', 'onedrive-sync'],
     }, { status: 400 });
   }
 
@@ -29,6 +29,9 @@ export async function POST(request: NextRequest) {
   try {
     if (jobName === 'ceipal-sync') {
       await runCeipalSync(body.mode ?? 'daily-sync', Math.min(body.pages ?? 1, 20));
+    } else if (jobName === 'onedrive-sync') {
+      const job = new OneDriveResumePollerJob();
+      await job.run();
     } else {
       const job = new EmailIngestionJob();
       await job.run();
