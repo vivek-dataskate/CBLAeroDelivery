@@ -11,8 +11,64 @@ import {
   listClientContextConfirmationEvents,
   listStepUpAttemptEvents,
 } from "@/modules/audit";
+import {
+  clearCandidateStoreForTest,
+  seedCandidateForTest,
+} from "@/features/candidate-management/infrastructure/candidate-repository";
+import type { CandidateDetail } from "@/features/candidate-management/contracts/candidate";
 
 import { GET, POST } from "../route";
+
+function makeCandidateFixture(overrides: Partial<CandidateDetail> = {}): CandidateDetail {
+  return {
+    id: crypto.randomUUID(),
+    tenantId: "tenant-a",
+    name: "Test Candidate",
+    firstName: "Test",
+    lastName: "Candidate",
+    email: "test@example.com",
+    phone: "5550000001",
+    location: "Houston, TX",
+    availabilityStatus: "active",
+    ingestionState: "active",
+    source: "csv",
+    sourceBatchId: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    middleName: null,
+    homePhone: null,
+    workPhone: null,
+    address: null,
+    city: null,
+    state: null,
+    country: null,
+    postalCode: null,
+    currentCompany: null,
+    jobTitle: null,
+    alternateEmail: null,
+    skills: [],
+    certifications: [],
+    experience: [],
+    extraAttributes: {},
+    workAuthorization: null,
+    clearance: null,
+    aircraftExperience: [],
+    employmentType: null,
+    currentRate: null,
+    perDiem: null,
+    hasApLicense: null,
+    yearsOfExperience: null,
+    ceipalId: null,
+    submittedBy: null,
+    submitterEmail: null,
+    shiftPreference: null,
+    expectedStartDate: null,
+    callAvailability: null,
+    interviewAvailability: null,
+    veteranStatus: null,
+    ...overrides,
+  };
+}
 
 function buildRequest(url: string, init?: ConstructorParameters<typeof NextRequest>[1]): NextRequest {
   return new NextRequest(url, init);
@@ -28,6 +84,7 @@ describe("internal candidates API authorization", () => {
     await clearAuthorizationDenyEventsForTest();
     await clearClientContextConfirmationEventsForTest();
     await clearStepUpAttemptEventsForTest();
+    clearCandidateStoreForTest();
   });
 
   it("returns 401 for unauthenticated requests", async () => {
@@ -64,7 +121,7 @@ describe("internal candidates API authorization", () => {
     expect(events[0].method).toBe("POST");
   });
 
-  it("allows role-permitted tenant read", async () => {
+  it("allows role-permitted tenant read with required filter", async () => {
     const issued = await issueSessionToken({
       actorId: "actor-admin",
       email: "admin@cblsolutions.com",
@@ -74,7 +131,7 @@ describe("internal candidates API authorization", () => {
     });
 
     const request = buildRequest(
-      "https://aerodelivery.onrender.com/api/internal/candidates?tenantId=tenant-a",
+      "https://aerodelivery.onrender.com/api/internal/candidates?tenantId=tenant-a&availability_status=active",
       {
         method: "GET",
         headers: {
@@ -90,6 +147,58 @@ describe("internal candidates API authorization", () => {
     expect(body.meta.tenantId).toBe("tenant-a");
     expect(Array.isArray(body.data)).toBe(true);
     expect(await listAuthorizationDenyEvents()).toHaveLength(0);
+  });
+
+  it("returns 400 when no pre-filter is provided", async () => {
+    const issued = await issueSessionToken({
+      actorId: "actor-admin-nofilter",
+      email: "admin@cblsolutions.com",
+      tenantId: "tenant-a",
+      role: "admin",
+      rememberDevice: false,
+    });
+
+    const request = buildRequest(
+      "https://aerodelivery.onrender.com/api/internal/candidates?tenantId=tenant-a",
+      {
+        method: "GET",
+        headers: { cookie: withSessionCookie(issued.token) },
+      },
+    );
+
+    const response = await GET(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.error.code).toBe("filter_required");
+  });
+
+  it("returns paginated candidate list with nextCursor when more results exist", async () => {
+    for (let i = 1; i <= 4; i++) {
+      seedCandidateForTest(
+        makeCandidateFixture({ id: `00000000-0000-0000-0000-00000000000${i}`, tenantId: "tenant-a", availabilityStatus: "active" }),
+      );
+    }
+
+    const issued = await issueSessionToken({
+      actorId: "actor-admin-paginate",
+      email: "admin@cblsolutions.com",
+      tenantId: "tenant-a",
+      role: "admin",
+      rememberDevice: false,
+    });
+
+    const response = await GET(
+      buildRequest(
+        "https://aerodelivery.onrender.com/api/internal/candidates?availability_status=active&limit=2",
+        { headers: { cookie: withSessionCookie(issued.token) } },
+      ),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.data).toHaveLength(2);
+    expect(body.meta.nextCursor).not.toBeNull();
   });
 
   it("denies cross-tenant access attempts", async () => {
@@ -211,7 +320,7 @@ describe("internal candidates API authorization", () => {
     });
 
     const request = buildRequest(
-      "https://aerodelivery.onrender.com/api/internal/candidates?tenantId=tenant-a&includeCommunicationHistory=true",
+      "https://aerodelivery.onrender.com/api/internal/candidates?tenantId=tenant-a&includeCommunicationHistory=true&availability_status=active",
       {
         method: "GET",
         headers: {

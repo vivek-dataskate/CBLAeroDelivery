@@ -1,4 +1,5 @@
 import { acquireGraphToken } from './graph-auth';
+import { extractCandidateFromEmail } from './nlp-extract-and-upload';
 import { IngestionEnvelope } from '../ingestion';
 
 export interface EmailParser {
@@ -8,7 +9,7 @@ export interface EmailParser {
 
 export interface EmailCandidateRecord {
   id: string;
-  candidate: Record<string, unknown>;
+  candidate: Record<string, unknown> & { firstName: string; lastName: string; email: string };
   receivedAt: string;
   subject: string;
   body: string;
@@ -43,7 +44,7 @@ export class MicrosoftGraphEmailParser implements EmailParser {
         const attachments = msg.hasAttachments
           ? await this.fetchAttachments(token, address, msg.id)
           : [];
-        const candidate = parseCandidateFromBody(msg.body.content);
+        const candidate = await extractCandidateFromEmail(msg.body.content, msg.subject ?? '') as unknown as Record<string, unknown> & { firstName: string; lastName: string; email: string };
         allEmails.push({
           id: msg.id,
           candidate,
@@ -59,7 +60,6 @@ export class MicrosoftGraphEmailParser implements EmailParser {
   }
 
   private async fetchMessages(token: string, mailbox: string): Promise<GraphMessage[]> {
-    // Fetch last 50 unread messages from the shared mailbox
     const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}/mailFolders/Inbox/messages` +
       `?$top=50&$select=id,subject,receivedDateTime,body,hasAttachments&$orderby=receivedDateTime desc`;
 
@@ -89,7 +89,6 @@ export class MicrosoftGraphEmailParser implements EmailParser {
     });
 
     if (!response.ok) {
-      // Non-fatal — log and continue without attachments
       console.warn(`Graph attachments fetch failed for message ${messageId} (${response.status})`);
       return [];
     }
@@ -102,33 +101,6 @@ export class MicrosoftGraphEmailParser implements EmailParser {
         content: Buffer.from(a.contentBytes, 'base64'),
       }));
   }
-}
-
-function parseCandidateFromBody(body: string): Record<string, unknown> {
-  // Strip HTML tags for plain-text parsing
-  const text = body.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ');
-  const firstNameMatch = text.match(/First\s*Name[:\s]+([^\n<]+)/i);
-  const lastNameMatch = text.match(/Last\s*Name[:\s]+([^\n<]+)/i);
-  const nameMatch = text.match(/(?:^|[\n\r])Name[:\s]+([^\n<]+)/im);
-  const emailMatch = text.match(/Email[:\s]+([^\s<\n]+@[^\s<\n]+)/i);
-  const phoneMatch = text.match(/(?:Phone|Mobile|Cell)[:\s]+([\d\s\-\(\)\.+]{7,20})/i);
-
-  return {
-    firstName: firstNameMatch?.[1]?.trim() ?? '',
-    lastName: lastNameMatch?.[1]?.trim() ?? '',
-    // Fall back to splitting a single Name field if first/last not found
-    ...((!firstNameMatch && nameMatch) ? splitName(nameMatch[1].trim()) : {}),
-    email: emailMatch?.[1]?.trim() ?? '',
-    phone: phoneMatch?.[1]?.trim() ?? '',
-  };
-}
-
-function splitName(fullName: string): { firstName: string; lastName: string } {
-  const parts = fullName.trim().split(/\s+/);
-  return {
-    firstName: parts[0] ?? '',
-    lastName: parts.slice(1).join(' ') ?? '',
-  };
 }
 
 export function createEmailIngestionEnvelope(record: EmailCandidateRecord): IngestionEnvelope {
