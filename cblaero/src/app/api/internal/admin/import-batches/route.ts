@@ -49,7 +49,7 @@ function extractSessionToken(request: NextRequest): string | null {
 function toSummary(row: ImportBatchRow): ImportBatchSummary {
   const startedMs = new Date(row.started_at).getTime();
   const completedMs = row.completed_at ? new Date(row.completed_at).getTime() : null;
-  const elapsedMs = completedMs !== null ? completedMs - startedMs : null;
+  const elapsedMs = completedMs !== null ? completedMs - startedMs : Date.now() - startedMs;
 
   return {
     id: row.id,
