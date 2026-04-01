@@ -1,7 +1,7 @@
 import { fetchCeipalApplicants, mapCeipalApplicantToCandidate } from '../ats';
 import { MicrosoftGraphEmailParser } from '../email';
 import { getSupabaseAdminClient, isSupabaseConfigured } from '../persistence';
-import { recordSyncFailure, upsertCandidateFromATS, upsertCandidateFromEmailFull } from './index';
+import { recordSyncFailure, upsertCandidateFromATS, upsertCandidateFromEmailFull, batchUpsertCandidatesFromATS } from './index';
 
 export interface SchedulerJob {
   name: string;
@@ -59,23 +59,42 @@ export class EmailIngestionJob implements SchedulerJob {
  */
 export class CeipalIngestionJob implements SchedulerJob {
   name = 'CeipalIngestionJob';
-  private lastRunAt: Date | undefined;
 
   async run() {
     try {
-      const applicants = await fetchCeipalApplicants({ since: this.lastRunAt });
-      console.log(`[CeipalIngestionJob] Fetched ${applicants.length} applicants`);
-      for (const applicant of applicants) {
-        const id = applicant.email_address ?? `${applicant.first_name}-${applicant.last_name}`;
-        try {
-          await upsertCandidateFromATS(mapCeipalApplicantToCandidate(applicant));
-        } catch (err) {
-          recordSyncFailure('ceipal', id, err);
-        }
+      // Determine where to resume: count existing ceipal candidates → starting page
+      const startPage = await this.getResumePage();
+      console.log(`[CeipalIngestionJob] Resuming from page ${startPage}`);
+
+      // Fetch 1 page (50 records) per run, upsert immediately
+      const applicants = await fetchCeipalApplicants({ maxPages: 1, startPage });
+
+      if (applicants.length === 0) {
+        console.log(`[CeipalIngestionJob] No more records at page ${startPage} — initial load may be complete`);
+        return;
       }
-      this.lastRunAt = new Date();
+
+      console.log(`[CeipalIngestionJob] Fetched ${applicants.length} applicants from page ${startPage}`);
+      const candidates = applicants.map(mapCeipalApplicantToCandidate);
+      const { inserted, failed } = await batchUpsertCandidatesFromATS(candidates);
+      console.log(`[CeipalIngestionJob] Page ${startPage}: ${inserted} upserted, ${failed} failed`);
     } catch (err) {
       recordSyncFailure('ceipal', 'polling', err);
+    }
+  }
+
+  private async getResumePage(): Promise<number> {
+    if (!isSupabaseConfigured()) return 1;
+    try {
+      const db = getSupabaseAdminClient();
+      const { count } = await db
+        .from('candidates')
+        .select('id', { count: 'exact', head: true })
+        .eq('source', 'ceipal');
+      const existingCount = count ?? 0;
+      return Math.floor(existingCount / 50) + 1;
+    } catch {
+      return 1;
     }
   }
 }
