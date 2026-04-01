@@ -285,6 +285,34 @@ create index if not exists idx_candidates_source_batch
   on cblaero_app.candidates (source_batch_id)
   where source_batch_id is not null;
 
+-- Story 2.4: GIN indexes for JSONB queryability at 1M+ rows
+create index if not exists idx_candidates_certifications_gin
+  on cblaero_app.candidates using gin (certifications)
+  where ingestion_state = 'active';
+
+create index if not exists idx_candidates_skills_gin
+  on cblaero_app.candidates using gin (skills)
+  where ingestion_state = 'active';
+
+-- Story 2.4: Full-text search on name fields
+alter table cblaero_app.candidates
+  add column if not exists name_tsv tsvector
+  generated always as (
+    to_tsvector('english',
+      coalesce(first_name, '') || ' ' ||
+      coalesce(last_name, '') || ' ' ||
+      coalesce(name, '')
+    )
+  ) stored;
+
+create index if not exists idx_candidates_name_fts
+  on cblaero_app.candidates using gin (name_tsv)
+  where ingestion_state = 'active';
+
+-- Story 2.4: Composite index for state-scoped tenant queries
+create index if not exists idx_candidates_tenant_state
+  on cblaero_app.candidates (tenant_id, ingestion_state);
+
 create or replace function cblaero_app.process_import_chunk(
   p_batch_id uuid,
   p_candidates jsonb,
@@ -617,6 +645,74 @@ grant select, insert, update, delete on cblaero_app.candidates
   to anon, authenticated, service_role;
 
 grant execute on function cblaero_app.process_import_chunk(uuid, jsonb, jsonb, int, int, int)
+  to anon, authenticated, service_role;
+
+-- Story 2.3: Extended candidate fields for ATS/email ingestion
+alter table cblaero_app.candidates
+  add column if not exists work_authorization text,
+  add column if not exists clearance text,
+  add column if not exists aircraft_experience jsonb not null default '[]'::jsonb,
+  add column if not exists employment_type text,
+  add column if not exists current_rate text,
+  add column if not exists per_diem text,
+  add column if not exists has_ap_license boolean,
+  add column if not exists years_of_experience text,
+  add column if not exists ceipal_id text,
+  add column if not exists submitted_by text,
+  add column if not exists submitter_email text,
+  add column if not exists shift_preference text,
+  add column if not exists expected_start_date text,
+  add column if not exists call_availability text,
+  add column if not exists interview_availability text,
+  add column if not exists veteran_status text;
+
+create index if not exists idx_candidates_ceipal_id
+  on cblaero_app.candidates (ceipal_id) where ceipal_id is not null;
+
+-- Story 2.3: Submission evidence table
+create table if not exists cblaero_app.candidate_submissions (
+  id uuid primary key default gen_random_uuid(),
+  candidate_id uuid references cblaero_app.candidates(id) on delete set null,
+  tenant_id text not null,
+  source text not null check (source in ('email', 'ats', 'csv', 'ceipal')),
+  email_message_id text,
+  email_subject text,
+  email_body text,
+  email_from text,
+  email_received_at timestamptz,
+  extracted_data jsonb not null default '{}'::jsonb,
+  attachments jsonb not null default '[]'::jsonb,
+  extraction_model text,
+  extraction_confidence text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_submissions_candidate
+  on cblaero_app.candidate_submissions (candidate_id);
+create index if not exists idx_submissions_source
+  on cblaero_app.candidate_submissions (source);
+create index if not exists idx_submissions_received
+  on cblaero_app.candidate_submissions (email_received_at desc);
+
+-- Story 2.3: Persistent sync error tracking
+create table if not exists cblaero_app.sync_errors (
+  id bigint generated always as identity primary key,
+  source text not null,
+  record_id text not null,
+  message text not null,
+  occurred_at timestamptz not null default now()
+);
+
+create index if not exists idx_sync_errors_occurred
+  on cblaero_app.sync_errors (occurred_at desc);
+create index if not exists idx_sync_errors_source
+  on cblaero_app.sync_errors (source);
+
+-- Story 2.3: Grants for new tables
+grant select, insert, update, delete on cblaero_app.candidate_submissions
+  to anon, authenticated, service_role;
+
+grant select, insert on cblaero_app.sync_errors
   to anon, authenticated, service_role;
 
 grant usage on all sequences in schema cblaero_app

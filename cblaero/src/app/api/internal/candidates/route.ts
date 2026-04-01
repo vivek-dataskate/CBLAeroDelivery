@@ -3,6 +3,11 @@ import { createHash } from "node:crypto";
 import { jwtVerify, SignJWT, type JWTPayload } from "jose";
 
 import {
+  listCandidates,
+} from "@/features/candidate-management/infrastructure/candidate-repository";
+import type { AvailabilityStatus } from "@/features/candidate-management/contracts/candidate";
+
+import {
   SESSION_COOKIE_NAME,
   authorizeAccess,
   AUTH_ISSUER,
@@ -533,19 +538,61 @@ export async function GET(request: NextRequest) {
     return stepUpResponse;
   }
 
-  return NextResponse.json({
-    data: [
+  const availabilityStatusRaw = request.nextUrl.searchParams.get("availability_status");
+  const location = request.nextUrl.searchParams.get("location");
+  const certType = request.nextUrl.searchParams.get("cert_type");
+  const search = request.nextUrl.searchParams.get("search");
+
+  const VALID_AVAILABILITY: ReadonlySet<string> = new Set(["active", "passive", "unavailable"]);
+  if (availabilityStatusRaw && !VALID_AVAILABILITY.has(availabilityStatusRaw)) {
+    return NextResponse.json(
       {
-        candidateId: "cand-001",
-        tenantId: session.tenantId,
-        status: "active",
+        error: {
+          code: "invalid_filter",
+          message: `Invalid availability_status value. Must be one of: active, passive, unavailable.`,
+        },
       },
-    ],
+      { status: 400 },
+    );
+  }
+  const availabilityStatus = availabilityStatusRaw as AvailabilityStatus | null;
+
+  const hasFilter = !!(availabilityStatus || location || certType || search);
+  if (!hasFilter) {
+    return NextResponse.json(
+      {
+        error: {
+          code: "filter_required",
+          message:
+            "At least one pre-filter is required: availability_status, location, or cert_type.",
+        },
+      },
+      { status: 400 },
+    );
+  }
+
+  const cursor = request.nextUrl.searchParams.get("cursor") ?? undefined;
+  const limitRaw = request.nextUrl.searchParams.get("limit");
+  const limit = limitRaw ? Math.max(1, Math.min(100, parseInt(limitRaw, 10) || 25)) : undefined;
+
+  const result = await listCandidates({
+    tenantId: session.tenantId,
+    availabilityStatus: availabilityStatus ?? undefined,
+    location: location ?? undefined,
+    certType: certType ?? undefined,
+    search: search ?? undefined,
+    cursor,
+    limit,
+  });
+
+  return NextResponse.json({
+    data: result.items,
     meta: {
       tenantId: session.tenantId,
       activeClientId: session.tenantId,
       targetClientId: requestedTenantId ?? session.tenantId,
       readScope: "tenant-isolated",
+      nextCursor: result.nextCursor,
     },
   });
 }
