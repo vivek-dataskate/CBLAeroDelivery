@@ -9,6 +9,7 @@ import {
 
 import { POST } from '../route';
 import { clearResumeUploadStoreForTest } from '../shared';
+import { _setPdfParseForTest } from '@/features/candidate-management/application/candidate-extraction';
 
 vi.mock('@anthropic-ai/sdk', () => ({
   default: vi.fn().mockImplementation(() => ({
@@ -20,9 +21,7 @@ vi.mock('@anthropic-ai/sdk', () => ({
   })),
 }));
 
-vi.mock('pdf-parse', () => ({
-  default: vi.fn().mockResolvedValue({ text: 'Jane Smith\njane@test.com\nA&P Mechanic', numpages: 1 }),
-}));
+const mockPdfParse = vi.fn().mockResolvedValue({ text: 'Jane Smith\njane@test.com\nA&P Mechanic' });
 
 const BASE_URL = 'https://aerodelivery.onrender.com';
 
@@ -49,6 +48,7 @@ describe('POST /api/internal/recruiter/resume-upload', () => {
     clearResumeUploadStoreForTest();
     clearAuthorizationDenyEventsForTest();
     clearImportBatchAccessEventsForTest();
+    _setPdfParseForTest(mockPdfParse);
     process.env.ANTHROPIC_API_KEY = 'test-key';
   });
 
@@ -124,8 +124,7 @@ describe('POST /api/internal/recruiter/resume-upload', () => {
   });
 
   it('handles extraction failure with actionable error message (AC 8)', async () => {
-    const pdfParseMock = await import('pdf-parse');
-    (pdfParseMock.default as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ text: '', numpages: 1 });
+    mockPdfParse.mockResolvedValueOnce({ text: '' });
 
     const { token } = await issueSessionToken({ actorId: 'recruiter-1', email: 'rec@test.com', role: 'recruiter', tenantId: 'cbl-aero', rememberDevice: false });
     const request = await buildResumeUploadRequest({ token, files: [{ name: 'scanned.pdf', content: 'scanned image pdf' }] });

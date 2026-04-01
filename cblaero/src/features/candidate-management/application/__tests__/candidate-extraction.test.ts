@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   preprocessEmailBody,
+  _setPdfParseForTest,
   type ContentType,
   type ExtractionMetadata,
 } from '../candidate-extraction';
@@ -28,13 +29,12 @@ vi.mock('@anthropic-ai/sdk', () => ({
   })),
 }));
 
-vi.mock('pdf-parse', () => ({
-  default: vi.fn().mockResolvedValue({ text: 'John Doe\njohn@example.com\nBoeing 737 mechanic', numpages: 1 }),
-}));
+const mockPdfParse = vi.fn().mockResolvedValue({ text: 'John Doe\njohn@example.com\nBoeing 737 mechanic' });
 
 describe('candidate-extraction', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _setPdfParseForTest(mockPdfParse);
   });
 
   describe('preprocessEmailBody', () => {
@@ -114,6 +114,7 @@ describe('candidate-extraction', () => {
       vi.resetModules();
       const mod = await import('../candidate-extraction');
       mod._resetClientForTest();
+      mod._setPdfParseForTest(mockPdfParse);
       const pdfBuffer = Buffer.from('fake pdf content');
       const result = await mod.extractCandidateFromDocument(
         pdfBuffer,
@@ -148,6 +149,7 @@ describe('candidate-extraction', () => {
       vi.resetModules();
       const mod = await import('../candidate-extraction');
       mod._resetClientForTest();
+      mod._setPdfParseForTest(mockPdfParse);
       const result = await mod.extractCandidateFromDocument(
         Buffer.from('test'),
         'pdf',

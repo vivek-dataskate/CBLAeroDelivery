@@ -8,6 +8,7 @@ import { POST } from '../../route';
 import { GET } from '../route';
 import { POST as CONFIRM } from '../confirm/route';
 import { clearResumeUploadStoreForTest } from '../../shared';
+import { _setPdfParseForTest } from '@/features/candidate-management/application/candidate-extraction';
 
 vi.mock('@anthropic-ai/sdk', () => ({
   default: vi.fn().mockImplementation(() => ({
@@ -19,9 +20,7 @@ vi.mock('@anthropic-ai/sdk', () => ({
   })),
 }));
 
-vi.mock('pdf-parse', () => ({
-  default: vi.fn().mockResolvedValue({ text: 'Jane Smith\njane@test.com', numpages: 1 }),
-}));
+const mockPdfParse = vi.fn().mockResolvedValue({ text: 'Jane Smith\njane@test.com' });
 
 const BASE_URL = 'https://aerodelivery.onrender.com';
 
@@ -47,6 +46,7 @@ describe('GET /api/internal/recruiter/resume-upload/[batchId]', () => {
     clearResumeUploadStoreForTest();
     clearAuthorizationDenyEventsForTest();
     clearImportBatchAccessEventsForTest();
+    _setPdfParseForTest(mockPdfParse);
     process.env.ANTHROPIC_API_KEY = 'test-key';
   });
 
@@ -90,6 +90,7 @@ describe('POST /api/internal/recruiter/resume-upload/[batchId]/confirm', () => {
     clearResumeUploadStoreForTest();
     clearAuthorizationDenyEventsForTest();
     clearImportBatchAccessEventsForTest();
+    _setPdfParseForTest(mockPdfParse);
     process.env.ANTHROPIC_API_KEY = 'test-key';
   });
 

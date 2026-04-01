@@ -156,10 +156,22 @@ export function _resetClientForTest(): void {
 
 const MAX_CONTENT_LENGTH = 10_000;
 
-export async function preprocessPdf(content: Buffer): Promise<string> {
-  // Import the lib directly to avoid pdf-parse's self-test in index.js
+// Lazy-loaded pdf-parse function — allows test injection via _setPdfParseForTest
+let _pdfParseFn: ((buf: Buffer) => Promise<{ text: string }>) | null = null;
+
+async function getPdfParse(): Promise<(buf: Buffer) => Promise<{ text: string }>> {
+  if (_pdfParseFn) return _pdfParseFn;
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const pdfParse = require('pdf-parse/lib/pdf-parse.js');
+  _pdfParseFn = require('pdf-parse/lib/pdf-parse.js');
+  return _pdfParseFn!;
+}
+
+export function _setPdfParseForTest(fn: ((buf: Buffer) => Promise<{ text: string }>) | null): void {
+  _pdfParseFn = fn;
+}
+
+export async function preprocessPdf(content: Buffer): Promise<string> {
+  const pdfParse = await getPdfParse();
   const result = await pdfParse(content);
   const text = (result.text as string).trim();
   if (!text) {
