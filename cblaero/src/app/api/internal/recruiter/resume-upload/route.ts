@@ -1,28 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { SESSION_COOKIE_NAME, authorizeAccess, validateActiveSession } from '@/modules/auth';
+import { authorizeAccess, validateActiveSession } from '@/modules/auth';
 import { recordImportBatchAccessEvent } from '@/modules/audit';
 import { getSupabaseAdminClient } from '@/modules/persistence';
 import { extractCandidateFromDocument } from '@/features/candidate-management/application/candidate-extraction';
 import {
   createInMemoryResumeBatch,
+  extractSessionToken,
   getInMemoryResumeBatch,
   isInMemoryMode,
+  toErrorCode,
   type ResumeFileResult,
 } from './shared';
 
 const BATCH_SIZE = 50;
 const ATTACHMENT_BUCKET = 'candidate-attachments';
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per file
-
-function toErrorCode(reason: 'unauthenticated' | 'forbidden_role' | 'tenant_mismatch'): string {
-  if (reason === 'unauthenticated') return 'unauthenticated';
-  if (reason === 'tenant_mismatch') return 'tenant_forbidden';
-  return 'forbidden';
-}
-
-function extractSessionToken(request: NextRequest): string | null {
-  return request.cookies.get(SESSION_COOKIE_NAME)?.value ?? null;
-}
 
 function isPdfFile(file: File): boolean {
   return (
@@ -161,6 +153,7 @@ export async function POST(request: NextRequest) {
           const buffer = Buffer.from(arrayBuffer);
 
           let storageUrl = '';
+          let storageWarning: string | undefined;
           if (!isInMemoryMode()) {
             const db = getSupabaseAdminClient();
             const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -175,6 +168,7 @@ export async function POST(request: NextRequest) {
 
             if (uploadError) {
               console.error(`[ResumeUpload] Storage upload failed for ${file.name}:`, uploadError.message);
+              storageWarning = 'PDF storage failed — the original file may not be retrievable.';
             } else {
               const { data: urlData } = db.storage.from(ATTACHMENT_BUCKET).getPublicUrl(storagePath);
               storageUrl = urlData.publicUrl;
@@ -206,6 +200,7 @@ export async function POST(request: NextRequest) {
               status: 'failed',
               error: result.error ?? 'Extraction returned no data',
               storageUrl,
+              storageWarning,
               submissionId,
             };
           }
@@ -228,6 +223,7 @@ export async function POST(request: NextRequest) {
             status: 'complete',
             extraction: result.extraction,
             storageUrl,
+            storageWarning,
             submissionId,
           };
         } catch (err) {
@@ -268,6 +264,7 @@ export async function POST(request: NextRequest) {
         status: f.status,
         extraction: f.extraction ?? undefined,
         error: f.error ?? undefined,
+        storageWarning: f.storageWarning ?? undefined,
         submissionId: f.submissionId,
       })),
     },
