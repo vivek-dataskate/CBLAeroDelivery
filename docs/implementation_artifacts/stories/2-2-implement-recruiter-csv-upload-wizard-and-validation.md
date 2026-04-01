@@ -232,3 +232,25 @@ GPT-5.3-Codex
 - [ ] Add retry logic or error state for chunk failures (reliability improvement)
 - [ ] Expand and/or make `extra_attributes` blocklist configurable (security improvement)
 - [ ] Add generic error fallback in UI for unknown server errors (UX improvement)
+
+### Production Ingestion Run (2026-03-31)
+
+**File:** `Aero-Applicants.csv` (6,512 rows, 17 columns — typical recruiter Ceipal export)
+
+**Schema fix applied:** `extra_attributes jsonb` column was defined in `schema.sql` and `process_import_chunk` RPC but had not been deployed to the live database. Applied `ALTER TABLE cblaero_app.candidates ADD COLUMN extra_attributes jsonb NOT NULL DEFAULT '{}'::jsonb` directly. All future schema deploys are already covered by the existing `ADD COLUMN IF NOT EXISTS` idempotent migration in `schema.sql:251`.
+
+**Results — Batch `d959c526-2016-4a11-9d9d-e901e39e79f9`:**
+
+| Metric | Count |
+|---|---|
+| Total CSV rows | 6,512 |
+| Candidates imported | 6,150 |
+| Validation errors (missing_identity) | 191 |
+| Validation errors (invalid_format — short phone) | 41 |
+| Upsert failures (duplicate phone constraint) | 31 |
+
+**Column mapping:** 16 of 17 columns auto-mapped via `FIELD_ALIASES`; `Experience` (values like "17 Year(s)") stored in `extra_attributes.experience`.
+
+**Bug found — `process_import_chunk` RPC return values:** The RPC's `RETURN QUERY SELECT v_chunk_imported, 0, v_chunk_errors` returns **chunk-level** counts, but `route.ts:520` reads them as cumulative (`imported = Number(rpcResult.imported)`). The `import_batch` table gets correct cumulative totals (the RPC updates them internally), but the HTTP response to the client shows only the last chunk's numbers. This is cosmetic for now (batch status polling reads the correct DB values) but should be fixed.
+
+**CLI script added:** `cblaero/scripts/ingest-csv.ts` — standalone `tsx` script for direct CSV ingestion bypassing HTTP auth, using the same parsing/validation/mapping logic as the route. Merged in PR #29.
