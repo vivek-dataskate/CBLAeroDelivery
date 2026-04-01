@@ -3,19 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { SESSION_COOKIE_NAME, authorizeAccess, validateActiveSession } from "@/modules/auth";
 import { getSupabaseAdminClient, shouldUseInMemoryPersistenceForTests } from "@/modules/persistence";
 
-import { findCsvUploadBatchForTenant, toBatchStatusPayload } from "../shared";
-
-type ImportBatchRow = {
-  id: string;
-  tenant_id: string;
-  status: "validating" | "running" | "paused_on_error_threshold" | "complete" | "rolled_back";
-  imported: number;
-  skipped: number;
-  errors: number;
-  total_rows: number;
-  started_at: string;
-  completed_at: string | null;
-};
+import { findCsvUploadBatchForTenant, toBatchStatusPayload, type CsvUploadBatchRow } from "../shared";
 
 function toErrorCode(reason: "unauthenticated" | "forbidden_role" | "tenant_mismatch"): string {
   if (reason === "unauthenticated") return "unauthenticated";
@@ -25,26 +13,6 @@ function toErrorCode(reason: "unauthenticated" | "forbidden_role" | "tenant_mism
 
 function extractSessionToken(request: NextRequest): string | null {
   return request.cookies.get(SESSION_COOKIE_NAME)?.value ?? null;
-}
-
-function toResponsePayload(batch: ImportBatchRow) {
-  const startedMs = new Date(batch.started_at).getTime();
-  const completedMs = batch.completed_at ? new Date(batch.completed_at).getTime() : Date.now();
-
-  return {
-    batchId: batch.id,
-    status: batch.status,
-    imported: batch.imported,
-    skipped: batch.skipped,
-    errors: batch.errors,
-    totalRows: batch.total_rows,
-    startedAt: batch.started_at,
-    completedAt: batch.completed_at,
-    elapsedMs:
-      Number.isFinite(startedMs) && Number.isFinite(completedMs)
-        ? Math.max(0, completedMs - startedMs)
-        : null,
-  };
 }
 
 export async function GET(
@@ -115,5 +83,20 @@ export async function GET(
     );
   }
 
-  return NextResponse.json({ data: toResponsePayload(data as ImportBatchRow), meta: {} });
+  const batchRow: CsvUploadBatchRow = {
+    id: String(data.id),
+    tenant_id: String(data.tenant_id),
+    source: "csv_upload",
+    status: data.status as CsvUploadBatchRow["status"],
+    total_rows: Number(data.total_rows),
+    imported: Number(data.imported),
+    skipped: Number(data.skipped),
+    errors: Number(data.errors),
+    error_threshold_pct: 5,
+    created_by_actor_id: null,
+    started_at: String(data.started_at),
+    completed_at: data.completed_at ? String(data.completed_at) : null,
+  };
+
+  return NextResponse.json({ data: toBatchStatusPayload(batchRow), meta: {} });
 }
