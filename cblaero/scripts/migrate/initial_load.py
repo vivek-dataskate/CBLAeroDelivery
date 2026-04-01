@@ -16,6 +16,7 @@ Environment variables (required):
 Environment variables (optional):
   MIGRATION_CHUNK_SIZE         Rows per transaction (default: 1000)
   MIGRATION_ERROR_THRESHOLD_PCT Per-chunk error rate that triggers pause (default: 5)
+  MIGRATION_ACTOR_ID           Actor ID of admin who triggered the migration (audit trail)
 
 CSV expected columns (all optional except name + one of email/phone):
   name, email, phone, location, skills, certifications, experience,
@@ -49,6 +50,7 @@ TENANT_ID = os.environ.get("MIGRATION_TENANT_ID", "")
 SOURCE_FILE = os.environ.get("MIGRATION_SOURCE_FILE", "")
 CHUNK_SIZE = int(os.environ.get("MIGRATION_CHUNK_SIZE", "1000"))
 ERROR_THRESHOLD_PCT = float(os.environ.get("MIGRATION_ERROR_THRESHOLD_PCT", "5"))
+ACTOR_ID = os.environ.get("MIGRATION_ACTOR_ID", "")
 
 
 def _validate_config() -> None:
@@ -176,6 +178,7 @@ def _create_import_batch(client: Client, total_rows: int) -> str:
                 "skipped": 0,
                 "errors": 0,
                 "error_threshold_pct": int(ERROR_THRESHOLD_PCT),
+                "created_by_actor_id": ACTOR_ID or None,
                 "started_at": datetime.now(timezone.utc).isoformat(),
             }
         )
@@ -206,44 +209,6 @@ def _pause_batch(client: Client, batch_id: str, imported: int, skipped: int, err
             "errors": errors,
         }
     ).eq("id", batch_id).execute()
-
-
-def _write_row_errors(client: Client, error_rows: list[dict]) -> None:
-    if not error_rows:
-        return
-    client.schema(SCHEMA).from_("import_row_error").insert(error_rows).execute()
-
-
-# ---------------------------------------------------------------------------
-# Candidate upsert
-# ---------------------------------------------------------------------------
-
-def _upsert_candidates(client: Client, candidates: list[dict]) -> None:
-    """Upsert candidates with ON CONFLICT on (tenant_id, email) or (tenant_id, phone).
-
-    Supabase Python client upsert uses the table's unique indexes automatically
-    when on_conflict is set to the column names.
-    """
-    if not candidates:
-        return
-
-    # Split into email-keyed and phone-only subsets to apply correct upsert keys.
-    email_keyed = [c for c in candidates if c.get("email")]
-    phone_only = [c for c in candidates if not c.get("email") and c.get("phone")]
-
-    if email_keyed:
-        client.schema(SCHEMA).from_("candidates").upsert(
-            email_keyed,
-            on_conflict="tenant_id,email",
-            ignore_duplicates=False,
-        ).execute()
-
-    if phone_only:
-        client.schema(SCHEMA).from_("candidates").upsert(
-            phone_only,
-            on_conflict="tenant_id,phone",
-            ignore_duplicates=False,
-        ).execute()
 
 
 # ---------------------------------------------------------------------------

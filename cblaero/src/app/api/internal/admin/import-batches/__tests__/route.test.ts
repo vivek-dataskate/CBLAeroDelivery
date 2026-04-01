@@ -176,7 +176,7 @@ describe("GET /api/internal/admin/import-batches", () => {
     );
   });
 
-  it("returns null elapsedMs for in-progress batch", async () => {
+  it("returns live elapsedMs for in-progress batch", async () => {
     seedImportBatchForTest({ ...SAMPLE_BATCH, status: "running", completed_at: null });
 
     const issued = await issueSessionToken({
@@ -193,7 +193,8 @@ describe("GET /api/internal/admin/import-batches", () => {
     const response = await GET(request);
     const body = await response.json();
 
-    expect(body.data[0].elapsedMs).toBeNull();
+    expect(typeof body.data[0].elapsedMs).toBe("number");
+    expect(body.data[0].elapsedMs).toBeGreaterThan(0);
   });
 });
 

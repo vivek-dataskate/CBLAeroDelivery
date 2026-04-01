@@ -67,7 +67,7 @@ function extractSessionToken(request: NextRequest): string | null {
 function toDetail(batch: ImportBatchRow, errors: ImportRowErrorRow[]): ImportBatchDetail {
   const startedMs = new Date(batch.started_at).getTime();
   const completedMs = batch.completed_at ? new Date(batch.completed_at).getTime() : null;
-  const elapsedMs = completedMs !== null ? completedMs - startedMs : null;
+  const elapsedMs = completedMs !== null ? completedMs - startedMs : Date.now() - startedMs;
 
   return {
     id: batch.id,

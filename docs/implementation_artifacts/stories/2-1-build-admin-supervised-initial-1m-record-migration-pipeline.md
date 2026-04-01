@@ -166,12 +166,21 @@ claude-sonnet-4-6
 - Implemented row-level conflict isolation inside `process_import_chunk` so one conflicting candidate no longer fails the full chunk.
 - Updated migration docs to reflect single-RPC per-chunk transaction semantics.
 
+**Code Review Fixes (review pass 2 — 2026-04-01):**
+- [H1] SECURITY: Removed `anon` role from all DB grants on `candidates`, `import_batch`, `import_row_error`, `audit_import_batch_accesses` tables; restricted `process_import_chunk` RPC grant to `service_role` only. Unauthenticated Supabase REST callers can no longer directly manipulate migration data.
+- [H2] Updated `audit_import_batch_accesses.action` CHECK constraint to include Story 2.2a actions (`csv_upload_access`, `download_csv_error_report`, `resume_upload_access`, `resume_confirm_access`) — constraint was out of sync with TypeScript type, causing DB-level write failures for newer audit events.
+- [M1] Removed dead functions `_upsert_candidates()` and `_write_row_errors()` from `initial_load.py` — leftover from pre-RPC refactor, never called.
+- [M2] Added `MIGRATION_ACTOR_ID` env var support; `_create_import_batch()` now populates `created_by_actor_id` for audit trail.
+- [M3] Fixed `elapsedMs` in both API routes (`route.ts`, `[batchId]/route.ts`) to compute live elapsed time for running batches using `Date.now()` instead of returning `null`. Updated corresponding test.
+- [M4] Added `cblaero/scripts/migrate/test_rollback_batch.py` with 9 unit tests covering: batch not found, running-batch guard, already-rolled-back idempotency, chunked candidate deletion, chunked error deletion, and zero-row edge cases.
+
 ### File List
 
 - cblaero/supabase/schema.sql
 - cblaero/scripts/migrate/initial_load.py
 - cblaero/scripts/migrate/rollback_batch.py
 - cblaero/scripts/migrate/requirements.txt
+- cblaero/scripts/migrate/test_rollback_batch.py
 - cblaero/scripts/migrate/README.md
 - cblaero/src/modules/auth/authorization.ts
 - cblaero/src/modules/audit/index.ts
