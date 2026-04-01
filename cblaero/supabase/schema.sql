@@ -242,6 +242,7 @@ create table if not exists cblaero_app.candidates (
   ingestion_state text not null default 'pending_dedup' check (ingestion_state in ('pending_dedup', 'pending_enrichment', 'active', 'rejected')),
   source text not null,
   source_batch_id uuid references cblaero_app.import_batch (id),
+  created_by_actor_id text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint candidates_email_or_phone_required check (email is not null or phone is not null)
@@ -264,6 +265,9 @@ alter table cblaero_app.candidates
   add column if not exists current_company text,
   add column if not exists job_title text,
   add column if not exists alternate_email text;
+
+alter table cblaero_app.candidates
+  add column if not exists created_by_actor_id text;
 
 create unique index if not exists uq_candidates_tenant_email
   on cblaero_app.candidates (tenant_id, email)
@@ -445,6 +449,7 @@ begin
           ingestion_state,
           source,
           source_batch_id,
+          created_by_actor_id,
           updated_at
         )
         values (
@@ -474,6 +479,7 @@ begin
           coalesce(v_candidate->>'ingestion_state', 'pending_dedup'),
           coalesce(v_candidate->>'source', 'migration'),
           coalesce((v_candidate->>'source_batch_id')::uuid, p_batch_id),
+          nullif(trim(coalesce(v_candidate->>'created_by_actor_id', '')), ''),
           coalesce((v_candidate->>'updated_at')::timestamptz, now())
         )
         on conflict (tenant_id, email) where email is not null
@@ -502,6 +508,7 @@ begin
           ingestion_state = excluded.ingestion_state,
           source = excluded.source,
           source_batch_id = excluded.source_batch_id,
+          created_by_actor_id = coalesce(candidates.created_by_actor_id, excluded.created_by_actor_id),
           updated_at = excluded.updated_at
         returning xmax into v_xmax;
       else
@@ -532,6 +539,7 @@ begin
           ingestion_state,
           source,
           source_batch_id,
+          created_by_actor_id,
           updated_at
         )
         values (
@@ -561,6 +569,7 @@ begin
           coalesce(v_candidate->>'ingestion_state', 'pending_dedup'),
           coalesce(v_candidate->>'source', 'migration'),
           coalesce((v_candidate->>'source_batch_id')::uuid, p_batch_id),
+          nullif(trim(coalesce(v_candidate->>'created_by_actor_id', '')), ''),
           coalesce((v_candidate->>'updated_at')::timestamptz, now())
         )
         on conflict (tenant_id, phone) where phone is not null
@@ -589,6 +598,7 @@ begin
           ingestion_state = excluded.ingestion_state,
           source = excluded.source,
           source_batch_id = excluded.source_batch_id,
+          created_by_actor_id = coalesce(candidates.created_by_actor_id, excluded.created_by_actor_id),
           updated_at = excluded.updated_at
         returning xmax into v_xmax;
       end if;

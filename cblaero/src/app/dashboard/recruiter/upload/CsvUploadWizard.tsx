@@ -175,8 +175,43 @@ function parseCsvLine(line: string): string[] {
   return cells;
 }
 
+function splitCsvRows(text: string): string[] {
+  const rows: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+
+    if (char === '"') {
+      inQuotes = !inQuotes;
+      current += char;
+      continue;
+    }
+
+    if (!inQuotes && (char === "\n" || (char === "\r" && text[i + 1] === "\n"))) {
+      if (current.trim().length > 0) {
+        rows.push(current);
+      }
+      current = "";
+      if (char === "\r") {
+        i += 1;
+      }
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (current.trim().length > 0) {
+    rows.push(current);
+  }
+
+  return rows;
+}
+
 function parseCsv(text: string): ParsedCsv {
-  const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/).filter((line) => line.trim().length > 0);
+  const lines = splitCsvRows(text.replace(/^\uFEFF/, ""));
   if (lines.length === 0) {
     return { headers: [], rows: [] };
   }
@@ -308,7 +343,7 @@ export default function CsvUploadWizard() {
 
     setFile(nextFile);
     setParsed(parsedCsv);
-    setPreviewRows(parsedCsv.rows.slice(0, 5));
+    setPreviewRows(parsedCsv.rows.slice(0, 1));
     setMapping(inferMapping(parsedCsv.headers));
     setStep(2);
   };
@@ -364,10 +399,10 @@ export default function CsvUploadWizard() {
   };
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-2xl border border-white/10 bg-slate-950/65 p-5">
-        <p className="text-xs uppercase tracking-[0.15em] text-slate-400">Step 1 - File Select</p>
-        <div className="mt-3 rounded-xl border border-dashed border-slate-600 p-5">
+    <div className="space-y-3">
+      <section className="rounded-lg border border-slate-200 bg-white p-4">
+        <p className="text-[10px] uppercase tracking-[0.15em] text-slate-400">Step 1 - File Select</p>
+        <div className="mt-2 rounded-lg border border-dashed border-slate-300 p-3">
           <input
             type="file"
             accept=".csv,text/csv"
@@ -375,14 +410,14 @@ export default function CsvUploadWizard() {
               const selected = event.target.files?.[0] ?? null;
               void onFileSelected(selected);
             }}
-            className="text-sm text-slate-200"
+            className="text-xs text-slate-600"
           />
-          <p className="mt-2 text-xs text-slate-400">
+          <p className="mt-1.5 text-[11px] text-slate-400">
             Max {MAX_ROWS.toLocaleString()} rows per upload.
           </p>
-          {file ? <p className="mt-2 text-xs text-slate-300">Selected: {file.name}</p> : null}
+          {file ? <p className="mt-1.5 text-[11px] text-slate-500">Selected: {file.name}</p> : null}
           {softLimitWarning ? (
-            <p className="mt-2 text-xs text-amber-300">
+            <p className="mt-1.5 text-[11px] text-amber-600">
               This file appears to exceed {MAX_ROWS.toLocaleString()} rows and will be rejected on upload.
             </p>
           ) : null}
@@ -390,22 +425,22 @@ export default function CsvUploadWizard() {
       </section>
 
       {step >= 2 ? (
-        <section className="rounded-2xl border border-white/10 bg-slate-950/65 p-5">
-          <p className="text-xs uppercase tracking-[0.15em] text-slate-400">Step 2 - Column Mapping</p>
-          <p className="mt-2 text-xs text-slate-400">
-            Columns mapped as <b>Additional Attribute</b> are retained as additional attributes under candidate <b>extra_attributes</b> (JSON).
+        <section className="rounded-lg border border-slate-200 bg-white p-4">
+          <p className="text-[10px] uppercase tracking-[0.15em] text-slate-400">Step 2 - Column Mapping</p>
+          <p className="mt-1.5 text-[11px] text-slate-400">
+            Columns mapped as <b>Additional Attribute</b> are stored under candidate extra_attributes.
           </p>
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <div className="mt-3 grid gap-2 md:grid-cols-2 lg:grid-cols-3">
             {parsed.headers.map((header) => (
-              <label key={header} className="flex items-center justify-between gap-3 text-sm">
-                <span className="truncate text-slate-200">{header}</span>
+              <label key={header} className="flex items-center justify-between gap-2 text-[11px]">
+                <span className="truncate text-slate-600">{header}</span>
                 <select
                   value={mapping[header] ?? "(ignore)"}
                   onChange={(event) => {
                     const value = event.target.value as CanonicalField;
                     setMapping((current) => ({ ...current, [header]: value }));
                   }}
-                  className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100"
+                  className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] text-slate-700"
                 >
                   {FIELD_OPTIONS.map((option) => (
                     <option key={option} value={option}>
@@ -418,17 +453,17 @@ export default function CsvUploadWizard() {
           </div>
 
           {!requiredMappingsSatisfied(mapping) ? (
-            <p className="mt-3 text-xs text-amber-300">
-              Required mapping: First Name, Last Name, and at least one of Email or Mobile.
+            <p className="mt-2 text-[11px] text-amber-600">
+              Required: First Name, Last Name, and at least one of Email or Mobile.
             </p>
           ) : null}
 
-          <div className="mt-4 overflow-x-auto">
-            <table className="min-w-full text-xs text-slate-300">
+          <div className="mt-3 overflow-x-auto">
+            <table className="min-w-full text-[11px] text-slate-500">
               <thead>
-                <tr className="text-left text-slate-400">
+                <tr className="text-left text-slate-400 border-b border-slate-100">
                   {parsed.headers.map((header) => (
-                    <th key={header} className="pr-4 pb-2 font-medium">
+                    <th key={header} className="pr-3 pb-1 font-medium">
                       {header}
                     </th>
                   ))}
@@ -438,7 +473,7 @@ export default function CsvUploadWizard() {
                 {previewRows.map((row, index) => (
                   <tr key={`${index}-${row[parsed.headers[0]] ?? "row"}`}>
                     {parsed.headers.map((header) => (
-                      <td key={`${index}-${header}`} className="pr-4 py-1 align-top text-slate-300">
+                      <td key={`${index}-${header}`} className="pr-3 py-0.5 align-top text-slate-600">
                         {row[header] ?? ""}
                       </td>
                     ))}
@@ -452,7 +487,7 @@ export default function CsvUploadWizard() {
             type="button"
             onClick={() => setStep(3)}
             disabled={!requiredMappingsSatisfied(mapping)}
-            className="mt-4 rounded-lg border border-cyan-300/40 px-3 py-2 text-sm text-cyan-100 disabled:cursor-not-allowed disabled:opacity-40"
+            className="mt-3 rounded-md border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Next: Validation Preview
           </button>
@@ -460,30 +495,30 @@ export default function CsvUploadWizard() {
       ) : null}
 
       {step >= 3 ? (
-        <section className="rounded-2xl border border-white/10 bg-slate-950/65 p-5">
-          <p className="text-xs uppercase tracking-[0.15em] text-slate-400">Step 3 - Validation Preview</p>
-          <div className="mt-3 grid gap-2 text-sm text-slate-200 md:grid-cols-2">
+        <section className="rounded-lg border border-slate-200 bg-white p-4">
+          <p className="text-[10px] uppercase tracking-[0.15em] text-slate-400">Step 3 - Validation Preview</p>
+          <div className="mt-2 grid gap-1.5 text-xs text-slate-600 md:grid-cols-2">
             <p>
-              Total rows: <span className="text-white">{validationSummary.totalRows.toLocaleString()}</span>
+              Total rows: <span className="font-medium text-slate-800">{validationSummary.totalRows.toLocaleString()}</span>
             </p>
             <p>
-              Valid rows: <span className="text-emerald-300">{validationSummary.validRows.toLocaleString()}</span>
+              Valid rows: <span className="font-medium text-emerald-600">{validationSummary.validRows.toLocaleString()}</span>
             </p>
             <p>
-              Invalid rows: <span className="text-amber-300">{validationSummary.invalidRows.toLocaleString()}</span>
+              Invalid rows: <span className="font-medium text-amber-600">{validationSummary.invalidRows.toLocaleString()}</span>
             </p>
             <p>
-              Duplicate candidate detected: <span className="text-white">{validationSummary.duplicateDetectedCount.toLocaleString()}</span>
+              Duplicates detected: <span className="font-medium text-slate-800">{validationSummary.duplicateDetectedCount.toLocaleString()}</span>
             </p>
           </div>
 
-          <div className="mt-3 text-xs text-slate-400">
+          <div className="mt-2 text-[11px] text-slate-400">
             <p>missing_identity: {validationSummary.byErrorCode.missing_identity}</p>
             <p>invalid_format: {validationSummary.byErrorCode.invalid_format}</p>
             <p>row_limit_exceeded: {validationSummary.byErrorCode.row_limit_exceeded}</p>
           </div>
 
-          {submitError ? <p className="mt-3 text-sm text-rose-300">{submitError}</p> : null}
+          {submitError ? <p className="mt-2 text-xs text-red-600">{submitError}</p> : null}
 
           <button
             type="button"
@@ -491,7 +526,7 @@ export default function CsvUploadWizard() {
             onClick={() => {
               void onUpload();
             }}
-            className="mt-4 rounded-lg border border-emerald-300/40 px-4 py-2 text-sm text-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-3 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {uploading ? "Uploading..." : "Upload CSV"}
           </button>

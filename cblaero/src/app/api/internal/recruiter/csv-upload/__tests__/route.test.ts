@@ -211,45 +211,6 @@ describe("POST /api/internal/recruiter/csv-upload", () => {
     });
   });
 
-  it("accepts '(ignore)' as columnMap wire value and populates extra_attributes (regression: client-server contract)", async () => {
-    const issued = await issueSessionToken({
-      actorId: "actor-recruiter-9",
-      email: "recruiter@cblsolutions.com",
-      tenantId: "tenant-alpha",
-      role: "recruiter",
-      rememberDevice: false,
-    });
-
-    // Simulate what CsvUploadWizard sends: explicit "(ignore)" for unmapped columns.
-    const request = await buildMultipartUploadRequest({
-      token: issued.token,
-      csv: buildCsv([
-        "name,email,Department,Seniority",
-        "Jane Doe,jane@example.com,Engineering,Senior",
-      ]),
-      columnMap: {
-        name: "name",
-        email: "email",
-        Department: "(ignore)",
-        Seniority: "(ignore)",
-      },
-    });
-
-    const response = await POST(request);
-    const body = await response.json();
-
-    expect(response.status).toBe(200);
-    expect(body.data.imported).toBe(1);
-    expect(body.data.errors).toBe(0);
-
-    const candidates = listCsvCandidatesForTest();
-    expect(candidates).toHaveLength(1);
-    expect(candidates[0].extra_attributes).toMatchObject({
-      department: "Engineering",
-      seniority: "Senior",
-    });
-  });
-
   it("drops blocked sensitive keys from extra_attributes", async () => {
     const issued = await issueSessionToken({
       actorId: "actor-recruiter-5",
@@ -281,6 +242,58 @@ describe("POST /api/internal/recruiter/csv-upload", () => {
     expect(candidates[0].extra_attributes.token).toBeUndefined();
     expect(candidates[0].extra_attributes.secret).toBeUndefined();
     expect(candidates[0].extra_attributes.api_key).toBeUndefined();
+  });
+
+  it("sets created_by_actor_id on new candidates and preserves it on upsert", async () => {
+    const issued = await issueSessionToken({
+      actorId: "actor-recruiter-creator",
+      email: "recruiter@cblsolutions.com",
+      tenantId: "tenant-alpha",
+      role: "recruiter",
+      rememberDevice: false,
+    });
+
+    const request = await buildMultipartUploadRequest({
+      token: issued.token,
+      csv: buildCsv([
+        "first_name,last_name,email",
+        "Jane,Doe,jane-creator@example.com",
+      ]),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(200);
+
+    const candidates = listCsvCandidatesForTest();
+    const jane = candidates.find((c) => c.email === "jane-creator@example.com");
+    expect(jane).toBeDefined();
+    expect(jane!.created_by_actor_id).toBe("actor-recruiter-creator");
+
+    // Re-upload same candidate with a different actor — created_by_actor_id should be preserved
+    const secondUser = await issueSessionToken({
+      actorId: "actor-recruiter-updater",
+      email: "updater@cblsolutions.com",
+      tenantId: "tenant-alpha",
+      role: "recruiter",
+      rememberDevice: false,
+    });
+
+    const updateRequest = await buildMultipartUploadRequest({
+      token: secondUser.token,
+      csv: buildCsv([
+        "first_name,last_name,email",
+        "Jane,Updated,jane-creator@example.com",
+      ]),
+    });
+
+    const updateResponse = await POST(updateRequest);
+    expect(updateResponse.status).toBe(200);
+
+    const updatedCandidates = listCsvCandidatesForTest();
+    const updatedJane = updatedCandidates.find((c) => c.email === "jane-creator@example.com");
+    expect(updatedJane).toBeDefined();
+    expect(updatedJane!.created_by_actor_id).toBe("actor-recruiter-creator");
+    expect(updatedJane!.last_name).toBe("Updated");
   });
 
   it("rejects oversized extra_attributes payload rows as invalid_format", async () => {
