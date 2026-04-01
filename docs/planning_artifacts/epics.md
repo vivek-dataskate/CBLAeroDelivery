@@ -308,6 +308,7 @@ Enable candidates to securely self-serve profile, status, and document workflows
 - Story 1.7: S
 - Story 2.1: M
 - Story 2.2: M
+- Story 2.2a: M
 - Story 2.3: M
 - Story 2.4: S
 - Story 2.5: M
@@ -391,7 +392,7 @@ This mapping is reference-only for decomposition visibility. Planning, ownership
 | X2      | Authorization and Admin Controls                          | Epic 1      | 1.3, 1.4       |
 | X3      | Security Hardening and Client Safety                      | Epic 1      | 1.5, 1.6, 1.7  |
 | X4      | Initial Migration Path                                    | Epic 2      | 2.1            |
-| X5      | CSV Ingestion and Indexing                                | Epic 2      | 2.2, 2.4       |
+| X5      | CSV/Resume Ingestion and Indexing                         | Epic 2      | 2.2, 2.2a, 2.4 |
 | X6      | External Sync and Deduplication                           | Epic 2      | 2.3, 2.5       |
 | X7      | Availability Lifecycle, Refresh, and Scheduler Foundation | Epic 2      | 2.6, 2.7       |
 | X8      | Outbound Messaging Foundations                            | Epic 3      | 3.1, 3.2       |
@@ -553,6 +554,23 @@ So that I can quickly add candidate pools with actionable error feedback.
 **And** valid rows are written into an import batch for background processing
 **And** unmapped columns are retained in candidate extra_attributes (JSONB) with guardrails applied
 
+### Story 2.2a: Implement Recruiter PDF Resume Upload with LLM Extraction
+
+As a recruiter,
+I want to upload PDF resumes (single or multiple via folder) and have the system extract candidate data automatically,
+So that I can ingest candidates without manually converting resumes into CSV format.
+
+**Acceptance Criteria:**
+
+**Given** a recruiter uploads one or more PDF files (single file or folder, no hard cap)
+**When** the system processes each PDF through LLM-powered extraction (batched internally)
+**Then** extracted candidate data is presented for recruiter review before committing
+**And** confirmed candidates are persisted with `source: resume_upload` attribution
+**And** each PDF is stored in Supabase Storage and linked via `candidate_submissions`
+**And** non-PDF files are rejected with a clear message requiring PDF conversion
+**And** failed extractions display actionable per-file error messages
+**And** a progress tracker shows overall and per-file extraction status for large uploads
+
 ### Story 2.3: Implement ATS and Email Ingestion Connectors
 
 As a system integrator,
@@ -622,6 +640,13 @@ So that ATS syncs, inbox scans, refresh sweeps, and future digests do not rely o
 **Given** admin-authored cadence changes
 **When** validated updates are saved
 **Then** new versions apply only to subsequent scheduled runs
+
+**Implementation Notes (from Story 2.3):**
+- `registerIngestionJobs(scheduler)` in `cblaero/src/modules/ingestion/jobs.ts` registers two jobs that must be called at startup:
+  - `EmailIngestionJob` — polls `submissions-inbox@cblsolutions.com` via Microsoft Graph, LLM-parses new emails, upserts candidates + submissions with attachments. Recommended cadence: **15 minutes**. Dedup by `email_message_id` — safe to re-run.
+  - `CeipalIngestionJob` — polls Ceipal ATS v1 API with incremental `lastRunAt` tracking. Recommended cadence: **15 minutes**. Blocked until Ceipal activates API key.
+- Both jobs implement the `SchedulerJob` interface (`name: string`, `run(): Promise<void>`)
+- `GlobalScheduler` class in same file is the stub to replace with the Postgres-backed `schedule_definitions`/`schedule_runs` implementation
 **And** prior runs remain auditable against the schedule and policy version in effect at execution time
 
 ## Epic 3: Outreach Orchestration and Candidate Engagement
