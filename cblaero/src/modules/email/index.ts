@@ -4,7 +4,7 @@ import { IngestionEnvelope } from '../ingestion';
 
 export interface EmailParser {
   name: string;
-  parseInbox(addresses: string[]): Promise<EmailCandidateRecord[]>;
+  parseInbox(addresses: string[], processedIds?: Set<string>): Promise<EmailCandidateRecord[]>;
 }
 
 export interface EmailCandidateRecord {
@@ -34,20 +34,28 @@ type GraphAttachment = {
 export class MicrosoftGraphEmailParser implements EmailParser {
   name = 'MicrosoftGraph';
 
-  async parseInbox(addresses: string[]): Promise<EmailCandidateRecord[]> {
+  async parseInbox(addresses: string[], processedIds?: Set<string>): Promise<EmailCandidateRecord[]> {
     const token = await acquireGraphToken();
     const allEmails: EmailCandidateRecord[] = [];
 
     for (const address of addresses) {
       const messages = await this.fetchMessages(token, address);
       for (const msg of messages) {
+        // Skip already-processed messages — avoids wasting LLM calls
+        if (processedIds?.has(msg.id)) continue;
+
         const attachments = msg.hasAttachments
           ? await this.fetchAttachments(token, address, msg.id)
           : [];
-        const candidate = await extractCandidateFromEmail(msg.body.content, msg.subject ?? '') as unknown as Record<string, unknown> & { firstName: string; lastName: string; email: string };
+        const candidate = await extractCandidateFromEmail(msg.body.content, msg.subject ?? '');
+        // Skip non-submission emails (internal chatter, FYIs, etc.)
+        if (candidate.isSubmission === false) {
+          console.log(`[EmailParser] Skipping non-submission: ${msg.subject ?? '(no subject)'}`);
+          continue;
+        }
         allEmails.push({
           id: msg.id,
-          candidate,
+          candidate: candidate as unknown as Record<string, unknown> & { firstName: string; lastName: string; email: string },
           receivedAt: msg.receivedDateTime,
           subject: msg.subject ?? '',
           body: msg.body.content,

@@ -1,5 +1,6 @@
-import { GreenhouseATSConnector, fetchCeipalApplicants, mapCeipalApplicantToCandidate } from '../ats';
+import { fetchCeipalApplicants, mapCeipalApplicantToCandidate } from '../ats';
 import { MicrosoftGraphEmailParser } from '../email';
+import { getSupabaseAdminClient, isSupabaseConfigured } from '../persistence';
 import { recordSyncFailure, upsertCandidateFromATS, upsertCandidateFromEmailFull } from './index';
 
 export interface SchedulerJob {
@@ -7,39 +8,21 @@ export interface SchedulerJob {
   run(): Promise<void>;
 }
 
-export class ATSIngestionJob implements SchedulerJob {
-  name = 'ATSIngestionJob';
-  private connector = new GreenhouseATSConnector();
-
-  async run() {
-    try {
-      const records = await this.connector.poll();
-      for (const record of records) {
-        try {
-          await upsertCandidateFromATS(record.candidate);
-        } catch (err) {
-          recordSyncFailure('ats', record.id, err);
-        }
-      }
-    } catch (err) {
-      recordSyncFailure('ats', 'polling', err);
-    }
-  }
-}
-
 export class EmailIngestionJob implements SchedulerJob {
   name = 'EmailIngestionJob';
   private parser = new MicrosoftGraphEmailParser();
-  // Configurable list of inbound email addresses — override via CBL_SUBMISSION_INBOXES env var (comma-separated)
   private get inboxAddresses(): string[] {
     const env = process.env.CBL_SUBMISSION_INBOXES;
     if (env) return env.split(',').map((s) => s.trim()).filter(Boolean);
-    return ['submissions@cbl.aero'];
+    return ['submissions-inbox@cblsolutions.com'];
   }
 
   async run() {
     try {
-      const records = await this.parser.parseInbox(this.inboxAddresses);
+      // Load already-processed message IDs to skip LLM calls on re-runs
+      const processedIds = await this.loadProcessedMessageIds();
+      const records = await this.parser.parseInbox(this.inboxAddresses, processedIds);
+      console.log(`[EmailIngestionJob] ${records.length} new emails to process (${processedIds.size} already processed)`);
       for (const record of records) {
         try {
           await upsertCandidateFromEmailFull(record);
@@ -51,6 +34,20 @@ export class EmailIngestionJob implements SchedulerJob {
       recordSyncFailure('email', 'polling', err);
     }
   }
+
+  private async loadProcessedMessageIds(): Promise<Set<string>> {
+    if (!isSupabaseConfigured()) return new Set();
+    try {
+      const db = getSupabaseAdminClient();
+      const { data } = await db
+        .from('candidate_submissions')
+        .select('email_message_id')
+        .not('email_message_id', 'is', null);
+      return new Set((data ?? []).map((r: { email_message_id: string }) => r.email_message_id));
+    } catch {
+      return new Set();
+    }
+  }
 }
 
 /**
@@ -59,10 +56,11 @@ export class EmailIngestionJob implements SchedulerJob {
  */
 export class CeipalIngestionJob implements SchedulerJob {
   name = 'CeipalIngestionJob';
+  private lastRunAt: Date | undefined;
 
-  async run(since?: Date) {
+  async run() {
     try {
-      const applicants = await fetchCeipalApplicants({ since });
+      const applicants = await fetchCeipalApplicants({ since: this.lastRunAt });
       console.log(`[CeipalIngestionJob] Fetched ${applicants.length} applicants`);
       for (const applicant of applicants) {
         const id = applicant.email_address ?? `${applicant.first_name}-${applicant.last_name}`;
@@ -72,6 +70,7 @@ export class CeipalIngestionJob implements SchedulerJob {
           recordSyncFailure('ceipal', id, err);
         }
       }
+      this.lastRunAt = new Date();
     } catch (err) {
       recordSyncFailure('ceipal', 'polling', err);
     }

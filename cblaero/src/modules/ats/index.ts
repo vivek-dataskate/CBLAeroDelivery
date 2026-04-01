@@ -13,26 +13,6 @@ export interface ATSRecord {
   updatedAt: string;
 }
 
-export class GreenhouseATSConnector implements ATSConnector {
-  name = 'Greenhouse';
-
-  async poll(): Promise<ATSRecord[]> {
-    // Simulate Greenhouse API polling
-    // In real implementation, replace with actual API call
-    return [
-      {
-        id: 'gh-123',
-        candidate: {
-          firstName: 'Jane',
-          lastName: 'Doe',
-          email: 'jane.doe@example.com',
-        },
-        updatedAt: new Date().toISOString(),
-      },
-    ];
-  }
-}
-
 export function createATSIngestionEnvelope(record: ATSRecord): IngestionEnvelope {
   return {
     source: 'ats',
