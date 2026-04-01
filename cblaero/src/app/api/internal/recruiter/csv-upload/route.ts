@@ -540,7 +540,7 @@ function processInMemoryBatch(input: {
     })),
   );
 
-  const imported = upsertInMemoryCandidates(
+  const { inserted, updated } = upsertInMemoryCandidates(
     input.candidates.map((candidate) => ({
       tenant_id: candidate.tenant_id,
       email: candidate.email,
@@ -569,8 +569,8 @@ function processInMemoryBatch(input: {
   );
 
   return {
-    imported,
-    skipped: 0,
+    imported: inserted,
+    skipped: updated,
     errors: input.errors.length,
   };
 }

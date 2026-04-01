@@ -48,12 +48,12 @@ function formatElapsed(elapsedMs: number | null): string {
   return `${minutes}m ${seconds}s`;
 }
 
-function getProgress(imported: number, totalRows: number): number {
+function getProgress(imported: number, skipped: number, totalRows: number): number {
   if (totalRows <= 0) {
     return 0;
   }
 
-  return Math.max(0, Math.min(100, Math.round((imported / totalRows) * 100)));
+  return Math.max(0, Math.min(100, Math.round(((imported + skipped) / totalRows) * 100)));
 }
 
 export default function BatchProgressCard({ batchId }: BatchProgressCardProps) {
@@ -109,7 +109,7 @@ export default function BatchProgressCard({ batchId }: BatchProgressCardProps) {
   }, [batchId]);
 
   const progress = useMemo(
-    () => (data ? getProgress(data.imported, data.totalRows) : 0),
+    () => (data ? getProgress(data.imported, data.skipped, data.totalRows) : 0),
     [data],
   );
 
@@ -136,13 +136,16 @@ export default function BatchProgressCard({ batchId }: BatchProgressCardProps) {
 
           <div className="mt-3 grid gap-2 text-xs text-slate-300 md:grid-cols-2">
             <p>
-              Imported: <span className="text-white">{data.imported.toLocaleString()}</span>
+              New: <span className="text-emerald-300">{data.imported.toLocaleString()}</span>
             </p>
             <p>
-              Total Rows: <span className="text-white">{data.totalRows.toLocaleString()}</span>
+              Updated: <span className="text-white">{data.skipped.toLocaleString()}</span>
             </p>
             <p>
               Errors: <span className="text-amber-300">{data.errors.toLocaleString()}</span>
+            </p>
+            <p>
+              Total Rows: <span className="text-white">{data.totalRows.toLocaleString()}</span>
             </p>
             <p>
               Elapsed: <span className="text-white">{formatElapsed(data.elapsedMs)}</span>

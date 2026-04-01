@@ -179,7 +179,7 @@ create table if not exists cblaero_app.audit_import_batch_accesses (
   actor_id text not null,
   tenant_id text not null,
   batch_id uuid,
-  action text not null check (action in ('list_import_batches', 'read_import_batch_detail')),
+  action text not null check (action in ('list_import_batches', 'read_import_batch_detail', 'csv_upload_access', 'download_csv_error_report', 'resume_upload_access', 'resume_confirm_access')),
   occurred_at timestamptz not null default now()
 );
 
@@ -329,8 +329,10 @@ as $$
 declare
   v_candidate jsonb;
   v_error jsonb;
-  v_chunk_imported int := 0;
+  v_chunk_inserted int := 0;
+  v_chunk_updated int := 0;
   v_chunk_errors int := 0;
+  v_xmax bigint;
   v_email text;
   v_phone text;
   v_row_number int;
@@ -500,7 +502,8 @@ begin
           ingestion_state = excluded.ingestion_state,
           source = excluded.source,
           source_batch_id = excluded.source_batch_id,
-          updated_at = excluded.updated_at;
+          updated_at = excluded.updated_at
+        returning xmax into v_xmax;
       else
         insert into cblaero_app.candidates (
           tenant_id,
@@ -586,10 +589,15 @@ begin
           ingestion_state = excluded.ingestion_state,
           source = excluded.source,
           source_batch_id = excluded.source_batch_id,
-          updated_at = excluded.updated_at;
+          updated_at = excluded.updated_at
+        returning xmax into v_xmax;
       end if;
 
-      v_chunk_imported := v_chunk_imported + 1;
+      if v_xmax = 0 then
+        v_chunk_inserted := v_chunk_inserted + 1;
+      else
+        v_chunk_updated := v_chunk_updated + 1;
+      end if;
     exception
       when others then
         insert into cblaero_app.import_row_error (
@@ -613,13 +621,15 @@ begin
 
   update cblaero_app.import_batch
   set
-    imported = p_total_imported + v_chunk_imported,
-    skipped = p_total_skipped,
+    imported = p_total_imported + v_chunk_inserted,
+    skipped = p_total_skipped + v_chunk_updated,
     errors = p_total_errors + v_chunk_errors
   where id = p_batch_id;
 
   return query
-  select v_chunk_imported, 0, v_chunk_errors;
+  select p_total_imported + v_chunk_inserted,
+         p_total_skipped + v_chunk_updated,
+         p_total_errors + v_chunk_errors;
 end;
 $$;
 
@@ -633,19 +643,19 @@ $$;
 grant usage on schema cblaero_app to anon, authenticated, service_role;
 
 grant select, insert on cblaero_app.audit_import_batch_accesses
-  to anon, authenticated, service_role;
+  to authenticated, service_role;
 
 grant select, insert, update on cblaero_app.import_batch
-  to anon, authenticated, service_role;
+  to authenticated, service_role;
 
 grant select, insert on cblaero_app.import_row_error
-  to anon, authenticated, service_role;
+  to authenticated, service_role;
 
 grant select, insert, update, delete on cblaero_app.candidates
-  to anon, authenticated, service_role;
+  to authenticated, service_role;
 
 grant execute on function cblaero_app.process_import_chunk(uuid, jsonb, jsonb, int, int, int)
-  to anon, authenticated, service_role;
+  to service_role;
 
 -- Story 2.3: Extended candidate fields for ATS/email ingestion
 alter table cblaero_app.candidates
