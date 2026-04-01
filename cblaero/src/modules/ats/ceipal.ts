@@ -118,7 +118,7 @@ export async function fetchCeipalApplicants(options?: {
 
   const all: CeipalApplicant[] = [];
   let page = 1;
-  const maxPages = options?.maxPages ?? 10000; // safety cap
+  const maxPages = options?.maxPages ?? 50; // safety cap: 50 pages × 100 = 5,000 records per run
 
   while (page <= maxPages) {
     const url = `${baseUrl}?json=1&paging_length=${CEIPAL_PAGE_SIZE}&page=${page}` +
