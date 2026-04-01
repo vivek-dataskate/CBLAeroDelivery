@@ -116,7 +116,24 @@ Runtimes: Node.js v24 LTS · Next.js 16.x · Supabase Postgres (PostgreSQL 18-co
 
 ### Candidate Data Ingestion Architecture
 
-Three ingestion paths are supported; all funnel through the same deduplication and enrichment pipeline.
+Four ingestion paths are supported; all funnel through the same deduplication and enrichment pipeline.
+
+**Unified Candidate Extraction Service:**
+
+All paths that extract candidate data from unstructured or semi-structured content (PDF resumes, email bodies, future formats) share a single `candidate-extraction` service within `features/candidate-management/application/`. This service exposes a common interface:
+
+```typescript
+extractCandidateFromDocument(
+  content: Buffer | string,
+  contentType: 'pdf' | 'email_body' | 'email_attachment',
+  metadata: { source: string; tenantId: string; batchId?: string }
+): Promise<CandidateExtraction[]>
+```
+
+- **LLM prompt and extraction schema are centralized** — a single structured-output schema defines the candidate fields extracted from any document type. Changes to the extraction schema apply uniformly across all parsers.
+- **Content pre-processing is pluggable** — each content type has its own pre-processor (PDF text extraction, email body cleaning, etc.) that produces plain text before passing to the shared LLM extraction call.
+- **API routes remain separate per upload type** — each ingestion path has distinct request handling (multipart CSV vs PDF files vs email webhook), validation rules, and UX flows. Routes call the extraction service; they do not implement parsing logic inline.
+- **Future extensibility** — new document types (LinkedIn profile exports, ATS record dumps, etc.) only require a new pre-processor and route; the extraction core and downstream pipeline are reused.
 
 **Path 1 — Initial bulk load (one-time, admin-supervised):**
 
@@ -127,7 +144,7 @@ Three ingestion paths are supported; all funnel through the same deduplication a
 - Post-load: async deduplication worker runs over the full batch to collapse identity matches.
 - Enrichment of the initial 1M runs as an overnight batch job at 100 candidates/sec; not a real-time process.
 
-**Path 2 — Recruiter CSV uploads (daily/weekly, ongoing):**
+**Path 2a — Recruiter CSV uploads (daily/weekly, ongoing):**
 
 - Web UI: drag-and-drop CSV with column mapping wizard and live validation preview.
 - Max 10,000 records per recruiter upload; larger batches must be split or handled via admin migration path.
@@ -136,6 +153,17 @@ Three ingestion paths are supported; all funnel through the same deduplication a
 - `extra_attributes` guardrails: normalize keys to lowercase snake_case, drop blocked sensitive keys (`password`, `token`, `secret`, `api_key`), and reject rows that exceed per-row key-count/serialized-size limits.
 - Per-row error report available for download after processing (missing required fields, failed dedup rules, invalid format).
 - Imported records enter `pending_enrichment` state; enrichment worker picks them up via outbox.
+
+**Path 2b — Recruiter PDF resume uploads (on-demand, ongoing):**
+
+- Web UI: recruiter upload page offers a mode selector — CSV or PDF resume. PDF mode accepts a single `.pdf` file or multiple `.pdf` files (via multi-file input or folder selection). Non-PDF file types are rejected client-side and server-side with a clear message.
+- Each uploaded PDF is stored in Supabase Storage (`candidate-attachments` bucket) with a path of `resume-uploads/{tenant_id}/{batch_id}/{filename}`.
+- LLM-powered extraction via the unified `candidate-extraction` service (shared with Path 3 email parsing) parses each PDF to extract structured candidate fields (name, email, phone, location, skills, certifications, experience).
+- Extracted data is presented to the recruiter for review before confirmation — recruiter can edit, accept, or reject individual parsed candidates.
+- Confirmed records are persisted via the standard ingestion pipeline with `source: resume_upload` and `ingestion_state: pending_enrichment`.
+- A `candidate_submissions` row is created per PDF linking the raw file URL, extraction JSON, and the resulting candidate record.
+- Per-file error reporting: PDFs that fail extraction (encrypted, scanned-image-only, corrupted) are flagged with clear error messages; the recruiter can retry or skip.
+- No hard cap on file count per upload session — recruiters may select an entire folder. The system processes files in internal batches of 50 to bound concurrent LLM extraction cost and memory usage. A progress tracker shows overall and per-file status so the recruiter can monitor large uploads.
 
 **Path 3 — ATS connector and email inbox sync (automated, Tier 2):**
 
@@ -656,6 +684,35 @@ sequenceDiagram
   PY->>Q: Emit enrichment job for new records
   ENR->>DB: Process enrichment (rate-limited overnight batch)
   W-->>R: Import complete — downloadable error report available
+```
+
+### Sequence: PDF Resume Upload (Recruiter)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant R as Recruiter
+  participant W as Web App
+  participant S as Supabase Storage
+  participant DB as Supabase Postgres
+  participant LLM as LLM Parser
+
+  R->>W: Upload PDF(s) (single file or folder, unlimited)
+  W->>W: Validate all files are .pdf
+  W->>DB: Create import_batch (source: resume_upload, status: processing)
+  loop Per PDF file (batched internally, 50 at a time)
+    W->>S: Store PDF in candidate-attachments bucket
+    W->>LLM: Extract candidate data from PDF
+    LLM-->>W: Structured candidate fields (JSON)
+    W->>DB: Write candidate_submissions row (raw file URL + extraction JSON)
+  end
+  W-->>R: Present extracted candidates for review
+  R->>W: Confirm/edit/reject each candidate
+  loop Per confirmed candidate
+    W->>DB: Upsert candidate (pending_enrichment state, source: resume_upload)
+  end
+  W->>DB: Mark import_batch complete (imported/skipped/errors)
+  W-->>R: Upload complete — summary with per-file status
 ```
 
 ### Sequence: ATS Connector Sync (Automated, Tier 2)
@@ -1478,7 +1535,7 @@ cblaero/
 
 **Feature/FR domain mapping:**
 
-- Candidate management FRs (`FR1-FR7`) -> `features/candidate-management`
+- Candidate management FRs (`FR1, FR1b, FR2-FR7`) -> `features/candidate-management`
 - Outreach and engagement FRs (`FR8-FR17`) -> `features/outreach-engagement` + `workers/outreach-worker`
 - Recruiter workflow FRs (`FR18-FR27`) -> `features/recruiter-workflow`
 - Scoring/matching FRs (`FR28+` scoring set) -> `features/scoring-matching`

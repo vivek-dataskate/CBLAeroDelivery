@@ -754,6 +754,7 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 ### Candidate Management
 
 - **FR1 [MVP Tier 1]:** System can ingest candidate records from bulk CSV upload (up to 1M records initial load, then daily/weekly recruiter uploads of 100–10,000 records); upload must validate, deduplicate, retain unmapped columns in candidate `extra_attributes` (JSONB), and report import errors per row with a downloadable error report. Guardrails: blocked sensitive keys (`password`, `token`, `secret`, `api_key`) are dropped; per-row `extra_attributes` payload is capped by key count and serialized size.
+- **FR1b [MVP Tier 1]:** System can ingest candidate records from PDF resume uploads (single file or entire folder; PDF format only, no hard cap on file count). The system extracts candidate data from each resume via LLM-powered parsing (batched internally), presents extracted data for recruiter review before confirmation, and persists validated records through the standard ingestion pipeline with `source: resume_upload` attribution. Resumes are stored in Supabase Storage (`candidate-attachments` bucket) and linked to the candidate record. Non-PDF file types are rejected with a clear message instructing the recruiter to convert before uploading. A progress tracker shows per-file extraction status for large uploads.
 - **FR1a [MVP Tier 1]:** System can perform initial bulk load of up to 1M existing candidate records via a one-time admin-supervised migration pipeline; load must complete within a time-bounded batch window with progress tracking and rollback capability
 - **FR2 [MVP Tier 2]:** System can ingest candidate data automatically from configured ATS system connectors (read-only API polling or webhook) and recruiter email inboxes (Microsoft Graph mail parsing); new or updated records are upserted via the standard deduplication pipeline with source attribution
 - **FR3 [MVP Tier 1]:** System can store and index candidate profiles with core attributes (name, phone, email, location, skills, certifications, experience, availability status) in Supabase Postgres as the system of record; candidate semantic-retrieval indexes use `pgvector` under tenant-scoped access controls
@@ -864,7 +865,7 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 **Tier 1 MVP (Weeks 1-4): 45 FRs**
 Core mission FRs (sourcing, outreach, workflow, scoring, compliance, audit, ops):
 
-- Candidate Management: FR1, 3, 4, 5, 6, 7 (all manual sourcing focus)
+- Candidate Management: FR1, FR1b, 3, 4, 5, 6, 7 (all manual sourcing focus)
 - Outreach & Engagement: FR8-14, 16 (SMS/email outreach + opt-out compliance)
 - Recruiter Workflow: FR18-22, 25-27 (job posting, workflow, clients)
 - Match & Scoring: FR28-35 (availability-first scoring, domain screening)
