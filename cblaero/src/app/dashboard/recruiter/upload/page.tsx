@@ -4,9 +4,9 @@ import { redirect } from "next/navigation";
 
 import { SESSION_COOKIE_NAME, authorizeAccess, validateActiveSession } from "@/modules/auth";
 
-import CsvUploadWizard from "./CsvUploadWizard";
+import UploadModeSelector from "./UploadModeSelector";
 
-async function requireCsvUploadSession() {
+async function requireUploadSession() {
   const cookieStore = await cookies();
   const sessionToken = cookieStore.get(SESSION_COOKIE_NAME)?.value ?? null;
   const session = await validateActiveSession(sessionToken);
@@ -36,7 +36,7 @@ async function requireCsvUploadSession() {
 }
 
 export default async function RecruiterUploadPage() {
-  const session = await requireCsvUploadSession();
+  const session = await requireUploadSession();
 
   return (
     <div className="min-h-screen bg-slate-950 px-6 py-10 text-slate-100 md:px-10">
@@ -44,9 +44,9 @@ export default async function RecruiterUploadPage() {
         <header className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-cyan-200">CBL AERO</p>
-            <h1 className="mt-2 text-3xl font-semibold text-white">Recruiter CSV Upload</h1>
+            <h1 className="mt-2 text-3xl font-semibold text-white">Recruiter Upload</h1>
             <p className="mt-2 text-sm text-slate-300">
-              Signed in as {session.email}. Upload candidate CSV files and review row-level errors.
+              Signed in as {session.email}. Upload candidate data via CSV or PDF resumes.
             </p>
           </div>
           <Link href="/dashboard" className="text-sm text-cyan-200 hover:text-cyan-100">
@@ -55,7 +55,7 @@ export default async function RecruiterUploadPage() {
         </header>
 
         <div className="mt-8">
-          <CsvUploadWizard />
+          <UploadModeSelector />
         </div>
       </main>
     </div>
