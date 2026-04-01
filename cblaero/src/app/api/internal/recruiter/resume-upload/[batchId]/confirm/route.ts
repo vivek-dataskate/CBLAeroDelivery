@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { SESSION_COOKIE_NAME, authorizeAccess, validateActiveSession } from '@/modules/auth';
+import { authorizeAccess, validateActiveSession } from '@/modules/auth';
 import { recordImportBatchAccessEvent } from '@/modules/audit';
 import { getSupabaseAdminClient } from '@/modules/persistence';
 import {
+  extractSessionToken,
   finalizeInMemoryResumeBatch,
   getInMemoryResumeBatch,
   isInMemoryMode,
+  toErrorCode,
 } from '../../shared';
 
 interface ConfirmedCandidate {
@@ -16,16 +18,6 @@ interface ConfirmedCandidate {
 interface ConfirmPayload {
   confirmed: ConfirmedCandidate[];
   rejected: string[];
-}
-
-function toErrorCode(reason: 'unauthenticated' | 'forbidden_role' | 'tenant_mismatch'): string {
-  if (reason === 'unauthenticated') return 'unauthenticated';
-  if (reason === 'tenant_mismatch') return 'tenant_forbidden';
-  return 'forbidden';
-}
-
-function extractSessionToken(request: NextRequest): string | null {
-  return request.cookies.get(SESSION_COOKIE_NAME)?.value ?? null;
 }
 
 export async function POST(
@@ -128,24 +120,47 @@ export async function POST(
 
   const skipped = payload.rejected.length;
 
-  // Build all candidate rows in one pass, then send a single RPC call
+  // Batch-fetch all confirmed submissions in one query
+  const confirmedIds = payload.confirmed.map((c) => c.submissionId);
+  const editsMap = new Map(
+    payload.confirmed.filter((c) => c.edits).map((c) => [c.submissionId, c.edits!])
+  );
+
+  const { data: submissions } = confirmedIds.length > 0
+    ? await db
+        .from('candidate_submissions')
+        .select('id, extracted_data, attachments')
+        .in('id', confirmedIds)
+        .eq('tenant_id', tenantId)
+        .eq('import_batch_id', batchId)
+    : { data: [] as Array<{ id: string; extracted_data: unknown; attachments: unknown }> };
+
+  // Whitelist of editable fields to prevent field injection
+  const ALLOWED_EDIT_KEYS = new Set([
+    'firstName', 'lastName', 'middleName', 'email', 'phone', 'location',
+    'jobTitle', 'skills', 'certifications', 'yearsOfExperience',
+    'workAuthorization', 'aircraftExperience', 'hasAPLicense', 'clearance',
+    'employmentType', 'client', 'currentRate',
+  ]);
+
   const candidateRows: Array<Record<string, unknown>> = [];
   const submissionEmails: Array<{ submissionId: string; email: string | null }> = [];
 
-  for (let i = 0; i < payload.confirmed.length; i++) {
-    const confirmed = payload.confirmed[i];
-    const { data: submission } = await db
-      .from('candidate_submissions')
-      .select('id, extracted_data, attachments')
-      .eq('id', confirmed.submissionId)
-      .eq('tenant_id', tenantId)
-      .eq('import_batch_id', batchId)
-      .single();
-
-    if (!submission?.extracted_data) continue;
+  let rowNum = 0;
+  for (const submission of submissions ?? []) {
+    if (!submission.extracted_data) continue;
+    rowNum++;
 
     const extraction = submission.extracted_data as Record<string, unknown>;
-    const merged = confirmed.edits ? { ...extraction, ...confirmed.edits } : extraction;
+    const rawEdits = editsMap.get(submission.id);
+    // Only apply whitelisted edit keys
+    const safeEdits: Record<string, unknown> = {};
+    if (rawEdits) {
+      for (const key of Object.keys(rawEdits)) {
+        if (ALLOWED_EDIT_KEYS.has(key)) safeEdits[key] = rawEdits[key];
+      }
+    }
+    const merged = Object.keys(safeEdits).length > 0 ? { ...extraction, ...safeEdits } : extraction;
     const attachments = Array.isArray(submission.attachments) ? submission.attachments : [];
     const resumeUrl = attachments[0]?.url ?? null;
 
@@ -153,7 +168,7 @@ export async function POST(
     const email = str('email')?.toLowerCase() ?? null;
 
     candidateRows.push({
-      row_number: i + 1,
+      row_number: rowNum,
       raw_data: merged,
       tenant_id: tenantId,
       email,
@@ -177,11 +192,12 @@ export async function POST(
       ingestion_state: 'pending_enrichment',
       source: 'resume_upload',
       source_batch_id: batchId,
+      created_by_actor_id: session.actorId,
       resume_url: resumeUrl,
       extra_attributes: {},
     });
 
-    submissionEmails.push({ submissionId: confirmed.submissionId, email });
+    submissionEmails.push({ submissionId: submission.id, email });
   }
 
   let imported = 0;
@@ -205,21 +221,34 @@ export async function POST(
       }
     }
 
-    // Link candidate_submissions to persisted candidates
-    for (const { submissionId, email } of submissionEmails) {
-      if (!email) continue;
-      const { data: insertedCandidate } = await db
+    // Batch-fetch persisted candidates by email to link submissions
+    const emailsToLink = submissionEmails.filter((s) => s.email).map((s) => s.email!);
+    if (emailsToLink.length > 0) {
+      const { data: candidates } = await db
         .from('candidates')
-        .select('id')
-        .eq('email', email)
-        .eq('tenant_id', tenantId)
-        .maybeSingle();
+        .select('id, email')
+        .in('email', emailsToLink)
+        .eq('tenant_id', tenantId);
 
-      if (insertedCandidate) {
-        await db
-          .from('candidate_submissions')
-          .update({ candidate_id: insertedCandidate.id })
-          .eq('id', submissionId);
+      if (candidates && candidates.length > 0) {
+        const emailToId = new Map(candidates.map((c: { id: string; email: string }) => [c.email, c.id]));
+        const updates = submissionEmails
+          .filter((s) => s.email && emailToId.has(s.email))
+          .map((s) => ({ submissionId: s.submissionId, candidateId: emailToId.get(s.email!)! }));
+
+        // Batch update submissions grouped by candidate_id
+        const byCandidateId = new Map<string, string[]>();
+        for (const u of updates) {
+          const arr = byCandidateId.get(u.candidateId) ?? [];
+          arr.push(u.submissionId);
+          byCandidateId.set(u.candidateId, arr);
+        }
+        for (const [candidateId, subIds] of byCandidateId) {
+          await db
+            .from('candidate_submissions')
+            .update({ candidate_id: candidateId })
+            .in('id', subIds);
+        }
       }
     }
   }

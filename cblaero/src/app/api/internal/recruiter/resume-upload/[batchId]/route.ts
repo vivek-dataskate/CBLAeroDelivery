@@ -1,17 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { SESSION_COOKIE_NAME, authorizeAccess, validateActiveSession } from '@/modules/auth';
+import { authorizeAccess, validateActiveSession } from '@/modules/auth';
 import { getSupabaseAdminClient } from '@/modules/persistence';
-import { getInMemoryResumeBatch, isInMemoryMode } from '../shared';
-
-function toErrorCode(reason: 'unauthenticated' | 'forbidden_role' | 'tenant_mismatch'): string {
-  if (reason === 'unauthenticated') return 'unauthenticated';
-  if (reason === 'tenant_mismatch') return 'tenant_forbidden';
-  return 'forbidden';
-}
-
-function extractSessionToken(request: NextRequest): string | null {
-  return request.cookies.get(SESSION_COOKIE_NAME)?.value ?? null;
-}
+import { extractSessionToken, getInMemoryResumeBatch, isInMemoryMode, toErrorCode } from '../shared';
 
 export async function GET(
   request: NextRequest,

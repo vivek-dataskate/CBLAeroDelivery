@@ -66,6 +66,15 @@ so that legacy records are loaded safely with rollback and progress visibility.
 - [x] [AI-Review][LOW] Correct Dev Notes TLS claim — `sslmode=require` is a psycopg2 parameter; supabase-py uses HTTP/REST and cannot accept it; update Dev Notes to reflect that transport encryption is via HTTPS, not `sslmode` [`story Dev Notes`]
 - [x] [AI-Review][LOW] Remove `"id": str(uuid.uuid4())` from candidate dict in `_parse_row` — generated UUID is silently discarded on ON CONFLICT DO UPDATE; let the DB default handle `id` generation on first insert [`initial_load.py:_parse_row:144`]
 
+### Review Follow-ups Round 2 (AI)
+
+- [x] [AI-Review-R2][HIGH] Remove `anon` role from all migration table and RPC grants — unauthenticated REST callers could INSERT/UPDATE/DELETE candidates, modify import_batch, and invoke `process_import_chunk` (security definer). Restricted to `authenticated` and `service_role` only; RPC restricted to `service_role` only [`schema.sql:635-648`]
+- [x] [AI-Review-R2][HIGH] Sync `audit_import_batch_accesses` CHECK constraint with TypeScript type — DB only allowed 2 actions but TS type defined 6 (Story 2.2a additions). INSERT of `csv_upload_access`, `download_csv_error_report`, `resume_upload_access`, `resume_confirm_access` would fail at DB level [`schema.sql:182`, `audit/index.ts:34-40`]
+- [x] [AI-Review-R2][MEDIUM] Remove dead `_upsert_candidates()` and `_write_row_errors()` functions — leftover from pre-RPC refactor, never called, confusing in a critical migration script [`initial_load.py:211-246`]
+- [x] [AI-Review-R2][MEDIUM] Populate `created_by_actor_id` on import_batch — field existed but was never set; added `MIGRATION_ACTOR_ID` optional env var for audit trail [`initial_load.py:_create_import_batch`]
+- [x] [AI-Review-R2][MEDIUM] Fix `elapsedMs: null` for running batches in API routes — AC 5 requires elapsed time for active migrations; API now computes live elapsed using `Date.now()` when `completed_at` is null [`route.ts:toSummary`, `[batchId]/route.ts:toDetail`]
+- [x] [AI-Review-R2][MEDIUM] Add unit tests for `rollback_batch.py` — zero test coverage for rollback logic (running-batch guard, chunked deletion, idempotency, not-found). Added `test_rollback_batch.py` with 8 tests [`test_rollback_batch.py`]
+
 ## Dev Notes
 
 - **This is a Python script, NOT a Next.js feature.** The migration runs as a Render one-off job, completely outside the web app process. Do not add the migration logic to any Next.js route or server action.
