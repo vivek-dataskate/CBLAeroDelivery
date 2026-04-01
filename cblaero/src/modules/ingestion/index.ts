@@ -53,6 +53,9 @@ export function recordSyncFailure(source: string, recordId: string, err: unknown
       })
     ).then(({ error: dbErr }) => {
       if (dbErr) console.error('[SyncError] Failed to persist:', dbErr.message);
+      // Prune rows older than 30 days (fire-and-forget cleanup)
+      const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      db.from('sync_errors').delete().lt('occurred_at', cutoff).then(() => {});
     }).catch((e: unknown) => {
       console.error('[SyncError] Persist transport error:', e instanceof Error ? e.message : e);
     });
