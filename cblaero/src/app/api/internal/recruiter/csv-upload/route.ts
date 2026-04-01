@@ -192,8 +192,43 @@ function parseCsvLine(line: string): string[] {
   return cells;
 }
 
+function splitCsvRows(text: string): string[] {
+  const rows: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+
+    if (char === '"') {
+      inQuotes = !inQuotes;
+      current += char;
+      continue;
+    }
+
+    if (!inQuotes && (char === "\n" || (char === "\r" && text[i + 1] === "\n"))) {
+      if (current.trim().length > 0) {
+        rows.push(current);
+      }
+      current = "";
+      if (char === "\r") {
+        i += 1; // skip the \n in \r\n
+      }
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (current.trim().length > 0) {
+    rows.push(current);
+  }
+
+  return rows;
+}
+
 function parseCsv(text: string): ParsedCsv {
-  const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/).filter((line) => line.trim().length > 0);
+  const lines = splitCsvRows(text.replace(/^\uFEFF/, ""));
   if (lines.length === 0) {
     return { headers: [], rows: [] };
   }
@@ -297,6 +332,7 @@ function prepareRows(input: {
   rows: Array<Record<string, string>>;
   tenantId: string;
   batchId: string;
+  actorId: string;
   mapping: ColumnMap;
 }): {
   candidates: PreparedCandidate[];
@@ -434,6 +470,7 @@ function prepareRows(input: {
       ingestion_state: "pending_enrichment",
       source: "csv_upload",
       source_batch_id: input.batchId,
+      created_by_actor_id: input.actorId,
       extra_attributes: extraAttributes,
     });
   }
@@ -479,6 +516,7 @@ async function processSupabaseBatch(input: {
     ingestion_state: candidate.ingestion_state,
     source: candidate.source,
     source_batch_id: candidate.source_batch_id,
+    created_by_actor_id: candidate.created_by_actor_id,
     extra_attributes: candidate.extra_attributes,
   });
 
@@ -517,9 +555,9 @@ async function processSupabaseBatch(input: {
     if (!rpcResult) {
       throw new Error("process_import_chunk RPC returned no result");
     }
-    imported = Number(rpcResult.imported);
-    skipped = Number(rpcResult.skipped);
-    errors = Number(rpcResult.errors);
+    imported += Number(rpcResult.imported);
+    skipped += Number(rpcResult.skipped);
+    errors += Number(rpcResult.errors);
   }
 
   return { imported, skipped, errors };
@@ -564,6 +602,7 @@ function processInMemoryBatch(input: {
       ingestion_state: candidate.ingestion_state,
       source: candidate.source,
       source_batch_id: candidate.source_batch_id,
+      created_by_actor_id: candidate.created_by_actor_id,
       extra_attributes: candidate.extra_attributes,
     })),
   );
@@ -753,6 +792,7 @@ export async function POST(request: NextRequest) {
     rows: csv.rows,
     tenantId,
     batchId,
+    actorId: session.actorId,
     mapping: effectiveMapping,
   });
 
@@ -851,11 +891,19 @@ export async function POST(request: NextRequest) {
       const client = getSupabaseAdminClient();
       // Compensating delete: remove any candidate rows already committed in earlier chunks
       // so they are not picked up by the enrichment worker with a rolled_back batch.
-      await client.from("candidates").delete().eq("source_batch_id", batchId);
-      await client
-        .from("import_batch")
-        .update({ status: "rolled_back", completed_at: new Date().toISOString() })
-        .eq("id", batchId);
+      try {
+        await client.from("candidates").delete().eq("source_batch_id", batchId);
+      } catch (deleteError) {
+        console.error("[recruiter/csv-upload] compensating candidate delete failed", { traceId, batchId, deleteError });
+      }
+      try {
+        await client
+          .from("import_batch")
+          .update({ status: "rolled_back", completed_at: new Date().toISOString() })
+          .eq("id", batchId);
+      } catch (rollbackError) {
+        console.error("[recruiter/csv-upload] batch rollback status update failed", { traceId, batchId, rollbackError });
+      }
     }
 
     console.error("[recruiter/csv-upload] batch failed", { traceId, batchId, error });

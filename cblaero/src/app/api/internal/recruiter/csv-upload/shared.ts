@@ -56,6 +56,7 @@ export type CsvCandidateRow = {
   ingestion_state: "pending_enrichment";
   source: "csv_upload";
   source_batch_id: string;
+  created_by_actor_id: string | null;
   extra_attributes: Record<string, string>;
 };
 
@@ -211,9 +212,11 @@ export function upsertInMemoryCandidates(rows: CsvCandidateRow[]): { inserted: n
     });
 
     if (existingIndex >= 0) {
+      const existing = inMemoryCandidates[existingIndex];
       inMemoryCandidates[existingIndex] = {
-        ...inMemoryCandidates[existingIndex],
+        ...existing,
         ...row,
+        created_by_actor_id: existing.created_by_actor_id ?? row.created_by_actor_id,
       };
       updated += 1;
     } else {
