@@ -1,0 +1,100 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { CeipalIngestionJob, EmailIngestionJob } from '@/modules/ingestion/jobs';
+import { getSupabaseAdminClient, isSupabaseConfigured } from '@/modules/persistence';
+
+const JOBS_SECRET = process.env.CBL_JOBS_SECRET;
+
+export async function POST(request: NextRequest) {
+  const authHeader = request.headers.get('authorization');
+  if (JOBS_SECRET && authHeader !== `Bearer ${JOBS_SECRET}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const body = await request.json().catch(() => ({})) as {
+    job?: string;
+    mode?: 'initial-load' | 'daily-sync';
+  };
+
+  const jobName = body.job;
+  if (!jobName || !['ceipal-sync', 'email-sync'].includes(jobName)) {
+    return NextResponse.json({
+      error: 'Invalid job',
+      available: ['ceipal-sync', 'email-sync'],
+    }, { status: 400 });
+  }
+
+  const start = Date.now();
+
+  try {
+    if (jobName === 'ceipal-sync') {
+      await runCeipalSync(body.mode ?? 'daily-sync');
+    } else {
+      const job = new EmailIngestionJob();
+      await job.run();
+    }
+
+    return NextResponse.json({
+      status: 'ok',
+      job: jobName,
+      mode: body.mode ?? 'daily-sync',
+      duration_ms: Date.now() - start,
+    });
+  } catch (err: unknown) {
+    return NextResponse.json({
+      status: 'error',
+      job: jobName,
+      message: err instanceof Error ? err.message : String(err),
+      duration_ms: Date.now() - start,
+    }, { status: 500 });
+  }
+}
+
+/**
+ * Orchestrates Ceipal sync based on mode:
+ * - initial-load: fetch 1 page from resume point (call repeatedly to load all 733K)
+ * - daily-sync: fetch ALL new/modified records since last update
+ */
+async function runCeipalSync(mode: 'initial-load' | 'daily-sync') {
+  const job = new CeipalIngestionJob();
+
+  if (mode === 'initial-load') {
+    const startPage = await getResumePage();
+    console.log(`[CeipalSync] Initial load — page ${startPage}`);
+    await job.run({ startPage, maxPages: 1 });
+  } else {
+    const since = await getLastModifiedDate();
+    console.log(`[CeipalSync] Daily sync — since ${since?.toISOString() ?? 'all time'}`);
+    await job.run({ since, maxPages: 50 });
+  }
+}
+
+async function getResumePage(): Promise<number> {
+  if (!isSupabaseConfigured()) return 1;
+  try {
+    const db = getSupabaseAdminClient();
+    const { count } = await db
+      .from('candidates')
+      .select('id', { count: 'exact', head: true })
+      .eq('source', 'ceipal');
+    return Math.floor((count ?? 0) / 50) + 1;
+  } catch {
+    return 1;
+  }
+}
+
+async function getLastModifiedDate(): Promise<Date | undefined> {
+  if (!isSupabaseConfigured()) return undefined;
+  try {
+    const db = getSupabaseAdminClient();
+    const { data } = await db
+      .from('candidates')
+      .select('updated_at')
+      .eq('source', 'ceipal')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return data?.updated_at ? new Date(data.updated_at) : undefined;
+  } catch {
+    return undefined;
+  }
+}

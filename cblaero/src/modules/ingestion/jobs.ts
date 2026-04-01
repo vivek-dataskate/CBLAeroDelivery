@@ -60,41 +60,26 @@ export class EmailIngestionJob implements SchedulerJob {
 export class CeipalIngestionJob implements SchedulerJob {
   name = 'CeipalIngestionJob';
 
-  async run() {
+  async run(params?: { startPage?: number; maxPages?: number; since?: Date }) {
     try {
-      // Determine where to resume: count existing ceipal candidates → starting page
-      const startPage = await this.getResumePage();
-      console.log(`[CeipalIngestionJob] Resuming from page ${startPage}`);
+      const startPage = params?.startPage ?? 1;
+      const maxPages = params?.maxPages ?? 50;
 
-      // Fetch 1 page (50 records) per run, upsert immediately
-      const applicants = await fetchCeipalApplicants({ maxPages: 1, startPage });
+      const applicants = await fetchCeipalApplicants({
+        startPage,
+        maxPages,
+        since: params?.since,
+      });
 
-      if (applicants.length === 0) {
-        console.log(`[CeipalIngestionJob] No more records at page ${startPage} — initial load may be complete`);
-        return;
-      }
+      console.log(`[CeipalIngestionJob] Fetched ${applicants.length} applicants (page ${startPage}, maxPages ${maxPages})`);
 
-      console.log(`[CeipalIngestionJob] Fetched ${applicants.length} applicants from page ${startPage}`);
+      if (applicants.length === 0) return;
+
       const candidates = applicants.map(mapCeipalApplicantToCandidate);
       const { inserted, failed } = await batchUpsertCandidatesFromATS(candidates);
-      console.log(`[CeipalIngestionJob] Page ${startPage}: ${inserted} upserted, ${failed} failed`);
+      console.log(`[CeipalIngestionJob] ${inserted} upserted, ${failed} failed`);
     } catch (err) {
       recordSyncFailure('ceipal', 'polling', err);
-    }
-  }
-
-  private async getResumePage(): Promise<number> {
-    if (!isSupabaseConfigured()) return 1;
-    try {
-      const db = getSupabaseAdminClient();
-      const { count } = await db
-        .from('candidates')
-        .select('id', { count: 'exact', head: true })
-        .eq('source', 'ceipal');
-      const existingCount = count ?? 0;
-      return Math.floor(existingCount / 50) + 1;
-    } catch {
-      return 1;
     }
   }
 }
