@@ -1,6 +1,6 @@
 # Story 2.3: Implement ATS and Email Ingestion Connectors
 
-Status: done
+Status: done (scheduler deferred to Story 2.7, Ceipal auth blocked on vendor)
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
