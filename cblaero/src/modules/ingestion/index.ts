@@ -310,7 +310,7 @@ export async function upsertCandidateFromEmailFull(record: {
 
 // --- Map extracted data to candidates table columns ---
 
-function mapToCandidateRow(record: Record<string, unknown>, source: string) {
+export function mapToCandidateRow(record: Record<string, unknown>, source: string, overrides?: { ingestion_state?: string }) {
   const str = (key: string) => typeof record[key] === 'string' ? record[key].trim() : null;
   const firstName = str('firstName') ?? '';
   const lastName = str('lastName') ?? '';
@@ -354,7 +354,7 @@ function mapToCandidateRow(record: Record<string, unknown>, source: string) {
     skills: Array.isArray(record.skills) ? record.skills : [],
     certifications: Array.isArray(record.certifications) ? record.certifications : [],
     availability_status: 'active',
-    ingestion_state: 'active',
+    ingestion_state: overrides?.ingestion_state ?? 'active',
     created_by_actor_id: str('createdByActorId'),
   };
 }
