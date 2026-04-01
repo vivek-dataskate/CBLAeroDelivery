@@ -39,22 +39,22 @@ export default async function RecruiterUploadPage() {
   const session = await requireUploadSession();
 
   return (
-    <div className="min-h-screen bg-slate-950 px-6 py-10 text-slate-100 md:px-10">
-      <main className="mx-auto w-full max-w-5xl rounded-3xl border border-cyan-300/20 bg-slate-900/60 p-8 md:p-12">
-        <header className="flex flex-wrap items-center justify-between gap-3">
+    <div className="min-h-screen bg-white px-4 py-6 text-slate-700 md:px-8">
+      <main className="mx-auto w-full max-w-5xl rounded-xl border border-slate-200 bg-white p-5 shadow-sm md:p-8">
+        <header className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-cyan-200">CBL AERO</p>
-            <h1 className="mt-2 text-3xl font-semibold text-white">Recruiter Upload</h1>
-            <p className="mt-2 text-sm text-slate-300">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">CBL AERO</p>
+            <h1 className="mt-1 text-xl font-semibold text-slate-800">Candidate Upload</h1>
+            <p className="mt-1 text-xs text-slate-500">
               Signed in as {session.email}. Upload candidate data via CSV or PDF resumes.
             </p>
           </div>
-          <Link href="/dashboard" className="text-sm text-cyan-200 hover:text-cyan-100">
+          <Link href="/dashboard" className="text-xs text-slate-500 hover:text-slate-700">
             Return to Dashboard
           </Link>
         </header>
 
-        <div className="mt-8">
+        <div className="mt-5">
           <UploadModeSelector />
         </div>
       </main>

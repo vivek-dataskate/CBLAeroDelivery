@@ -114,18 +114,18 @@ export default function BatchProgressCard({ batchId }: BatchProgressCardProps) {
   );
 
   return (
-    <section className="rounded-2xl border border-white/10 bg-slate-950/65 p-5">
-      <p className="text-xs uppercase tracking-[0.15em] text-slate-400">Upload Progress</p>
-      <p className="mt-2 text-sm text-slate-300">Batch {batchId.slice(0, 8)}...</p>
+    <section className="rounded-lg border border-slate-200 bg-white p-4">
+      <p className="text-[10px] uppercase tracking-[0.15em] text-slate-400">Upload Progress</p>
+      <p className="mt-1.5 text-xs text-slate-500">Batch {batchId.slice(0, 8)}...</p>
 
-      {error ? <p className="mt-3 text-sm text-rose-300">{error}</p> : null}
+      {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
 
       {data ? (
         <>
-          <p className="mt-3 text-sm font-medium text-cyan-200">{STATUS_LABELS[data.status]}</p>
-          <div className="mt-3 h-2 w-full rounded-full bg-slate-800">
+          <p className="mt-2 text-xs font-medium text-slate-700">{STATUS_LABELS[data.status]}</p>
+          <div className="mt-2 h-1.5 w-full rounded-full bg-slate-100">
             <div
-              className="h-2 rounded-full bg-cyan-500 transition-all"
+              className="h-1.5 rounded-full bg-emerald-400 transition-all"
               style={{ width: `${progress}%` }}
               role="progressbar"
               aria-valuenow={progress}
@@ -134,35 +134,35 @@ export default function BatchProgressCard({ batchId }: BatchProgressCardProps) {
             />
           </div>
 
-          <div className="mt-3 grid gap-2 text-xs text-slate-300 md:grid-cols-2">
+          <div className="mt-2 grid gap-1.5 text-[11px] text-slate-500 md:grid-cols-2">
             <p>
-              New: <span className="text-emerald-300">{data.imported.toLocaleString()}</span>
+              New: <span className="font-medium text-emerald-600">{data.imported.toLocaleString()}</span>
             </p>
             <p>
-              Updated: <span className="text-white">{data.skipped.toLocaleString()}</span>
+              Updated: <span className="font-medium text-slate-700">{data.skipped.toLocaleString()}</span>
             </p>
             <p>
-              Errors: <span className="text-amber-300">{data.errors.toLocaleString()}</span>
+              Errors: <span className="font-medium text-amber-600">{data.errors.toLocaleString()}</span>
             </p>
             <p>
-              Total Rows: <span className="text-white">{data.totalRows.toLocaleString()}</span>
+              Total Rows: <span className="font-medium text-slate-700">{data.totalRows.toLocaleString()}</span>
             </p>
             <p>
-              Elapsed: <span className="text-white">{formatElapsed(data.elapsedMs)}</span>
+              Elapsed: <span className="font-medium text-slate-700">{formatElapsed(data.elapsedMs)}</span>
             </p>
           </div>
 
           {data.status === "complete" && data.errors > 0 ? (
             <a
               href={`/api/internal/recruiter/csv-upload/${batchId}/error-report`}
-              className="mt-4 inline-block text-sm text-cyan-300 hover:text-cyan-200"
+              className="mt-3 inline-block text-xs text-slate-600 underline hover:text-slate-800"
             >
               Download error report
             </a>
           ) : null}
         </>
       ) : (
-        <p className="mt-3 text-sm text-slate-400">Fetching batch status...</p>
+        <p className="mt-2 text-xs text-slate-400">Fetching batch status...</p>
       )}
     </section>
   );

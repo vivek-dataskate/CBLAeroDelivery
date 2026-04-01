@@ -223,10 +223,18 @@ GPT-5.3-Codex
 - [x] H2: Reverted `docs/implementation_artifacts/sprint-status.yaml` story `2-1-build-admin-supervised-initial-1m-record-migration-pipeline` from `in-progress` back to `done` — incorrectly downgraded in the same commit with no explanation
 - [x] M1: Added inline comment on the `CanonicalField` type in `CsvUploadWizard.tsx` documenting that `"(ignore)"` is the server API wire value displayed as "Additional Attribute" in the UI
 
+### Review-Driven Fixes (2026-04-01, code-review pass 3)
+
+- [x] H1: Removed broken duplicate regression test at `route.test.ts:214-251` — used invalid columnMap value `name: "name"` (not a CanonicalField), expected 200 but would get 400; kept correct version at lines 318-356
+- [x] H2: Fixed `processSupabaseBatch` RPC return accumulation — changed `imported = Number(...)` to `imported += Number(...)` for all three counters; HTTP response now shows correct cumulative totals for uploads >1,000 rows
+- [x] M1: Rewrote `parseCsv()` in both `route.ts` and `CsvUploadWizard.tsx` to handle embedded newlines — new `splitCsvRows()` tracks quote state before splitting, so quoted fields with `\n` are preserved correctly
+- [x] M2: Wrapped compensating delete and rollback in `route.ts` catch block with individual try/catch blocks and error logging — previously silent failures could leave orphan candidates
+- [x] M3: Consolidated `toResponsePayload` in `[batchId]/route.ts` to use shared `toBatchStatusPayload()` from `shared.ts` — eliminated duplicate elapsedMs computation
+
 ### Review-Driven Action Items (2026-03-30)
 
 - [ ] Add tests for audit event emission (verify `recordImportBatchAccessEvent` on upload and error report download)
-- [ ] Add tests for malformed CSV edge cases (unclosed quotes, embedded newlines, binary data)
+- [x] ~~Add tests for malformed CSV edge cases (unclosed quotes, embedded newlines, binary data)~~ — embedded newline handling fixed in pass 3 (M1); unclosed quotes/binary data remain untested
 - [ ] Add tests for large individual cell values (enforce/document per-cell size limit)
 - [ ] Add concurrency tests for parallel uploads (race/resource contention)
 - [ ] Add retry logic or error state for chunk failures (reliability improvement)
