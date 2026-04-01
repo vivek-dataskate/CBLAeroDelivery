@@ -13,6 +13,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({})) as {
     job?: string;
     mode?: 'initial-load' | 'daily-sync';
+    pages?: number; // initial-load: how many pages per call (default 1, max 20)
   };
 
   const jobName = body.job;
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest) {
 
   try {
     if (jobName === 'ceipal-sync') {
-      await runCeipalSync(body.mode ?? 'daily-sync');
+      await runCeipalSync(body.mode ?? 'daily-sync', Math.min(body.pages ?? 1, 20));
     } else {
       const job = new EmailIngestionJob();
       await job.run();
@@ -54,13 +55,13 @@ export async function POST(request: NextRequest) {
  * - initial-load: fetch 1 page from resume point (call repeatedly to load all 733K)
  * - daily-sync: fetch ALL new/modified records since last update
  */
-async function runCeipalSync(mode: 'initial-load' | 'daily-sync') {
+async function runCeipalSync(mode: 'initial-load' | 'daily-sync', pages: number = 1) {
   const job = new CeipalIngestionJob();
 
   if (mode === 'initial-load') {
     const startPage = await getResumePage();
-    console.log(`[CeipalSync] Initial load — page ${startPage}`);
-    await job.run({ startPage, maxPages: 1 });
+    console.log(`[CeipalSync] Initial load — pages ${startPage} to ${startPage + pages - 1}`);
+    await job.run({ startPage, maxPages: pages });
   } else {
     const since = await getLastModifiedDate();
     console.log(`[CeipalSync] Daily sync — since ${since?.toISOString() ?? 'all time'}`);
