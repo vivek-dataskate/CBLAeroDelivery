@@ -343,7 +343,13 @@ export class SavedSearchDigestJob implements SchedulerJob {
       const { acquireGraphToken: getToken } = await import('../email/graph-auth');
       const { fetchWithRetry: fetchRetry } = await import('./fetch-with-retry');
 
-      const searches = await listDigestEnabledSearches();
+      const MAX_DIGESTS_PER_RUN = 100;
+      const INTER_SEND_DELAY_MS = 500;
+      const allSearches = await listDigestEnabledSearches();
+      const searches = allSearches.slice(0, MAX_DIGESTS_PER_RUN);
+      if (allSearches.length > MAX_DIGESTS_PER_RUN) {
+        console.warn(`[SavedSearchDigestJob] ${allSearches.length} digests enabled; processing first ${MAX_DIGESTS_PER_RUN}`);
+      }
       console.log(`[SavedSearchDigestJob] Processing ${searches.length} digest-enabled saved searches`);
 
       for (const search of searches) {
@@ -414,6 +420,8 @@ export class SavedSearchDigestJob implements SchedulerJob {
           });
 
           console.log(`[SavedSearchDigestJob] Sent digest for "${search.name}" to ${search.actorEmail}`);
+          // Throttle between sends to avoid Graph API rate limits
+          await new Promise((r) => setTimeout(r, INTER_SEND_DELAY_MS));
         } catch (err) {
           console.error(`[SavedSearchDigestJob] Failed for search "${search.name}":`, err);
           recordSyncFailure('saved_search_digest', search.id, err);

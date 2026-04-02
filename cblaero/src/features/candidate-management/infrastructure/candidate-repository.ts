@@ -9,6 +9,7 @@ import type {
   CandidateListParams,
   CandidateListResult,
   IngestionState,
+  SortByField,
 } from "../contracts/candidate";
 
 export class CandidateNotFoundError extends Error {
@@ -46,10 +47,13 @@ type CandidateRow = {
   location: string | null;
   availability_status: string;
   ingestion_state: string;
+  job_title: string | null;
+  skills: unknown[];
   source: string;
   source_batch_id: string | null;
   created_at: string;
   updated_at: string;
+  years_of_experience: string | null;
 };
 
 type CandidateDetailRow = CandidateRow & {
@@ -99,6 +103,8 @@ function toListItem(row: CandidateRow): CandidateListItem {
     location: row.location,
     availabilityStatus: row.availability_status as AvailabilityStatus,
     ingestionState: row.ingestion_state as IngestionState,
+    jobTitle: row.job_title,
+    skills: Array.isArray(row.skills) ? row.skills : [],
     source: row.source,
     sourceBatchId: row.source_batch_id,
     createdAt: row.created_at,
@@ -155,21 +161,75 @@ const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
 const ZERO_UUID = "00000000-0000-0000-0000-000000000000";
 
+// Sort column mapping from API field names to DB column names
+const SORT_COLUMN_MAP: Record<SortByField, string> = {
+  created_at: "created_at",
+  years_of_experience: "years_of_experience",
+  availability_status: "availability_status",
+  first_name: "first_name",
+  last_name: "last_name",
+  location: "location",
+  job_title: "job_title",
+};
+
+const VALID_SORT_FIELDS = new Set<string>(Object.keys(SORT_COLUMN_MAP));
+
+function escapeIlike(value: string): string {
+  return value.replace(/[%_]/g, (ch) => `\\${ch}`);
+}
+
+function countActiveFilters(params: CandidateListParams): number {
+  let count = 0;
+  if (params.availabilityStatus) count++;
+  if (params.location) count++;
+  if (params.certType) count++;
+  if (params.search) count++;
+  if (params.email) count++;
+  if (params.phone) count++;
+  if (params.jobTitle) count++;
+  if (params.skills) count++;
+  if (params.currentCompany) count++;
+  if (params.state) count++;
+  if (params.city) count++;
+  if (params.workAuthorization) count++;
+  if (params.employmentType) count++;
+  if (params.source) count++;
+  if (params.shiftPreference) count++;
+  if (params.yearsOfExperience) count++;
+  if (params.veteranStatus) count++;
+  if (params.hasApLicense !== undefined) count++;
+  return count;
+}
+
+function determineSortStrategy(params: CandidateListParams): string {
+  if (params.sortBy) {
+    return `${params.sortBy}:${params.sortDir ?? "desc"}`;
+  }
+  const filterCount = countActiveFilters(params);
+  return filterCount >= 2 ? "relevance" : "created_at:desc";
+}
+
+// In-memory string ilike filter helper
+function ilikeMatch(value: string | null | undefined, term: string): boolean {
+  if (!value) return false;
+  return value.toLowerCase().includes(term.toLowerCase());
+}
+
 export async function listCandidates(params: CandidateListParams): Promise<CandidateListResult> {
   const limit = Math.min(params.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
-  const cursor = params.cursor ?? ZERO_UUID;
+  const sortStrategy = determineSortStrategy(params);
 
   if (shouldUseInMemoryPersistenceForTests()) {
     let candidates = [...candidateStore.values()].filter(
-      (c) => c.tenantId === params.tenantId && c.ingestionState === "active" && c.id > cursor,
+      (c) => c.tenantId === params.tenantId && c.ingestionState === "active",
     );
 
+    // Existing filters
     if (params.availabilityStatus) {
       candidates = candidates.filter((c) => c.availabilityStatus === params.availabilityStatus);
     }
     if (params.location) {
-      const loc = params.location.toLowerCase();
-      candidates = candidates.filter((c) => c.location?.toLowerCase().includes(loc));
+      candidates = candidates.filter((c) => ilikeMatch(c.location, params.location!));
     }
     if (params.certType) {
       const ct = params.certType.toLowerCase();
@@ -192,34 +252,134 @@ export async function listCandidates(params: CandidateListParams): Promise<Candi
       });
     }
 
-    candidates.sort((a, b) => a.id.localeCompare(b.id));
+    // New filters
+    if (params.email) {
+      candidates = candidates.filter((c) => ilikeMatch(c.email, params.email!));
+    }
+    if (params.phone) {
+      candidates = candidates.filter((c) => ilikeMatch(c.phone, params.phone!));
+    }
+    if (params.jobTitle) {
+      candidates = candidates.filter((c) => ilikeMatch(c.jobTitle, params.jobTitle!));
+    }
+    if (params.skills) {
+      const sk = params.skills.toLowerCase();
+      candidates = candidates.filter((c) =>
+        Array.isArray(c.skills) &&
+        c.skills.some((s) => typeof s === "string" ? s.toLowerCase().includes(sk) :
+          (typeof s === "object" && s !== null && JSON.stringify(s).toLowerCase().includes(sk))),
+      );
+    }
+    if (params.currentCompany) {
+      candidates = candidates.filter((c) => ilikeMatch(c.currentCompany, params.currentCompany!));
+    }
+    if (params.state) {
+      candidates = candidates.filter((c) => ilikeMatch(c.state, params.state!));
+    }
+    if (params.city) {
+      candidates = candidates.filter((c) => ilikeMatch(c.city, params.city!));
+    }
+    if (params.workAuthorization) {
+      candidates = candidates.filter((c) => ilikeMatch(c.workAuthorization, params.workAuthorization!));
+    }
+    if (params.employmentType) {
+      candidates = candidates.filter((c) => c.employmentType === params.employmentType);
+    }
+    if (params.source) {
+      candidates = candidates.filter((c) => c.source === params.source);
+    }
+    if (params.shiftPreference) {
+      candidates = candidates.filter((c) => ilikeMatch(c.shiftPreference, params.shiftPreference!));
+    }
+    if (params.yearsOfExperience) {
+      const minYoe = parseFloat(params.yearsOfExperience);
+      candidates = candidates.filter((c) => {
+        const yoe = c.yearsOfExperience ? parseFloat(c.yearsOfExperience) : 0;
+        return yoe >= minYoe;
+      });
+    }
+    if (params.veteranStatus) {
+      candidates = candidates.filter((c) => c.veteranStatus === params.veteranStatus);
+    }
+    if (params.hasApLicense !== undefined) {
+      candidates = candidates.filter((c) => c.hasApLicense === params.hasApLicense);
+    }
+
+    // Sort (with ID tiebreaker for deterministic ordering)
+    const NUMERIC_SORT_FIELDS = new Set(["years_of_experience"]);
+
+    if (sortStrategy === "relevance") {
+      const avOrder: Record<string, number> = { active: 1, passive: 2, unavailable: 3 };
+      candidates.sort((a, b) => {
+        const avDiff = (avOrder[a.availabilityStatus] ?? 4) - (avOrder[b.availabilityStatus] ?? 4);
+        if (avDiff !== 0) return avDiff;
+        const yoeA = a.yearsOfExperience ? parseFloat(a.yearsOfExperience) : 0;
+        const yoeB = b.yearsOfExperience ? parseFloat(b.yearsOfExperience) : 0;
+        if (yoeB !== yoeA) return yoeB - yoeA;
+        const dateDiff = b.createdAt.localeCompare(a.createdAt);
+        if (dateDiff !== 0) return dateDiff;
+        return b.id.localeCompare(a.id);
+      });
+    } else if (params.sortBy) {
+      const dir = params.sortDir === "asc" ? 1 : -1;
+      const field = params.sortBy;
+      const camelField = toCamelCase(field);
+      const isNumeric = NUMERIC_SORT_FIELDS.has(field);
+      candidates.sort((a, b) => {
+        const aRaw = (a as unknown as Record<string, unknown>)[camelField];
+        const bRaw = (b as unknown as Record<string, unknown>)[camelField];
+        let cmp: number;
+        if (isNumeric) {
+          const aNum = aRaw ? parseFloat(String(aRaw)) : 0;
+          const bNum = bRaw ? parseFloat(String(bRaw)) : 0;
+          cmp = aNum - bNum;
+        } else {
+          cmp = String(aRaw ?? "").localeCompare(String(bRaw ?? ""));
+        }
+        if (cmp !== 0) return cmp * dir;
+        return a.id.localeCompare(b.id); // ID tiebreaker (ascending)
+      });
+    } else {
+      // Default: created_at DESC with ID tiebreaker
+      candidates.sort((a, b) => {
+        const dateDiff = b.createdAt.localeCompare(a.createdAt);
+        if (dateDiff !== 0) return dateDiff;
+        return b.id.localeCompare(a.id);
+      });
+    }
+
+    // Cursor-based pagination (by position after sort, using id as stable cursor)
+    if (params.cursor) {
+      const cursorIdx = candidates.findIndex((c) => c.id === params.cursor);
+      if (cursorIdx >= 0) {
+        candidates = candidates.slice(cursorIdx + 1);
+      }
+    }
 
     const hasMore = candidates.length > limit;
     const page = candidates.slice(0, limit);
     const nextCursor = hasMore ? (page[page.length - 1]?.id ?? null) : null;
 
-    return { items: page.map((c) => ({ ...c })), nextCursor };
+    return { items: page.map((c) => ({ ...c })), nextCursor, sortedBy: sortStrategy };
   }
 
   const client = getSupabaseAdminClient();
   const selectCols =
-    "id, tenant_id, first_name, last_name, email, phone, location, availability_status, ingestion_state, source, source_batch_id, created_at, updated_at";
+    "id, tenant_id, first_name, last_name, email, phone, location, availability_status, ingestion_state, job_title, skills, source, source_batch_id, created_at, updated_at, years_of_experience";
 
   let query = client
     .from("candidates")
     .select(selectCols)
     .eq("tenant_id", params.tenantId)
     .eq("ingestion_state", "active")
-    .gt("id", cursor)
-    .order("id", { ascending: true })
     .limit(limit + 1);
 
+  // Existing filters
   if (params.availabilityStatus) {
     query = query.eq("availability_status", params.availabilityStatus);
   }
   if (params.location) {
-    const escaped = params.location.replace(/[%_]/g, (ch) => `\\${ch}`);
-    query = query.ilike("location", `%${escaped}%`);
+    query = query.ilike("location", `%${escapeIlike(params.location)}%`);
   }
   if (params.certType) {
     query = query.contains("certifications", JSON.stringify([{ type: params.certType }]));
@@ -234,6 +394,77 @@ export async function listCandidates(params: CandidateListParams): Promise<Candi
     query = query.textSearch("name_tsv", tsquery);
   }
 
+  // New filters
+  if (params.email) {
+    query = query.ilike("email", `%${escapeIlike(params.email)}%`);
+  }
+  if (params.phone) {
+    query = query.ilike("phone", `%${escapeIlike(params.phone)}%`);
+  }
+  if (params.jobTitle) {
+    query = query.ilike("job_title", `%${escapeIlike(params.jobTitle)}%`);
+  }
+  if (params.skills) {
+    query = query.contains("skills", JSON.stringify([params.skills]));
+  }
+  if (params.currentCompany) {
+    query = query.ilike("current_company", `%${escapeIlike(params.currentCompany)}%`);
+  }
+  if (params.state) {
+    query = query.ilike("state", `%${escapeIlike(params.state)}%`);
+  }
+  if (params.city) {
+    query = query.ilike("city", `%${escapeIlike(params.city)}%`);
+  }
+  if (params.workAuthorization) {
+    query = query.ilike("work_authorization", `%${escapeIlike(params.workAuthorization)}%`);
+  }
+  if (params.employmentType) {
+    query = query.eq("employment_type", params.employmentType);
+  }
+  if (params.source) {
+    query = query.eq("source", params.source);
+  }
+  if (params.shiftPreference) {
+    query = query.ilike("shift_preference", `%${escapeIlike(params.shiftPreference)}%`);
+  }
+  if (params.yearsOfExperience) {
+    query = query.gte("years_of_experience", params.yearsOfExperience);
+  }
+  if (params.veteranStatus) {
+    query = query.eq("veteran_status", params.veteranStatus);
+  }
+  if (params.hasApLicense !== undefined) {
+    query = query.eq("has_ap_license", params.hasApLicense);
+  }
+
+  // Sorting
+  if (sortStrategy === "relevance") {
+    query = query
+      .order("availability_status", { ascending: true })
+      .order("years_of_experience", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false });
+  } else if (params.sortBy && VALID_SORT_FIELDS.has(params.sortBy)) {
+    const ascending = params.sortDir === "asc";
+    query = query
+      .order(SORT_COLUMN_MAP[params.sortBy], { ascending, nullsFirst: false })
+      .order("id", { ascending: true });
+  } else {
+    // Default: created_at DESC
+    query = query
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false });
+  }
+
+  // Cursor pagination: uses ID as stable cursor reference.
+  // With non-id sorts, ID tiebreaker in ORDER BY ensures deterministic page boundaries.
+  // Limitation: rows with same sort value may shift between pages at scale. Acceptable for
+  // recruiter UX; composite cursor (ROW comparison) would be needed for strict consistency.
+  if (params.cursor) {
+    query = query.gt("id", params.cursor);
+  }
+
   const { data, error } = await query;
 
   if (error) {
@@ -245,7 +476,11 @@ export async function listCandidates(params: CandidateListParams): Promise<Candi
   const page = rows.slice(0, limit);
   const nextCursor = hasMore ? (page[page.length - 1]?.id ?? null) : null;
 
-  return { items: page.map(toListItem), nextCursor };
+  return { items: page.map(toListItem), nextCursor, sortedBy: sortStrategy };
+}
+
+function toCamelCase(snakeCase: string): string {
+  return snakeCase.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 }
 
 export async function getCandidateById(

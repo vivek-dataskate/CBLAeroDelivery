@@ -317,6 +317,49 @@ create index if not exists idx_candidates_name_fts
 create index if not exists idx_candidates_tenant_state
   on cblaero_app.candidates (tenant_id, ingestion_state);
 
+-- Story 2.4 rework: indexes for expanded filterable fields (all partial on active)
+create index if not exists idx_candidates_tenant_job_title
+  on cblaero_app.candidates (tenant_id, job_title)
+  where ingestion_state = 'active';
+
+create index if not exists idx_candidates_tenant_email
+  on cblaero_app.candidates (tenant_id, email)
+  where ingestion_state = 'active';
+
+create index if not exists idx_candidates_tenant_state_geo
+  on cblaero_app.candidates (tenant_id, state)
+  where ingestion_state = 'active';
+
+create index if not exists idx_candidates_tenant_city
+  on cblaero_app.candidates (tenant_id, city)
+  where ingestion_state = 'active';
+
+create index if not exists idx_candidates_tenant_work_auth
+  on cblaero_app.candidates (tenant_id, work_authorization)
+  where ingestion_state = 'active';
+
+create index if not exists idx_candidates_tenant_emp_type
+  on cblaero_app.candidates (tenant_id, employment_type)
+  where ingestion_state = 'active';
+
+create index if not exists idx_candidates_tenant_source
+  on cblaero_app.candidates (tenant_id, source)
+  where ingestion_state = 'active';
+
+-- Sort performance indexes
+create index if not exists idx_candidates_tenant_created_desc
+  on cblaero_app.candidates (tenant_id, created_at desc)
+  where ingestion_state = 'active';
+
+create index if not exists idx_candidates_tenant_yoe_desc
+  on cblaero_app.candidates (tenant_id, years_of_experience desc nulls last)
+  where ingestion_state = 'active';
+
+-- Relevance ranking composite index
+create index if not exists idx_candidates_relevance_sort
+  on cblaero_app.candidates (tenant_id, availability_status, years_of_experience desc nulls last, created_at desc)
+  where ingestion_state = 'active';
+
 create or replace function cblaero_app.process_import_chunk(
   p_batch_id uuid,
   p_candidates jsonb,
@@ -736,4 +779,26 @@ grant select, insert on cblaero_app.sync_errors
   to anon, authenticated, service_role;
 
 grant usage on all sequences in schema cblaero_app
+  to anon, authenticated, service_role;
+
+-- Story 2.4 rework: Saved searches table
+create table if not exists cblaero_app.saved_searches (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id text not null,
+  actor_id text not null,
+  actor_email text not null,
+  name text not null,
+  filters jsonb not null,
+  digest_enabled boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_saved_searches_actor
+  on cblaero_app.saved_searches (actor_id, tenant_id);
+create index if not exists idx_saved_searches_digest
+  on cblaero_app.saved_searches (digest_enabled)
+  where digest_enabled = true;
+
+grant select, insert, update, delete on cblaero_app.saved_searches
   to anon, authenticated, service_role;

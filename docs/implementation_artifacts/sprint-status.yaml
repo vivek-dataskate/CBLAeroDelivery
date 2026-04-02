@@ -68,7 +68,7 @@ development_status:
   2-2-implement-recruiter-csv-upload-wizard-and-validation: done  # 2026-03-31: production ingestion (6,150 candidates), extra_attributes deployed, CLI script PR #29
   2-3-implement-ats-and-email-ingestion-connectors: done
   2-2a-implement-recruiter-pdf-resume-upload-with-llm-extraction: done
-  2-4-implement-candidate-profile-storage-and-indexing: done
+  2-4-implement-candidate-profile-storage-and-indexing: done  # 2026-04-02: reworked + reviewed — expanded filters, sorting, saved searches, dashboard UI
   2-5-implement-deterministic-deduplication-and-manual-review-queue: backlog
   2-6-implement-availability-state-and-manual-refresh-operations: backlog
   epic-2-retrospective: optional
