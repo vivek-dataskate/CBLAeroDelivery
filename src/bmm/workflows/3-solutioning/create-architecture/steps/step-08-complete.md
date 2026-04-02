@@ -46,12 +46,26 @@ Architecture complete. Read fully and follow: `{project-root}/_bmad/core/tasks/h
 Upon Completion of task output: offer to answer any questions about the Architecture Document.
 
 
+### 4. Verify Companion Artifacts
+
+Before declaring completion, verify these companion artifacts exist alongside architecture.md:
+
+- **`{planning_artifacts}/development-standards.md`** — mandatory implementation rules for dev agents. If missing, HALT and return to step 5 to generate it.
+- **"Implemented Capabilities Registry" section in architecture.md** — table (initially empty) where dev agents will register reusable code. If missing, add it now with category headers: HTTP & External APIs, Data Pipeline, Database Operations, Auth & Admin, UI Components.
+
+These artifacts form a trio with architecture.md:
+- architecture.md = WHAT to build (decisions, structure, resilience)
+- development-standards.md = HOW to build it (code patterns, rules, checklists)
+- Capability registry (in architecture.md) = WHAT'S BEEN BUILT (reusable components for future stories)
+
 ## SUCCESS METRICS:
 
 ✅ Complete architecture document delivered with all sections
 ✅ All architectural decisions documented and validated
 ✅ Implementation patterns and consistency rules finalized
 ✅ Project structure complete with all files and directories
+✅ `development-standards.md` exists with mandatory implementation rules
+✅ "Implemented Capabilities Registry" section exists in architecture.md
 ✅ User provided with clear next steps and implementation guidance
 ✅ Workflow status properly updated
 ✅ User collaboration maintained throughout completion process

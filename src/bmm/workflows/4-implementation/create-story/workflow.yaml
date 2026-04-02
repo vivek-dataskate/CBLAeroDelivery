@@ -30,6 +30,10 @@ default_output_file: "{implementation_artifacts}/{{story_key}}.md"
 # Smart input file references - Simplified for enhanced approach
 # The epics+stories file should contain everything needed with source hints
 input_file_patterns:
+  development_standards:
+    description: "Mandatory implementation rules — story must reference relevant patterns"
+    whole: "{planning_artifacts}/*development-standards*.md"
+    load_strategy: "FULL_LOAD"
   prd:
     description: "PRD (fallback - epics file should have most content)"
     whole: "{planning_artifacts}/*prd*.md"

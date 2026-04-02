@@ -34,6 +34,7 @@ so that {{benefit}}.
 
 ### References
 
+- [Source: docs/planning_artifacts/development-standards.md — mandatory implementation rules, error handling, retry, type safety, auth, testing patterns]
 - Cite all technical details with source paths and sections, e.g. [Source: docs/<file>.md#Section]
 
 ## Dev Agent Record

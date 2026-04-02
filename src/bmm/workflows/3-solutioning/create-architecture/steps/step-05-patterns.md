@@ -44,9 +44,26 @@ This step will generate content and present choices:
 - Focus on HOW agents should implement, not WHAT they should implement
 - Consider what could vary between different AI agents
 
+## REFERENCE KNOWLEDGE:
+
+Load `{installed_path}/data/ai-dev-best-practices.md` as background knowledge. When defining patterns, incorporate relevant best practices for:
+- Structured logging and observability patterns
+- LLM safety (prompt injection defense, output validation)
+- Cost optimization (batching, caching, model selection)
+- Testing AI systems (unit, integration, adversarial)
+- Pre-merge checklist items
+
+These should flow naturally into the patterns — not as a separate section but woven into error handling, process patterns, and enforcement guidelines.
+
 ## YOUR TASK:
 
 Define implementation patterns and consistency rules that ensure multiple AI agents write compatible, consistent code that works together seamlessly.
+
+**IMPORTANT:** This step produces TWO outputs:
+1. The "Implementation Patterns" section appended to architecture.md (architecture-level decisions)
+2. A companion `{planning_artifacts}/development-standards.md` file (code-level rules for dev agents)
+
+If `development-standards.md` already exists (discovered in step 1), EXTEND it with any new patterns — do not replace it. The development-standards file is the authoritative reference that `dev-story`, `code-review`, and `create-story` workflows auto-load for every future story.
 
 ## PATTERNS DEFINITION SEQUENCE:
 
@@ -322,6 +339,10 @@ Show the generated patterns content and present choices:
 #### If 'C' (Continue):
 
 - Append the final content to `{planning_artifacts}/architecture.md`
+- Create or update `{planning_artifacts}/development-standards.md`:
+  - If file exists: merge new patterns into existing sections, add new sections as needed
+  - If file does not exist: create from the patterns defined above, organized into numbered sections covering: external API retry/backoff, DB access patterns (RPC-first, upsert over check-before-write, batch operations, repository pattern), type safety, error handling, auth guards, testing standards, naming conventions, logging standards, reusability rules, cost optimization, and the capability registry rule (§20: new reusable code must be registered in architecture.md)
+  - Include an "Implemented Capabilities Registry" section in architecture.md (initially empty table with categories: HTTP & External APIs, Data Pipeline, Database Operations, Auth & Admin, UI Components)
 - Update frontmatter: `stepsCompleted: [1, 2, 3, 4, 5]`
 - Load `{project-root}/_bmad/bmm/workflows/3-solutioning/create-architecture/steps/step-06-structure.md`
 

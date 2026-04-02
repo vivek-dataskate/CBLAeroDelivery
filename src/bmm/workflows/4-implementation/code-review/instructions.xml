@@ -94,6 +94,28 @@
       5. **Test Quality**: Are tests real assertions or placeholders?
     </action>
 
+    <!-- Development Standards Compliance (loaded via discover_inputs) -->
+    <action>Validate against development-standards.md:
+      1. **§1 Retry**: All external HTTP calls use `fetchWithRetry` — no bare `fetch()`
+      2. **§4 DB Access**: No check-before-write patterns — use `.upsert()` or RPC. No `db.from()` in route handlers.
+      3. **§11 Type Safety**: No double type casts (`as unknown as`). No unguarded Supabase response casts.
+      4. **§12 Error Handling**: No bare `catch {}` blocks. All fire-and-forget have `.catch()`.
+      5. **§13 Auth Guards**: Secret-based routes reject when env var is unset.
+      6. **§14 Dead Code**: All exports have consumers. Test mocks match actual implementations.
+      7. **§15 Test Cleanup**: `clear*ForTest()` checks mode BEFORE clearing. All async cleanup is awaited.
+      8. **§19 Cost**: Dedup before LLM calls. Batch DB writes. No N-round-trip loops.
+      9. **§20 Capability Registry**: New reusable code is registered in architecture.md and dev-standards.md §18.
+    </action>
+
+    <!-- Reusability Check -->
+    <action>Check for duplicated logic that should use existing capabilities from architecture.md registry:
+      - Is there a new `fetch()` call that should use `fetchWithRetry`?
+      - Is there a new candidate mapping that should use `mapToCandidateRow`?
+      - Is there a new extraction that should use `extractCandidateFromDocument`?
+      - Is there a new SELECT→INSERT pattern that should be an `.upsert()` or RPC?
+      - Is there a new reusable function/component that was NOT added to the capability registry?
+    </action>
+
     <check if="total_issues_found lt 3">
       <critical>NOT LOOKING HARD ENOUGH - Find more problems!</critical>
       <action>Re-examine code for:
