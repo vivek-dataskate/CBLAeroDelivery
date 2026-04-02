@@ -57,7 +57,7 @@ so that candidate records are continuously synchronized from external sources.
 - [x] [AI-Review][CRITICAL] AC4: Sync errors stored in ephemeral in-memory array, lost on restart. **Fixed: sync errors now persisted to `sync_errors` Supabase table (fire-and-forget). `listRecentSyncErrors()` reads from Supabase with in-memory fallback.**
 - [x] [AI-Review][HIGH] `GreenhouseATSConnector` returns hardcoded fake data that would upsert into real DB. **Fixed: removed `ATSIngestionJob` class and `GreenhouseATSConnector` import from jobs.ts. Only `CeipalIngestionJob` remains.**
 - [x] [AI-Review][HIGH] No input size limit on LLM calls — unbounded cost risk from large emails. **Fixed: `plainBody` truncated to 10,000 chars before sending to Claude.**
-- [x] [AI-Review][HIGH] `CeipalIngestionJob.run(since?)` breaks `SchedulerJob` interface — `since` param unreachable from scheduler. **Fixed: removed `since` param, store `lastRunAt` as instance state for automatic incremental sync.**
+- [x] [AI-Review][HIGH] `CeipalIngestionJob.run(since?)` breaks `SchedulerJob` interface — `since` param unreachable from scheduler. **Fixed: added `lastRunAt` instance state for automatic incremental sync; explicit `since` still accepted as override for API routes.**
 - [x] [AI-Review][MEDIUM] `maxPages=10000` default risks OOM and hour-long runs. **Fixed: lowered to 50 pages (5,000 records per run).**
 - [x] [AI-Review][MEDIUM] No email dedup — re-processes same emails, creates duplicate `candidate_submissions`. **Fixed: checks `candidate_submissions.email_message_id` before processing.**
 - [x] [AI-Review][MEDIUM] Supabase `.update()` errors silently swallowed. **Fixed: both upsert functions now check and throw on update errors.**
@@ -71,6 +71,25 @@ so that candidate records are continuously synchronized from external sources.
 - [x] [AI-Review][MEDIUM] Fire-and-forget sync error persist missing `.catch()`. **Fixed: wrapped in `Promise.resolve()` with `.catch()` handler.**
 - [x] [AI-Review][MEDIUM] LLM spread `{source, ...parsed}` allows provenance override. **Fixed: reversed to `{...parsed, source}` so hardcoded values always win.**
 - [x] [AI-Review][MEDIUM] Dead `GreenhouseATSConnector` with hardcoded mock data still exported. **Fixed: removed entirely from ats/index.ts.**
+
+#### Round 5
+- [x] [AI-Review][CRITICAL] OneDrive data loss on double failure: if Supabase Storage upload fails AND LLM extraction fails, PDF deleted from OneDrive with no backup. **Fixed: only delete from OneDrive when `storageUrl` confirms Supabase Storage backup exists.**
+- [x] [AI-Review][HIGH] `extra_attributes` not mapped in `mapToCandidateRow` — Ceipal `additionalFields` (LinkedIn URL, resume URL, applicant status, etc.) silently dropped during persistence. **Fixed: `mapToCandidateRow` now maps `additionalFields` or `extra_attributes` to the `extra_attributes` column.**
+- [x] [AI-Review][HIGH] `CeipalIngestionJob` tests mock `upsertCandidateFromATS` but actual code calls `batchUpsertCandidatesFromATS` — stale tests. **Fixed: updated mock factory and assertions to use `batchUpsertCandidatesFromATS`.**
+- [x] [AI-Review][MEDIUM] No Graph email pagination — only 50 most recent emails fetched, `@odata.nextLink` not followed. **Fixed: `fetchMessages` now follows `@odata.nextLink` up to 10 pages (500 messages max).**
+- [x] [AI-Review][MEDIUM] `lastRunAt` incremental sync claimed fixed in Round 3 but not actually implemented. **Fixed: added `lastRunAt` instance state to `CeipalIngestionJob`, used automatically when no explicit `since` param provided.**
+- [x] [AI-Review][MEDIUM] No retry/backoff on any external API calls (Ceipal, Graph, OneDrive). **Fixed: added `fetchWithRetry` utility with exponential backoff (3 retries, retries on 429/5xx/network errors), applied to all external fetch calls.**
+- [x] [AI-Review][LOW] Dead code: `createATSIngestionEnvelope` and `createEmailIngestionEnvelope` exported but never called. **Fixed: removed both functions and unused `IngestionEnvelope` import from email/index.ts.**
+- [x] [AI-Review][LOW] Module-level token caches won't persist across serverless cold starts. **Fixed: added comments documenting the tradeoff — re-auth is cheap, no shared store needed at current scale.**
+- [x] [AI-Review][LOW] `CeipalApplicant` type includes `ssn` field — not persisted but not explicitly scrubbed from memory. **Fixed: removed `ssn` from type definition with comment explaining intentional exclusion.**
+
+#### Round 6
+- [x] [AI-Review][HIGH] `fetchAttachments` in email/index.ts still used raw `fetch` — missed by Round 5 `replace_all`. **Fixed: now uses `fetchWithRetry`.**
+- [x] [AI-Review][MEDIUM] OneDrive success-path deletion at jobs.ts:252 ran unconditionally — PDF deleted even when `storageUrl` is empty (no Supabase backup). **Fixed: guarded behind `storageUrl` check, same as failure path.**
+- [x] [AI-Review][MEDIUM] Unused import `upsertCandidateFromATS` in jobs.ts — `CeipalIngestionJob` only calls `batchUpsertCandidatesFromATS`. **Fixed: removed dead import.**
+- [x] [AI-Review][MEDIUM] SSO `exchangeAuthorizationCode` in auth/sso.ts used raw `fetch` for Azure AD token exchange — no retry on transient failures. **Fixed: now uses `fetchWithRetry`.**
+- [x] [AI-Review][LOW] `additionalFields` in ceipal.ts stored untrimmed raw values — `clean()` checked trimmed but stored original. **Fixed: all values now use `clean()` result.**
+- [x] [AI-Review][LOW] Duplicate `// 3.` step comments in `upsertCandidateFromEmailFull`. **Fixed: renumbered steps 3→5 sequentially.**
 
 ## Dev Notes
 
@@ -89,6 +108,7 @@ so that candidate records are continuously synchronized from external sources.
 
 ### References
 
+- [Source: docs/planning_artifacts/development-standards.md — mandatory implementation rules, error handling, retry, type safety, auth, testing patterns]
 - [Source: docs/planning_artifacts/epics.md#Story 2.3]
 - [Source: docs/planning_artifacts/architecture.md]
 
@@ -132,7 +152,8 @@ GPT-4.1 / claude-sonnet-4-6 (code review fixes)
 - cblaero/src/modules/email/graph-auth.ts (new — Graph client credentials auth with token cache)
 - cblaero/src/modules/email/nlp-extract-and-upload.ts (rewritten — LLM parser with Claude Haiku 4.5 + Supabase Storage upload)
 - cblaero/src/modules/ingestion/index.ts (rewritten — real Supabase persistence, candidate_submissions evidence, attachment upload)
-- cblaero/src/modules/ingestion/jobs.ts (modified — CeipalIngestionJob, configurable inbox addresses)
+- cblaero/src/modules/ingestion/jobs.ts (modified — CeipalIngestionJob, configurable inbox addresses, lastRunAt, fetchWithRetry)
+- cblaero/src/modules/ingestion/fetch-with-retry.ts (new — exponential backoff retry wrapper for external API calls)
 - cblaero/src/app/dashboard/admin/SyncErrorStatusCard.tsx (new)
 - cblaero/src/app/dashboard/admin/page.tsx (modified)
 - cblaero/package.json (modified — added @anthropic-ai/sdk)

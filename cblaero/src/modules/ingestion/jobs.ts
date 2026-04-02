@@ -3,7 +3,8 @@ import { MicrosoftGraphEmailParser } from '../email';
 import { acquireGraphToken } from '../email/graph-auth';
 import { getSupabaseAdminClient, isSupabaseConfigured } from '../persistence';
 import { extractCandidateFromDocument } from '../../features/candidate-management/application/candidate-extraction';
-import { recordSyncFailure, upsertCandidateFromATS, upsertCandidateFromEmailFull, batchUpsertCandidatesFromATS } from './index';
+import { recordSyncFailure, upsertCandidateFromEmailFull, batchUpsertCandidatesFromATS } from './index';
+import { fetchWithRetry } from './fetch-with-retry';
 
 export interface SchedulerJob {
   name: string;
@@ -61,19 +62,25 @@ export class EmailIngestionJob implements SchedulerJob {
  */
 export class CeipalIngestionJob implements SchedulerJob {
   name = 'CeipalIngestionJob';
+  private lastRunAt: Date | undefined;
 
   async run(params?: { startPage?: number; maxPages?: number; since?: Date }) {
     try {
       const startPage = params?.startPage ?? 1;
       const maxPages = params?.maxPages ?? 50;
+      // Explicit since param takes priority, otherwise use automatic lastRunAt tracking
+      const since = params?.since ?? this.lastRunAt;
 
       const applicants = await fetchCeipalApplicants({
         startPage,
         maxPages,
-        since: params?.since,
+        since,
       });
 
-      console.log(`[CeipalIngestionJob] Fetched ${applicants.length} applicants (page ${startPage}, maxPages ${maxPages})`);
+      console.log(`[CeipalIngestionJob] Fetched ${applicants.length} applicants (page ${startPage}, maxPages ${maxPages}${since ? `, since ${since.toISOString()}` : ''})`);
+
+      // Record run time before processing so next run picks up from here
+      this.lastRunAt = new Date();
 
       if (applicants.length === 0) return;
 
@@ -181,8 +188,12 @@ export class OneDriveResumePollerJob implements SchedulerJob {
           console.warn(`[OneDrivePoller] Extraction failed for ${file.name}: ${result.error}`);
           failed++;
           recordSyncFailure('onedrive', file.name, result.error ?? 'Extraction returned no data');
-          // Delete from OneDrive even on failure — PDF is safe in Supabase Storage
-          await this.deleteFromOneDrive(token, file.id, file.name);
+          // Only delete from OneDrive if PDF was safely backed up to Supabase Storage
+          if (storageUrl) {
+            await this.deleteFromOneDrive(token, file.id, file.name);
+          } else {
+            console.warn(`[OneDrivePoller] Keeping ${file.name} in OneDrive — storage backup failed`);
+          }
           continue;
         }
 
@@ -237,8 +248,12 @@ export class OneDriveResumePollerJob implements SchedulerJob {
         imported++;
         console.log(`[OneDrivePoller] Processed ${file.name} → ${result.extraction.firstName} ${result.extraction.lastName}`);
 
-        // Delete from OneDrive — Supabase Storage is now source of truth
-        await this.deleteFromOneDrive(token, file.id, file.name);
+        // Only delete from OneDrive if PDF was safely backed up to Supabase Storage
+        if (storageUrl) {
+          await this.deleteFromOneDrive(token, file.id, file.name);
+        } else {
+          console.warn(`[OneDrivePoller] Keeping ${file.name} in OneDrive — no storage backup`);
+        }
       } catch (err) {
         failed++;
         recordSyncFailure('onedrive', file.name, err);
@@ -260,7 +275,7 @@ export class OneDriveResumePollerJob implements SchedulerJob {
     const path = this.folderPath;
     const url = `https://graph.microsoft.com/v1.0/users/${user}/drive/root:/${path}:/children?$top=200`;
 
-    const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    const response = await fetchWithRetry(url, { headers: { Authorization: `Bearer ${token}` } });
 
     if (!response.ok) {
       const text = await response.text();
@@ -289,7 +304,7 @@ export class OneDriveResumePollerJob implements SchedulerJob {
   }
 
   private async downloadFile(downloadUrl: string): Promise<Buffer> {
-    const response = await fetch(downloadUrl);
+    const response = await fetchWithRetry(downloadUrl);
     if (!response.ok) {
       throw new Error(`File download failed (${response.status})`);
     }
@@ -301,7 +316,7 @@ export class OneDriveResumePollerJob implements SchedulerJob {
     const user = encodeURIComponent(this.driveUser);
     const url = `https://graph.microsoft.com/v1.0/users/${user}/drive/items/${fileId}`;
 
-    const response = await fetch(url, {
+    const response = await fetchWithRetry(url, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     });
