@@ -32,6 +32,43 @@ describe("GET /api/internal/recruiter/csv-upload/[batchId]", () => {
     await clearImportBatchAccessEventsForTest();
   });
 
+  it("returns 401 for unauthenticated requests", async () => {
+    const request = buildRequest(`${BASE_URL}/api/internal/recruiter/csv-upload/any-batch`, {
+      method: "GET",
+    });
+
+    const response = await GET(request, {
+      params: Promise.resolve({ batchId: "any-batch" }),
+    });
+
+    expect(response.status).toBe(401);
+    const body = await response.json();
+    expect(body.error.code).toBe("unauthenticated");
+  });
+
+  it("returns 403 for compliance-officer role", async () => {
+    const issued = await issueSessionToken({
+      actorId: "actor-compliance-1",
+      email: "compliance@cblsolutions.com",
+      tenantId: "tenant-alpha",
+      role: "compliance-officer",
+      rememberDevice: false,
+    });
+
+    const request = buildRequest(`${BASE_URL}/api/internal/recruiter/csv-upload/any-batch`, {
+      method: "GET",
+      headers: {
+        cookie: withSessionCookie(issued.token),
+      },
+    });
+
+    const response = await GET(request, {
+      params: Promise.resolve({ batchId: "any-batch" }),
+    });
+
+    expect(response.status).toBe(403);
+  });
+
   it("returns 404 for unknown batch ID", async () => {
     const issued = await issueSessionToken({
       actorId: "actor-recruiter-1",
