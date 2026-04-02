@@ -523,11 +523,31 @@ export async function GET(request: NextRequest) {
     return stepUpResponse;
   }
 
-  const availabilityStatusRaw = request.nextUrl.searchParams.get("availability_status");
-  const location = request.nextUrl.searchParams.get("location");
-  const certType = request.nextUrl.searchParams.get("cert_type");
-  const search = request.nextUrl.searchParams.get("search");
+  const sp = request.nextUrl.searchParams;
 
+  // Parse all filter params
+  const availabilityStatusRaw = sp.get("availability_status");
+  const location = sp.get("location");
+  const certType = sp.get("cert_type");
+  const search = sp.get("search");
+  const email = sp.get("email");
+  const phone = sp.get("phone");
+  const jobTitle = sp.get("job_title");
+  const skills = sp.get("skills");
+  const currentCompany = sp.get("current_company");
+  const stateGeo = sp.get("state");
+  const city = sp.get("city");
+  const workAuthorization = sp.get("work_authorization");
+  const employmentType = sp.get("employment_type");
+  const source = sp.get("source");
+  const shiftPreference = sp.get("shift_preference");
+  const yearsOfExperience = sp.get("years_of_experience");
+  const veteranStatus = sp.get("veteran_status");
+  const hasApLicenseRaw = sp.get("has_ap_license");
+  const sortBy = sp.get("sort_by");
+  const sortDir = sp.get("sort_dir");
+
+  // Validate availability_status enum
   const VALID_AVAILABILITY: ReadonlySet<string> = new Set(["active", "passive", "unavailable"]);
   if (availabilityStatusRaw && !VALID_AVAILABILITY.has(availabilityStatusRaw)) {
     return NextResponse.json(
@@ -542,22 +562,46 @@ export async function GET(request: NextRequest) {
   }
   const availabilityStatus = availabilityStatusRaw as AvailabilityStatus | null;
 
-  const hasFilter = !!(availabilityStatus || location || certType || search);
-  if (!hasFilter) {
+  // Validate sort_by
+  const VALID_SORT_FIELDS: ReadonlySet<string> = new Set(["created_at", "years_of_experience", "availability_status", "first_name", "last_name", "location", "job_title"]);
+  if (sortBy && !VALID_SORT_FIELDS.has(sortBy)) {
     return NextResponse.json(
       {
         error: {
-          code: "filter_required",
-          message:
-            "At least one pre-filter is required: availability_status, location, or cert_type.",
+          code: "invalid_sort",
+          message: `Invalid sort_by value. Must be one of: ${[...VALID_SORT_FIELDS].join(", ")}.`,
         },
       },
       { status: 400 },
     );
   }
 
-  const cursor = request.nextUrl.searchParams.get("cursor") ?? undefined;
-  const limitRaw = request.nextUrl.searchParams.get("limit");
+  // Parse boolean filter
+  const hasApLicense = hasApLicenseRaw === "true" ? true : hasApLicenseRaw === "false" ? false : undefined;
+
+  // At least one filter required (any filter satisfies)
+  const hasFilter = !!(
+    availabilityStatus || location || certType || search ||
+    email || phone || jobTitle || skills || currentCompany ||
+    stateGeo || city || workAuthorization || employmentType ||
+    source || shiftPreference || yearsOfExperience || veteranStatus ||
+    hasApLicense !== undefined
+  );
+  if (!hasFilter) {
+    return NextResponse.json(
+      {
+        error: {
+          code: "filter_required",
+          message:
+            "At least one filter is required.",
+        },
+      },
+      { status: 400 },
+    );
+  }
+
+  const cursor = sp.get("cursor") ?? undefined;
+  const limitRaw = sp.get("limit");
   const limit = limitRaw ? Math.max(1, Math.min(100, parseInt(limitRaw, 10) || 25)) : undefined;
 
   const result = await listCandidates({
@@ -566,6 +610,22 @@ export async function GET(request: NextRequest) {
     location: location ?? undefined,
     certType: certType ?? undefined,
     search: search ?? undefined,
+    email: email ?? undefined,
+    phone: phone ?? undefined,
+    jobTitle: jobTitle ?? undefined,
+    skills: skills ?? undefined,
+    currentCompany: currentCompany ?? undefined,
+    state: stateGeo ?? undefined,
+    city: city ?? undefined,
+    workAuthorization: workAuthorization ?? undefined,
+    employmentType: employmentType ?? undefined,
+    source: source ?? undefined,
+    shiftPreference: shiftPreference ?? undefined,
+    yearsOfExperience: yearsOfExperience ?? undefined,
+    veteranStatus: veteranStatus ?? undefined,
+    hasApLicense,
+    sortBy: (sortBy as import("@/features/candidate-management/contracts/candidate").SortByField) ?? undefined,
+    sortDir: (sortDir === "asc" || sortDir === "desc") ? sortDir : undefined,
     cursor,
     limit,
   });
@@ -578,6 +638,7 @@ export async function GET(request: NextRequest) {
       targetClientId: requestedTenantId ?? session.tenantId,
       readScope: "tenant-isolated",
       nextCursor: result.nextCursor,
+      sortedBy: result.sortedBy,
     },
   });
 }
