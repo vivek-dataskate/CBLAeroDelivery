@@ -317,7 +317,6 @@ export function mapToCandidateRow(record: Record<string, unknown>, source: strin
 
   return {
     tenant_id: DEFAULT_TENANT_ID,
-    name: `${firstName} ${lastName}`.trim() || 'Unknown',
     first_name: firstName,
     last_name: lastName,
     middle_name: str('middleName'),
@@ -356,5 +355,8 @@ export function mapToCandidateRow(record: Record<string, unknown>, source: strin
     availability_status: 'active',
     ingestion_state: overrides?.ingestion_state ?? 'pending_enrichment',
     created_by_actor_id: str('createdByActorId'),
+    extra_attributes: record.additionalFields && typeof record.additionalFields === 'object'
+      ? record.additionalFields
+      : (record.extra_attributes && typeof record.extra_attributes === 'object' ? record.extra_attributes : {}),
   };
 }
