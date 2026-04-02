@@ -105,6 +105,9 @@
       7. **§15 Test Cleanup**: `clear*ForTest()` checks mode BEFORE clearing. All async cleanup is awaited.
       8. **§19 Cost**: Dedup before LLM calls. Batch DB writes. No N-round-trip loops.
       9. **§20 Capability Registry**: New reusable code is registered in architecture.md and dev-standards.md §18.
+      10. **§17 Correlation IDs**: New request paths propagate trace ID through logs and audit events.
+      11. **§26 AI Incident Response**: LLM failures degrade gracefully (skip + log), never persist corrupted data.
+      12. **§27 Audit Immutability**: Audit tables are append-only. No UPDATE/DELETE on audit rows in production code.
     </action>
 
     <!-- Reusability Check -->
