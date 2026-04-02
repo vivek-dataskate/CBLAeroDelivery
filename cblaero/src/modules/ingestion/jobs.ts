@@ -233,20 +233,6 @@ export class OneDriveResumePollerJob implements SchedulerJob {
             failed++;
             continue;
           }
-
-          // Save submission evidence
-          const { error: subErr } = await db.from('candidate_submissions').insert({
-            id: crypto.randomUUID(),
-            tenant_id: 'cbl-aero',
-            source: 'resume_upload',
-            extracted_data: ext,
-            extraction_model: 'claude-haiku-4-5-20251001',
-            attachments: [{ filename: file.name, url: storageUrl, size: file.size }],
-          });
-
-          if (subErr) {
-            console.warn(`[OneDrivePoller] Submission insert failed for ${file.name}:`, subErr.message);
-          }
         }
 
         imported++;
