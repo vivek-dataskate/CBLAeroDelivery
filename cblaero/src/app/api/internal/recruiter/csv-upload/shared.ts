@@ -1,3 +1,7 @@
+import { NextRequest } from "next/server";
+
+import { SESSION_COOKIE_NAME } from "@/modules/auth";
+
 export const MAX_RECRUITER_CSV_ROWS = 10_000;
 export const MAX_EXTRA_ATTRIBUTE_KEYS = 64;
 export const MAX_EXTRA_ATTRIBUTE_BYTES = 16 * 1024;
@@ -226,6 +230,16 @@ export function upsertInMemoryCandidates(rows: CsvCandidateRow[]): { inserted: n
   }
 
   return { inserted, updated };
+}
+
+export function toErrorCode(reason: "unauthenticated" | "forbidden_role" | "tenant_mismatch"): string {
+  if (reason === "unauthenticated") return "unauthenticated";
+  if (reason === "tenant_mismatch") return "tenant_forbidden";
+  return "forbidden";
+}
+
+export function extractSessionToken(request: NextRequest): string | null {
+  return request.cookies.get(SESSION_COOKIE_NAME)?.value ?? null;
 }
 
 export function toBatchStatusPayload(batch: CsvUploadBatchRow) {
