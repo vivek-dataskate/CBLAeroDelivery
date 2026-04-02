@@ -95,10 +95,15 @@ export class CeipalIngestionJob implements SchedulerJob {
  *   CBL_ONEDRIVE_RESUME_PATH — folder path relative to drive root (default: CBLAeroCons/Resumes)
  *
  * Uses the same Azure app registration as email ingestion (CBL_SSO_* credentials).
- * Requires Files.Read.All or Sites.Read.All application permission in Azure AD.
+ * Requires Files.ReadWrite.All application permission in Azure AD.
+ *
+ * Dedup: files are deleted from OneDrive after successful processing.
+ * Supabase Storage is the source of truth — the PDF is stored there before deletion.
+ * OneDrive folder acts as an inbox: any file present = unprocessed.
  */
 export class OneDriveResumePollerJob implements SchedulerJob {
   name = 'OneDriveResumePollerJob';
+  private static ATTACHMENT_BUCKET = 'candidate-attachments';
 
   private get driveUser(): string {
     return process.env.CBL_ONEDRIVE_USER?.trim() || 'vivek@cblsolutions.com';
@@ -117,41 +122,55 @@ export class OneDriveResumePollerJob implements SchedulerJob {
       return;
     }
 
-    // Load already-processed driveItem IDs
-    const processedIds = await this.loadProcessedDriveItemIds();
-    const newFiles = files.filter((f) => !processedIds.has(f.id));
+    console.log(`[OneDrivePoller] ${files.length} PDF files to process`);
 
-    if (newFiles.length === 0) {
-      console.log(`[OneDrivePoller] All ${files.length} files already processed`);
-      return;
-    }
-
-    console.log(`[OneDrivePoller] ${newFiles.length} new files to process (${processedIds.size} already processed)`);
-
-    // Create import batch
     const db = isSupabaseConfigured() ? getSupabaseAdminClient() : null;
     let batchId: string | null = null;
 
     if (db) {
-      const { data: batchRow } = await db
+      const { data: batchRow, error: batchErr } = await db
         .from('import_batch')
         .insert({
           tenant_id: 'cbl-aero',
           source: 'resume_upload',
           status: 'processing',
-          total_rows: newFiles.length,
+          total_rows: files.length,
         })
         .select('id')
         .single();
+
+      if (batchErr) {
+        console.error('[OneDrivePoller] Failed to create import batch:', batchErr.message);
+      }
       batchId = batchRow ? String(batchRow.id) : null;
     }
 
     let imported = 0;
     let failed = 0;
 
-    for (const file of newFiles) {
+    for (const file of files) {
       try {
-        const buffer = await this.downloadFile(token, file.downloadUrl);
+        const buffer = await this.downloadFile(file.downloadUrl);
+
+        // Store PDF in Supabase Storage (source of truth) before extraction
+        let storageUrl = '';
+        if (db && batchId) {
+          const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+          const storagePath = `resume-uploads/cbl-aero/${batchId}/${safeName}`;
+          const { error: uploadErr } = await db.storage
+            .from(OneDriveResumePollerJob.ATTACHMENT_BUCKET)
+            .upload(storagePath, buffer, { contentType: 'application/pdf', upsert: true });
+
+          if (uploadErr) {
+            console.warn(`[OneDrivePoller] Storage upload failed for ${file.name}:`, uploadErr.message);
+          } else {
+            const { data: urlData } = db.storage
+              .from(OneDriveResumePollerJob.ATTACHMENT_BUCKET)
+              .getPublicUrl(storagePath);
+            storageUrl = urlData.publicUrl;
+          }
+        }
+
         const result = await extractCandidateFromDocument(buffer, 'pdf', {
           source: 'resume_upload',
           tenantId: 'cbl-aero',
@@ -160,23 +179,13 @@ export class OneDriveResumePollerJob implements SchedulerJob {
 
         if (result.error || !result.extraction) {
           console.warn(`[OneDrivePoller] Extraction failed for ${file.name}: ${result.error}`);
-          if (db) {
-            await db.from('candidate_submissions').insert({
-              id: crypto.randomUUID(),
-              tenant_id: 'cbl-aero',
-              source: 'resume_upload',
-              import_batch_id: batchId,
-              extracted_data: null,
-              extraction_model: 'claude-haiku-4-5-20251001',
-              attachments: [{ filename: file.name, driveItemId: file.id, size: file.size }],
-            });
-          }
           failed++;
           recordSyncFailure('onedrive', file.name, result.error ?? 'Extraction returned no data');
+          // Delete from OneDrive even on failure — PDF is safe in Supabase Storage
+          await this.deleteFromOneDrive(token, file.id, file.name);
           continue;
         }
 
-        // Persist candidate via RPC
         if (db && batchId) {
           const ext = result.extraction;
           const email = typeof ext.email === 'string' ? ext.email.trim().toLowerCase() : null;
@@ -206,7 +215,7 @@ export class OneDriveResumePollerJob implements SchedulerJob {
             ingestion_state: 'pending_enrichment',
             source: 'resume_upload',
             source_batch_id: batchId,
-            resume_url: null,
+            resume_url: storageUrl || null,
             extra_attributes: {},
           };
 
@@ -225,27 +234,32 @@ export class OneDriveResumePollerJob implements SchedulerJob {
             continue;
           }
 
-          // Save submission record with driveItemId for dedup
-          await db.from('candidate_submissions').insert({
+          // Save submission evidence
+          const { error: subErr } = await db.from('candidate_submissions').insert({
             id: crypto.randomUUID(),
             tenant_id: 'cbl-aero',
             source: 'resume_upload',
-            import_batch_id: batchId,
             extracted_data: ext,
             extraction_model: 'claude-haiku-4-5-20251001',
-            attachments: [{ filename: file.name, driveItemId: file.id, size: file.size }],
+            attachments: [{ filename: file.name, url: storageUrl, size: file.size }],
           });
+
+          if (subErr) {
+            console.warn(`[OneDrivePoller] Submission insert failed for ${file.name}:`, subErr.message);
+          }
         }
 
         imported++;
         console.log(`[OneDrivePoller] Processed ${file.name} → ${result.extraction.firstName} ${result.extraction.lastName}`);
+
+        // Delete from OneDrive — Supabase Storage is now source of truth
+        await this.deleteFromOneDrive(token, file.id, file.name);
       } catch (err) {
         failed++;
         recordSyncFailure('onedrive', file.name, err);
       }
     }
 
-    // Finalize batch
     if (db && batchId) {
       await db
         .from('import_batch')
@@ -253,18 +267,15 @@ export class OneDriveResumePollerJob implements SchedulerJob {
         .eq('id', batchId);
     }
 
-    console.log(`[OneDrivePoller] Complete: ${imported} imported, ${failed} failed out of ${newFiles.length} new files`);
+    console.log(`[OneDrivePoller] Complete: ${imported} imported, ${failed} failed out of ${files.length} files`);
   }
 
   private async listPdfFiles(token: string): Promise<Array<{ id: string; name: string; size: number; downloadUrl: string }>> {
     const user = encodeURIComponent(this.driveUser);
     const path = this.folderPath;
-    const url = `https://graph.microsoft.com/v1.0/users/${user}/drive/root:/${path}:/children` +
-      `?$top=200`;
+    const url = `https://graph.microsoft.com/v1.0/users/${user}/drive/root:/${path}:/children?$top=200`;
 
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
 
     if (!response.ok) {
       const text = await response.text();
@@ -292,8 +303,7 @@ export class OneDriveResumePollerJob implements SchedulerJob {
       .filter((item) => item.downloadUrl);
   }
 
-  private async downloadFile(token: string, downloadUrl: string): Promise<Buffer> {
-    // The @microsoft.graph.downloadUrl is a pre-authenticated URL — no Bearer token needed
+  private async downloadFile(downloadUrl: string): Promise<Buffer> {
     const response = await fetch(downloadUrl);
     if (!response.ok) {
       throw new Error(`File download failed (${response.status})`);
@@ -302,31 +312,19 @@ export class OneDriveResumePollerJob implements SchedulerJob {
     return Buffer.from(arrayBuffer);
   }
 
-  private async loadProcessedDriveItemIds(): Promise<Set<string>> {
-    if (!isSupabaseConfigured()) return new Set();
-    try {
-      const db = getSupabaseAdminClient();
-      // Query submissions with source=resume_upload that have driveItemId in attachments
-      const { data } = await db
-        .from('candidate_submissions')
-        .select('attachments')
-        .eq('source', 'resume_upload')
-        .not('attachments', 'is', null)
-        .order('created_at', { ascending: false })
-        .limit(1000);
+  private async deleteFromOneDrive(token: string, fileId: string, filename: string): Promise<void> {
+    const user = encodeURIComponent(this.driveUser);
+    const url = `https://graph.microsoft.com/v1.0/users/${user}/drive/items/${fileId}`;
 
-      const ids = new Set<string>();
-      for (const row of data ?? []) {
-        const attachments = Array.isArray(row.attachments) ? row.attachments : [];
-        for (const att of attachments) {
-          if (typeof att === 'object' && att !== null && 'driveItemId' in att) {
-            ids.add(String((att as { driveItemId: string }).driveItemId));
-          }
-        }
-      }
-      return ids;
-    } catch {
-      return new Set();
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (response.ok || response.status === 204) {
+      console.log(`[OneDrivePoller] Deleted ${filename} from OneDrive`);
+    } else {
+      console.warn(`[OneDrivePoller] Failed to delete ${filename} from OneDrive (${response.status})`);
     }
   }
 }
