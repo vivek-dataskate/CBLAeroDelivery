@@ -76,14 +76,14 @@ describe('POST /api/internal/recruiter/resume-upload', () => {
     expect(body.error.code).toBe('missing_file');
   });
 
-  it('returns 422 when unsupported file types are uploaded', async () => {
+  it('returns 422 when non-PDF files are uploaded', async () => {
     const { token } = await issueSessionToken({ actorId: 'recruiter-1', email: 'rec@test.com', role: 'recruiter', tenantId: 'cbl-aero', rememberDevice: false });
-    const request = await buildResumeUploadRequest({ token, files: [{ name: 'resume.txt', content: 'plain text', type: 'text/plain' }] });
+    const request = await buildResumeUploadRequest({ token, files: [{ name: 'resume.docx', content: 'word doc', type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }] });
     const response = await POST(request);
     expect(response.status).toBe(422);
     const body = await response.json();
     expect(body.error.code).toBe('invalid_file_type');
-    expect(body.error.message).toContain('PDF, DOC, and DOCX');
+    expect(body.error.message).toContain('Only PDF files are supported');
   });
 
   it('successfully processes a valid PDF upload', async () => {

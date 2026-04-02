@@ -329,10 +329,107 @@ export class OneDriveResumePollerJob implements SchedulerJob {
   }
 }
 
+export class SavedSearchDigestJob implements SchedulerJob {
+  name = 'SavedSearchDigestJob';
+
+  async run() {
+    try {
+      const { listDigestEnabledSearches } = await import(
+        '../../features/candidate-management/infrastructure/saved-search-repository'
+      );
+      const { listCandidates } = await import(
+        '../../features/candidate-management/infrastructure/candidate-repository'
+      );
+      const { acquireGraphToken: getToken } = await import('../email/graph-auth');
+      const { fetchWithRetry: fetchRetry } = await import('./fetch-with-retry');
+
+      const searches = await listDigestEnabledSearches();
+      console.log(`[SavedSearchDigestJob] Processing ${searches.length} digest-enabled saved searches`);
+
+      for (const search of searches) {
+        try {
+          const params = {
+            tenantId: search.tenantId,
+            ...(search.filters as Record<string, string | boolean | undefined>),
+            limit: 5,
+          };
+
+          const result = await listCandidates(params as Parameters<typeof listCandidates>[0]);
+          if (result.items.length === 0) {
+            console.log(`[SavedSearchDigestJob] No candidates for "${search.name}" — skipping email`);
+            continue;
+          }
+
+          const rows = result.items.map((c, i) => {
+            const skills = Array.isArray(c.skills)
+              ? c.skills.slice(0, 3).map((s) => (typeof s === 'string' ? s : JSON.stringify(s))).join(', ')
+              : '';
+            return `<tr>
+              <td style="padding:6px;border:1px solid #e5e7eb">${i + 1}</td>
+              <td style="padding:6px;border:1px solid #e5e7eb">${c.firstName ?? ''} ${c.lastName ?? ''}</td>
+              <td style="padding:6px;border:1px solid #e5e7eb">${c.jobTitle ?? '—'}</td>
+              <td style="padding:6px;border:1px solid #e5e7eb">${c.location ?? '—'}</td>
+              <td style="padding:6px;border:1px solid #e5e7eb">${c.availabilityStatus}</td>
+              <td style="padding:6px;border:1px solid #e5e7eb">${skills || '—'}</td>
+            </tr>`;
+          }).join('\n');
+
+          const date = new Date().toISOString().slice(0, 10);
+          const html = `
+            <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto">
+              <h2 style="color:#1f2937">CBL Aero Daily Digest: "${search.name}"</h2>
+              <p style="color:#6b7280">Top ${result.items.length} candidates matching your saved search — ${date}</p>
+              <table style="width:100%;border-collapse:collapse;font-size:13px">
+                <thead><tr style="background:#f9fafb">
+                  <th style="padding:6px;border:1px solid #e5e7eb;text-align:left">#</th>
+                  <th style="padding:6px;border:1px solid #e5e7eb;text-align:left">Name</th>
+                  <th style="padding:6px;border:1px solid #e5e7eb;text-align:left">Job Title</th>
+                  <th style="padding:6px;border:1px solid #e5e7eb;text-align:left">Location</th>
+                  <th style="padding:6px;border:1px solid #e5e7eb;text-align:left">Availability</th>
+                  <th style="padding:6px;border:1px solid #e5e7eb;text-align:left">Skills</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+              </table>
+              <p style="margin-top:16px;color:#9ca3af;font-size:12px">— CBL Aero Recruiting Platform</p>
+            </div>`;
+
+          // Send email via Microsoft Graph
+          const token = await getToken();
+          const senderAddress = process.env.CBL_DIGEST_SENDER ?? 'submissions-inbox@cblsolutions.com';
+          const sendUrl = `https://graph.microsoft.com/v1.0/users/${senderAddress}/sendMail`;
+
+          await fetchRetry(sendUrl, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              message: {
+                subject: `CBL Aero Daily Digest: "${search.name}" — ${date}`,
+                body: { contentType: 'HTML', content: html },
+                toRecipients: [{ emailAddress: { address: search.actorEmail } }],
+              },
+            }),
+          });
+
+          console.log(`[SavedSearchDigestJob] Sent digest for "${search.name}" to ${search.actorEmail}`);
+        } catch (err) {
+          console.error(`[SavedSearchDigestJob] Failed for search "${search.name}":`, err);
+          recordSyncFailure('saved_search_digest', search.id, err);
+        }
+      }
+    } catch (err) {
+      console.error('[SavedSearchDigestJob] Fatal error:', err);
+    }
+  }
+}
+
 export function registerIngestionJobs(scheduler: { register(job: SchedulerJob): void }) {
   scheduler.register(new CeipalIngestionJob());
   scheduler.register(new EmailIngestionJob());
   scheduler.register(new OneDriveResumePollerJob());
+  scheduler.register(new SavedSearchDigestJob());
 }
 
 // Example stub for a global scheduler
