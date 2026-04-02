@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAccess, validateActiveSession } from '@/modules/auth';
+import { recordImportBatchAccessEvent } from '@/modules/audit';
 import { getSupabaseAdminClient } from '@/modules/persistence';
 import { extractSessionToken, getInMemoryResumeBatch, isInMemoryMode, toErrorCode } from '../shared';
 
@@ -49,6 +50,18 @@ export async function GET(
 
     const complete = batch.files.filter((f) => f.status === 'complete').length;
     const failed = batch.files.filter((f) => f.status === 'failed').length;
+
+    try {
+      await recordImportBatchAccessEvent({
+        traceId,
+        actorId: session.actorId,
+        tenantId,
+        batchId,
+        action: 'resume_upload_access',
+      });
+    } catch {
+      // Audit is best-effort — do not block status reads
+    }
 
     return NextResponse.json({
       data: {
@@ -102,6 +115,18 @@ export async function GET(
       submissionId: s.id,
     };
   });
+
+  try {
+    await recordImportBatchAccessEvent({
+      traceId,
+      actorId: session.actorId,
+      tenantId,
+      batchId,
+      action: 'resume_upload_access',
+    });
+  } catch {
+    // Audit is best-effort — do not block status reads
+  }
 
   return NextResponse.json({
     data: {

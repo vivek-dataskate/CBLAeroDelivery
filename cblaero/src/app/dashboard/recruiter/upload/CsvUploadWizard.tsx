@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-import { type CanonicalField, FIELD_ALIASES, normalizeHeaderKey, parseCsv, type ParsedCsv } from "@/modules/csv";
+import { type CanonicalField, EMAIL_REGEX, FIELD_ALIASES, normalizeHeaderKey, parseCsv, type ParsedCsv } from "@/modules/csv";
 
 import BatchProgressCard from "./BatchProgressCard";
 
@@ -19,7 +19,6 @@ type ValidationSummary = {
 };
 
 const MAX_ROWS = 10_000;
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const FIELD_OPTIONS: CanonicalField[] = [
   "first_name",

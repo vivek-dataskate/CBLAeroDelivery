@@ -1,27 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { SESSION_COOKIE_NAME, authorizeAccess, validateActiveSession } from "@/modules/auth";
+import { authorizeAccess, extractSessionToken, toErrorCode, validateActiveSession } from "@/modules/auth";
 import {
   listDataResidencyCheckEvents,
   recordDataResidencyCheckEvent,
 } from "@/modules/audit";
 import { evaluateUsaDataResidencyPolicy } from "@/modules/persistence/data-residency";
-
-function toErrorCode(reason: "unauthenticated" | "forbidden_role" | "tenant_mismatch"): string {
-  if (reason === "unauthenticated") {
-    return "unauthenticated";
-  }
-
-  if (reason === "tenant_mismatch") {
-    return "tenant_forbidden";
-  }
-
-  return "forbidden";
-}
-
-function extractSessionToken(request: NextRequest): string | null {
-  return request.cookies.get(SESSION_COOKIE_NAME)?.value ?? null;
-}
 
 export async function GET(request: NextRequest) {
   const traceId = request.headers.get("x-trace-id") ?? crypto.randomUUID();
