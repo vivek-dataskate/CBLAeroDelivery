@@ -215,7 +215,6 @@ export class OneDriveResumePollerJob implements SchedulerJob {
             ingestion_state: 'pending_enrichment',
             source: 'resume_upload',
             source_batch_id: batchId,
-            resume_url: storageUrl || null,
             extra_attributes: {},
           };
 

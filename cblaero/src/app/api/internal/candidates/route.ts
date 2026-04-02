@@ -8,12 +8,13 @@ import {
 import type { AvailabilityStatus } from "@/features/candidate-management/contracts/candidate";
 
 import {
-  SESSION_COOKIE_NAME,
   authorizeAccess,
   AUTH_ISSUER,
   buildStepUpReauthenticateUrl,
+  extractSessionToken,
   getAuthSigningSecret,
   isSessionFreshForStepUp,
+  toErrorCode,
   validateActiveSession,
   type AuthSession,
 } from "@/modules/auth";
@@ -53,22 +54,6 @@ type CrossClientConfirmationPayload = JWTPayload & {
 };
 
 const usedCrossClientConfirmationTokenExpirations = new Map<string, number>();
-
-function toErrorCode(reason: "unauthenticated" | "forbidden_role" | "tenant_mismatch"): string {
-  if (reason === "unauthenticated") {
-    return "unauthenticated";
-  }
-
-  if (reason === "tenant_mismatch") {
-    return "tenant_forbidden";
-  }
-
-  return "forbidden";
-}
-
-function extractSessionToken(request: NextRequest): string | null {
-  return request.cookies.get(SESSION_COOKIE_NAME)?.value ?? null;
-}
 
 function parseBooleanInput(value: string | null): boolean {
   if (!value) {

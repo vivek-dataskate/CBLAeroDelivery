@@ -165,4 +165,30 @@ describe('POST /api/internal/recruiter/resume-upload/[batchId]/confirm', () => {
     expect(body.data.imported).toBe(0);
     expect(body.data.skipped).toBe(1);
   });
+
+  it('returns 409 when batch is already confirmed (double-confirm guard)', async () => {
+    const { token } = await issueSessionToken({ actorId: 'recruiter-1', email: 'rec@test.com', role: 'recruiter', tenantId: 'cbl-aero', rememberDevice: false });
+    const uploadData = await uploadResume(token);
+    const submissionId = uploadData.files[0].submissionId;
+
+    // First confirm — should succeed
+    const firstRequest = new NextRequest(`${BASE_URL}/api/internal/recruiter/resume-upload/${uploadData.batchId}/confirm`, {
+      method: 'POST',
+      headers: { cookie: withSessionCookie(token), 'content-type': 'application/json' },
+      body: JSON.stringify({ confirmed: [{ submissionId }], rejected: [] }),
+    });
+    const firstResponse = await CONFIRM(firstRequest, { params: Promise.resolve({ batchId: uploadData.batchId }) });
+    expect(firstResponse.status).toBe(200);
+
+    // Second confirm — should be rejected
+    const secondRequest = new NextRequest(`${BASE_URL}/api/internal/recruiter/resume-upload/${uploadData.batchId}/confirm`, {
+      method: 'POST',
+      headers: { cookie: withSessionCookie(token), 'content-type': 'application/json' },
+      body: JSON.stringify({ confirmed: [{ submissionId }], rejected: [] }),
+    });
+    const secondResponse = await CONFIRM(secondRequest, { params: Promise.resolve({ batchId: uploadData.batchId }) });
+    expect(secondResponse.status).toBe(409);
+    const body = await secondResponse.json();
+    expect(body.error.code).toBe('already_confirmed');
+  });
 });

@@ -23,6 +23,29 @@ export type CanonicalField =
   | "availability_status"
   | "(ignore)";
 
+export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export const CANONICAL_FIELDS = new Set<CanonicalField>([
+  "first_name",
+  "last_name",
+  "middle_name",
+  "email",
+  "alternate_email",
+  "mobile",
+  "home_phone",
+  "work_phone",
+  "address",
+  "city",
+  "state",
+  "country",
+  "postal_code",
+  "current_company",
+  "job_title",
+  "skills",
+  "availability_status",
+  "(ignore)",
+]);
+
 export const FIELD_ALIASES: Record<string, Exclude<CanonicalField, "(ignore)">> = {
   // Name
   first_name: "first_name",
