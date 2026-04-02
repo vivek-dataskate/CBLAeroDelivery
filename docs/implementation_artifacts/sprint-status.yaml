@@ -61,6 +61,9 @@ development_status:
   1-5-add-step-up-auth-for-sensitive-operations: done
   1-6-enforce-usa-data-residency-policy-gates: done
   1-7-add-active-client-context-safeguards: done
+  1-8-extract-data-service-repositories-and-eliminate-route-db-calls: ready-for-dev
+  1-9-create-centralized-ai-inference-service-with-prompt-registry: ready-for-dev
+  1-10-implement-shared-api-auth-middleware: ready-for-dev  # depends on 1.8
   epic-1-retrospective: done
 
   epic-2: in-progress

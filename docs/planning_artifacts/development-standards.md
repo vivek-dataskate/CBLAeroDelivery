@@ -464,6 +464,15 @@ console.error('[Ingestion] Candidate insert failed: constraint violation');
 - Ingestion operations: log count of processed/failed records
 - Auth operations: log success (without tokens) and failures
 
+### Correlation IDs for request tracing
+Every external request entering the system should receive a unique correlation ID (UUID). Propagate it through:
+- HTTP response headers (`x-trace-id` — already set in `proxy.ts`)
+- All log entries for that request
+- Audit events (`traceId` field in `AuditEnvelope`)
+- Downstream service calls (pass as header)
+
+This enables end-to-end tracing across routes, jobs, and external API calls. When debugging, search logs by correlation ID to see the full request journey.
+
 ### Never log secrets, tokens, or PII
 - Redact: access tokens, API keys, SSN, full email bodies
 - OK to log: email addresses (for dedup debugging), record counts, error messages
@@ -752,3 +761,54 @@ Recruiter submission emails and uploaded resumes are external content that could
 3. Validate LLM JSON output schema before persisting — reject malformed responses
 4. Log anomalous extractions (extremely low fill rate, prompt-like content in fields) for human review
 5. Never expose the extraction prompt to end users or in API responses
+
+## 26. AI Incident Response
+
+### Have a documented plan for LLM/AI degradation
+
+When extraction quality drops, a prompt breaks, or a model API goes down, the system should degrade gracefully — not corrupt data silently.
+
+### Incident types and responses
+| Incident | Detection | Response |
+|----------|-----------|----------|
+| LLM API down (5xx) | `fetchWithRetry` exhausts retries | `recordSyncFailure()`, skip record, continue batch. Job summary shows failure count. |
+| Extraction quality drop | Fill rate <30% for 2+ batches (§21) | Alert via sync error, pause automated ingestion, flag for human review |
+| Prompt regression | A/B test shows new prompt underperforms | Rollback to previous prompt version in `prompt_registry` |
+| Model deprecation | Anthropic deprecates model ID | Update model in prompt registry, test on sample data, deploy |
+| Adversarial input detected | Anomaly in extracted fields (§25) | Log anomaly, flag record, do NOT persist to candidates table |
+
+### Recovery rules
+1. **Never persist corrupted data** — if extraction looks wrong (fill rate <10%, suspicious fields), skip and log
+2. **Always have a rollback path** — previous prompt version, previous model, previous code
+3. **Track incidents in the same system as sync errors** — `recordSyncFailure('llm_incident', recordId, error)` so admin dashboard shows them
+4. **Post-incident**: update prompt/model, add regression test covering the failure case, document root cause in story or dev notes
+
+## 27. Audit Log Immutability
+
+### Audit events must be tamper-proof
+
+All audit tables (`audit_*`) should be append-only. Rows must never be updated or deleted in production — only inserted.
+
+### Rules
+- Audit tables: no UPDATE or DELETE grants for application roles
+- Use `INSERT` only; corrections go as new events (not overwrites)
+- Include `correlation_id` (trace ID) in every audit event for cross-referencing
+- Retention: minimum 1 year for compliance-sensitive events (admin actions, data access, auth denials)
+- For `clear*ForTest()` functions: deletion is allowed ONLY in test mode (guarded by `isInMemoryMode()`)
+
+### Schema pattern
+```sql
+CREATE TABLE audit_example (
+  id SERIAL PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  actor_id TEXT,
+  action TEXT NOT NULL,
+  target_id TEXT,
+  metadata JSONB DEFAULT '{}',
+  trace_id TEXT,           -- correlation ID from request
+  occurred_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- NO UPDATE/DELETE grants for app role
+GRANT INSERT, SELECT ON audit_example TO authenticated;
+```

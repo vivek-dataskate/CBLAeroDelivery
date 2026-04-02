@@ -98,6 +98,27 @@ Runtimes: Node.js v24 LTS · Next.js 16.x · Supabase Postgres (PostgreSQL 18-co
   - `candidate_faa_verification` (cert expiry tracking for nightly re-verification sweep — see _Resilience §12_)
   - `prompt_registry` (append-only scoring prompt/model version registry — see _Resilience §13_)
   - `trace_spans` (cross-service request tracing spans for Web App, queue, workers, and providers — see _Resilience §17_)
+
+### Datastore Decision Guide
+
+| Data Type | Store | CBLAero Implementation |
+|-----------|-------|----------------------|
+| Structured/relational | Supabase Postgres | Candidates, users, jobs, audit events, config |
+| Embeddings / semantic search | pgvector (in Supabase) | Candidate matching, RAG retrieval (tenant-scoped) |
+| Files / attachments | Supabase Storage | Resumes, email attachments (`candidate-attachments` bucket) |
+| Token / session cache | Module-level variables | Graph token, Ceipal token (acceptable for single-instance MVP; migrate to Redis if multi-instance) |
+
+### Audit Log Immutability
+
+All `audit_*` tables are append-only. Application roles have INSERT + SELECT grants only — no UPDATE or DELETE in production. Corrections are recorded as new events, not overwrites. Retention minimum: 1 year for compliance-sensitive events. See development-standards.md §27 for schema patterns.
+
+### Correlation IDs / Distributed Tracing
+
+Every request receives a `x-trace-id` (UUID) in `proxy.ts` middleware. This ID must be:
+- Propagated to all downstream service calls (HTTP headers)
+- Included in all audit events (`trace_id` field)
+- Logged in all structured log entries
+- Used as the primary key for end-to-end request tracing
   - `gold_dataset_cases`, `logic_regression_runs`, `logic_regression_results` (LLM logic regression testing corpus and staged evaluation runs — see _Resilience §18_)
   - `provider_routing_policies`, `provider_health_events` (kill switch, warm-standby routing, and provider health state — see _Resilience §19_)
   - `policy_registry`, `policy_versions` (versioned scoring weights, thresholds, and operational policies — see _Resilience §24_)
@@ -1347,6 +1368,56 @@ Processing order on inbound opt-out:
 - `schedule_definitions` must reference the effective `policy_version_id` for any schedule whose cadence or enablement is user-configurable, so schedule-change history is auditable and replay-safe.
 - If a requirement is broad in product language and no policy value exists yet, engineering is not allowed to guess. The work item is blocked until a policy entry or product decision is created.
 - This converts remaining PRD long-tail ambiguity into explicit configuration debt rather than hidden implementation leakage.
+
+## Service Boundary Architecture
+
+_Decision: The application follows a layered service architecture with clear boundaries. Routes delegate to services, services delegate to repositories. No layer may skip a level._
+
+### Target Service Boundaries
+
+```
+Client → API Routes → {AuthService, DataService, AIInferenceService, AuditService} → Supabase/APIs
+```
+
+| Service | Location | Responsibility | Status |
+|---------|----------|---------------|--------|
+| **Auth Service** | `modules/auth/` | SSO, session, RBAC, step-up, cross-client confirmation | **Complete** — clean boundary |
+| **Audit Service** | `modules/audit/` | Event recording, compliance trails, vector audit | **Complete** — clean boundary |
+| **Admin Service** | `modules/admin/` | User governance, invitations, role assignment | **Complete** — clean boundary |
+| **AI Inference Service** | `modules/ai/` (target) | Shared Anthropic client, prompt registry, extraction/scoring/drafting | **Planned** — currently embedded in `features/candidate-management/application/` |
+| **Data Service** | Repositories per entity | DB access abstraction, all queries go through named functions | **Partial** — `candidates` and `saved_searches` have repos; `import_batch`, `candidate_submissions` do not |
+| **Ingestion Service** | `modules/ingestion/` | Candidate upsert orchestration, sync errors, job scheduling | **Complete** — mostly clean |
+| **Email Service** | `modules/email/` | Graph API integration, email parsing | **Complete** — clean boundary |
+| **ATS Service** | `modules/ats/` | Ceipal connector, applicant mapping | **Complete** — clean boundary |
+| **API Gateway** | `app/api/` + middleware | Route handling, shared auth enforcement | **Partial** — auth pattern copy-pasted per route, no shared middleware |
+
+### Architectural Rules
+
+1. **Route handlers must NEVER call `getSupabaseAdminClient()` directly.** All DB access goes through repository functions or service modules.
+2. **Each DB table must have a repository owner.** If a table is queried from 2+ files, extract a dedicated repository or module function.
+3. **LLM access must be centralized.** All Anthropic SDK usage goes through `modules/ai/` — no direct `new Anthropic()` in feature code.
+4. **Auth enforcement must use shared middleware/helpers.** The validate-session → authorize → step-up pattern should be a reusable function, not copy-pasted.
+
+### Migration Path
+
+These refactors are tracked as stories 1.8, 1.9, 1.10 in Epic 1 (Platform Foundation):
+
+| Story | Scope | Priority |
+|-------|-------|----------|
+| **1.8** | Extract `ImportBatchRepository`, `SubmissionRepository`; move cross-client token logic to auth module; eliminate all `db.from()` in routes | High — blocks clean Story 3.x implementation |
+| **1.9** | Create `modules/ai/` with shared client, prompt registry loader, extraction service; migrate `candidate-extraction.ts` | Medium — blocks Story 5.x (scoring) |
+| **1.10** | Create `withAuth()` middleware wrapper; refactor all routes to use it | Medium — reduces code duplication |
+
+### Current Boundary Violations (Tech Debt)
+
+| Violation | Files | Impact |
+|-----------|-------|--------|
+| Routes call `getSupabaseAdminClient()` directly | 15+ route handlers | Couples routes to DB schema, prevents reuse |
+| `import_batch` queries inline in 4+ files | csv-upload, resume-upload, import-batches, jobs/run routes | Duplicate query logic, no shared abstraction |
+| `candidate_submissions` inserts inline in routes | resume-upload route, ingestion module | Split persistence logic |
+| Cross-client confirmation JWT logic in candidates route | candidates/route.ts lines 179-261 | Auth concern leaked into data route |
+| Anthropic client in feature module | candidate-extraction.ts | Not reusable for scoring/outreach LLM use cases |
+| Auth preamble copy-pasted in every route | All 15+ route handlers | 15-line pattern repeated, maintenance burden |
 
 ## Implementation Patterns and Consistency Rules
 

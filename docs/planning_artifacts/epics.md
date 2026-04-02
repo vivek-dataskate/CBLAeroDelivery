@@ -523,6 +523,47 @@ So that I avoid accidental operations in the wrong client context.
 **Then** the active client is clearly displayed and included in request scope
 **And** cross-client action attempts require explicit confirmation
 
+### Story 1.8: Extract Data Service Repositories and Eliminate Route DB Calls
+
+As a platform engineer,
+I want all database access routed through dedicated repository functions,
+So that route handlers are decoupled from the DB schema and query logic is reusable, testable, and consistent.
+
+**Acceptance Criteria:**
+
+**Given** any API route handler
+**When** it needs to read or write data
+**Then** it calls a named repository/module function — never `getSupabaseAdminClient()` directly
+**And** `ImportBatchRepository`, `SubmissionRepository` exist with in-memory test support
+**And** cross-client confirmation token logic lives in `modules/auth/`
+
+### Story 1.9: Create Centralized AI Inference Service with Prompt Registry
+
+As a platform engineer,
+I want all LLM/AI interactions routed through a centralized inference service with prompt versioning,
+So that future AI features (scoring, matching, outreach drafting) reuse the same client, retry, cost tracking, and prompt management patterns.
+
+**Acceptance Criteria:**
+
+**Given** any code that needs to call an LLM
+**When** it makes the call
+**Then** it uses the shared client from `modules/ai/` with structured logging and prompt versioning
+**And** prompts are loadable from the `prompt_registry` table
+**And** existing extraction behavior is unchanged
+
+### Story 1.10: Implement Shared API Auth Middleware
+
+As a platform engineer,
+I want a reusable auth middleware wrapper for API routes,
+So that session-validation, RBAC, step-up, and audit enforcement is defined once — not copy-pasted across 15+ handlers.
+
+**Acceptance Criteria:**
+
+**Given** any protected API route handler
+**When** it needs auth enforcement
+**Then** it uses `withAuth(handler, options)` wrapper
+**And** all existing route behavior and tests are preserved
+
 ## Epic 2: Candidate Data Ingestion and Profile Lifecycle
 
 Create the ingest-to-profile pipeline from migration and ongoing channels so candidate data remains high quality at scale.
