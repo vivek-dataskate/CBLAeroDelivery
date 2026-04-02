@@ -319,7 +319,6 @@ export function mapToCandidateRow(record: Record<string, unknown>, source: strin
     tenant_id: DEFAULT_TENANT_ID,
     first_name: firstName,
     last_name: lastName,
-    name: `${firstName} ${lastName}`.trim(),
     middle_name: str('middleName'),
     email: str('email')?.toLowerCase() ?? null,
     alternate_email: str('alternateEmail'),

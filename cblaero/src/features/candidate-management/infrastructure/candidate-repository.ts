@@ -39,7 +39,6 @@ export function clearCandidateStoreForTest(): void {
 type CandidateRow = {
   id: string;
   tenant_id: string;
-  name: string;
   first_name: string;
   last_name: string;
   email: string | null;
@@ -92,7 +91,7 @@ function toListItem(row: CandidateRow): CandidateListItem {
   return {
     id: row.id,
     tenantId: row.tenant_id,
-    name: row.name,
+    name: `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim(),
     firstName: row.first_name,
     lastName: row.last_name,
     email: row.email,
@@ -188,7 +187,7 @@ export async function listCandidates(params: CandidateListParams): Promise<Candi
     if (params.search) {
       const terms = params.search.toLowerCase().split(/\s+/).filter(Boolean);
       candidates = candidates.filter((c) => {
-        const haystack = `${c.firstName} ${c.lastName} ${c.name}`.toLowerCase();
+        const haystack = `${c.firstName} ${c.lastName}`.toLowerCase();
         return terms.every((term) => haystack.includes(term));
       });
     }
@@ -204,7 +203,7 @@ export async function listCandidates(params: CandidateListParams): Promise<Candi
 
   const client = getSupabaseAdminClient();
   const selectCols =
-    "id, tenant_id, name, first_name, last_name, email, phone, location, availability_status, ingestion_state, source, source_batch_id, created_at, updated_at";
+    "id, tenant_id, first_name, last_name, email, phone, location, availability_status, ingestion_state, source, source_batch_id, created_at, updated_at";
 
   let query = client
     .from("candidates")
