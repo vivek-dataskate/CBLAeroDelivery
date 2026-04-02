@@ -1,19 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { SESSION_COOKIE_NAME, authorizeAccess, validateActiveSession } from "@/modules/auth";
+import { authorizeAccess, validateActiveSession } from "@/modules/auth";
+import { recordImportBatchAccessEvent } from "@/modules/audit";
 import { getSupabaseAdminClient, shouldUseInMemoryPersistenceForTests } from "@/modules/persistence";
 
-import { findCsvUploadBatchForTenant, toBatchStatusPayload, type CsvUploadBatchRow } from "../shared";
-
-function toErrorCode(reason: "unauthenticated" | "forbidden_role" | "tenant_mismatch"): string {
-  if (reason === "unauthenticated") return "unauthenticated";
-  if (reason === "tenant_mismatch") return "tenant_forbidden";
-  return "forbidden";
-}
-
-function extractSessionToken(request: NextRequest): string | null {
-  return request.cookies.get(SESSION_COOKIE_NAME)?.value ?? null;
-}
+import { extractSessionToken, findCsvUploadBatchForTenant, toErrorCode, toBatchStatusPayload, type CsvUploadBatchRow } from "../shared";
 
 export async function GET(
   request: NextRequest,
@@ -65,6 +56,18 @@ export async function GET(
       );
     }
 
+    try {
+      await recordImportBatchAccessEvent({
+        traceId,
+        actorId: session.actorId,
+        tenantId,
+        batchId,
+        action: "read_import_batch_detail",
+      });
+    } catch {
+      // Audit is best-effort — do not block status reads
+    }
+
     return NextResponse.json({ data: toBatchStatusPayload(batch), meta: {} });
   }
 
@@ -97,6 +100,18 @@ export async function GET(
     started_at: String(data.started_at),
     completed_at: data.completed_at ? String(data.completed_at) : null,
   };
+
+  try {
+    await recordImportBatchAccessEvent({
+      traceId,
+      actorId: session.actorId,
+      tenantId,
+      batchId,
+      action: "read_import_batch_detail",
+    });
+  } catch {
+    // Audit is best-effort — do not block status reads
+  }
 
   return NextResponse.json({ data: toBatchStatusPayload(batchRow), meta: {} });
 }

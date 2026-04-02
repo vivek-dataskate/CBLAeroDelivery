@@ -204,6 +204,8 @@ GPT-5.3-Codex
 - cblaero/src/app/dashboard/recruiter/upload/BatchProgressCard.tsx
 - cblaero/src/app/dashboard/page.tsx
 - cblaero/src/app/dashboard/admin/MigrationStatusCard.tsx
+- cblaero/src/app/dashboard/recruiter/upload/UploadModeSelector.tsx
+- cblaero/src/modules/csv/index.ts
 - cblaero/supabase/schema.sql
 ### Review-Driven Fixes (2026-03-30, code-review pass)
 
@@ -230,6 +232,16 @@ GPT-5.3-Codex
 - [x] M1: Rewrote `parseCsv()` in both `route.ts` and `CsvUploadWizard.tsx` to handle embedded newlines — new `splitCsvRows()` tracks quote state before splitting, so quoted fields with `\n` are preserved correctly
 - [x] M2: Wrapped compensating delete and rollback in `route.ts` catch block with individual try/catch blocks and error logging — previously silent failures could leave orphan candidates
 - [x] M3: Consolidated `toResponsePayload` in `[batchId]/route.ts` to use shared `toBatchStatusPayload()` from `shared.ts` — eliminated duplicate elapsedMs computation
+
+### Review-Driven Fixes (2026-04-01, code-review pass 4)
+
+- [x] H1: Accepted — 1-row preview is intentional per user; story task "5-row preview" was aspirational, not a hard requirement
+- [x] H2: Moved `toErrorCode` and `extractSessionToken` from 3 route files into `shared.ts`; all routes now import from single source
+- [x] M1: Extracted `parseCsvLine`, `splitCsvRows`, `parseCsv`, `FIELD_ALIASES`, `normalizeHeaderKey`, `inferFieldForHeader` into shared `@/modules/csv/index.ts`; removed ~200 lines of duplicated code from `route.ts` and `CsvUploadWizard.tsx`
+- [x] M2: Fixed `splitCsvRows` to handle bare `\r` (CR-only) line endings — condition changed from `char === "\r" && text[i+1] === "\n"` to `char === "\r"` with subsequent `\r\n` skip
+- [x] M3: Added `recordImportBatchAccessEvent` (action `read_import_batch_detail`) to `[batchId]/route.ts` GET handler with best-effort error swallowing
+- [x] L1: Added `UploadModeSelector.tsx` and `@/modules/csv/index.ts` to story File List
+- [x] L2: Added 401 (unauthenticated) and 403 (compliance-officer) auth tests to `[batchId]/__tests__/route.test.ts` — test count 16 → 18
 
 ### Review-Driven Action Items (2026-03-30)
 

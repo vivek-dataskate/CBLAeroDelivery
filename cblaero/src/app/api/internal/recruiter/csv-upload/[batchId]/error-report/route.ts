@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { SESSION_COOKIE_NAME, authorizeAccess, validateActiveSession } from "@/modules/auth";
+import { authorizeAccess, validateActiveSession } from "@/modules/auth";
 import { recordImportBatchAccessEvent } from "@/modules/audit";
 import { getSupabaseAdminClient, shouldUseInMemoryPersistenceForTests } from "@/modules/persistence";
 
-import { findCsvUploadBatchForTenant, listCsvUploadErrorsForBatch } from "../../shared";
+import { extractSessionToken, findCsvUploadBatchForTenant, listCsvUploadErrorsForBatch, toErrorCode } from "../../shared";
 
 type ImportRowErrorRow = {
   row_number: number;
@@ -12,16 +12,6 @@ type ImportRowErrorRow = {
   error_detail: string | null;
   raw_data: Record<string, string>;
 };
-
-function toErrorCode(reason: "unauthenticated" | "forbidden_role" | "tenant_mismatch"): string {
-  if (reason === "unauthenticated") return "unauthenticated";
-  if (reason === "tenant_mismatch") return "tenant_forbidden";
-  return "forbidden";
-}
-
-function extractSessionToken(request: NextRequest): string | null {
-  return request.cookies.get(SESSION_COOKIE_NAME)?.value ?? null;
-}
 
 function escapeCsvValue(value: string): string {
   if (value.includes(",") || value.includes("\n") || value.includes('"')) {
