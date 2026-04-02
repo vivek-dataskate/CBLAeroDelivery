@@ -1,6 +1,9 @@
 export type AvailabilityStatus = "active" | "passive" | "unavailable";
 export type IngestionState = "pending_dedup" | "pending_enrichment" | "active" | "rejected";
 
+export type SortByField = 'created_at' | 'years_of_experience' | 'availability_status' | 'first_name' | 'last_name' | 'location' | 'job_title';
+export type SortDir = 'asc' | 'desc';
+
 export type CandidateListItem = {
   id: string;
   tenantId: string;
@@ -12,6 +15,8 @@ export type CandidateListItem = {
   location: string | null;
   availabilityStatus: AvailabilityStatus;
   ingestionState: IngestionState;
+  jobTitle: string | null;
+  skills: unknown[];
   source: string;
   sourceBatchId: string | null;
   createdAt: string;
@@ -55,10 +60,30 @@ export type CandidateDetail = CandidateListItem & {
 
 export type CandidateListParams = {
   tenantId: string;
+  // Existing filters
   availabilityStatus?: AvailabilityStatus;
   location?: string;
   certType?: string;
   search?: string;
+  // New filters
+  email?: string;
+  phone?: string;
+  jobTitle?: string;
+  skills?: string;
+  currentCompany?: string;
+  state?: string;
+  city?: string;
+  workAuthorization?: string;
+  employmentType?: string;
+  source?: string;
+  shiftPreference?: string;
+  yearsOfExperience?: string;
+  veteranStatus?: string;
+  hasApLicense?: boolean;
+  // Sorting
+  sortBy?: SortByField;
+  sortDir?: SortDir;
+  // Pagination
   cursor?: string;
   limit?: number;
 };
@@ -66,4 +91,5 @@ export type CandidateListParams = {
 export type CandidateListResult = {
   items: CandidateListItem[];
   nextCursor: string | null;
+  sortedBy: string;
 };
