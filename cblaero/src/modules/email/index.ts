@@ -1,6 +1,6 @@
 import { acquireGraphToken } from './graph-auth';
 import { extractCandidateFromEmail } from './nlp-extract-and-upload';
-import { IngestionEnvelope } from '../ingestion';
+import { fetchWithRetry } from '../ingestion/fetch-with-retry';
 
 export interface EmailParser {
   name: string;
@@ -68,20 +68,30 @@ export class MicrosoftGraphEmailParser implements EmailParser {
   }
 
   private async fetchMessages(token: string, mailbox: string): Promise<GraphMessage[]> {
-    const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}/mailFolders/Inbox/messages` +
+    const MAX_PAGES = 10; // Safety cap: 10 pages × 50 = 500 messages max
+    let url: string | null = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}/mailFolders/Inbox/messages` +
       `?$top=50&$select=id,subject,receivedDateTime,body,hasAttachments&$orderby=receivedDateTime desc`;
 
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const allMessages: GraphMessage[] = [];
+    let page = 0;
 
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Graph messages fetch failed for ${mailbox} (${response.status}): ${text}`);
+    while (url && page < MAX_PAGES) {
+      const response = await fetchWithRetry(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Graph messages fetch failed for ${mailbox} (${response.status}): ${text}`);
+      }
+
+      const data = await response.json() as { value: GraphMessage[]; '@odata.nextLink'?: string };
+      allMessages.push(...(data.value ?? []));
+      url = data['@odata.nextLink'] ?? null;
+      page++;
     }
 
-    const data = await response.json() as { value: GraphMessage[] };
-    return data.value ?? [];
+    return allMessages;
   }
 
   private async fetchAttachments(
@@ -92,7 +102,7 @@ export class MicrosoftGraphEmailParser implements EmailParser {
     const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}/messages/${encodeURIComponent(messageId)}/attachments` +
       `?$select=id,name,contentBytes,@odata.type`;
 
-    const response = await fetch(url, {
+    const response = await fetchWithRetry(url, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
@@ -109,11 +119,4 @@ export class MicrosoftGraphEmailParser implements EmailParser {
         content: Buffer.from(a.contentBytes, 'base64'),
       }));
   }
-}
-
-export function createEmailIngestionEnvelope(record: EmailCandidateRecord): IngestionEnvelope {
-  return {
-    source: 'email',
-    receivedAtIso: record.receivedAt,
-  };
 }

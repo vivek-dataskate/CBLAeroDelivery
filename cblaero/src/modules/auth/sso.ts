@@ -1,5 +1,6 @@
 import { createRemoteJWKSet, jwtVerify, SignJWT, type JWTPayload } from "jose";
 
+import { fetchWithRetry } from "../ingestion/fetch-with-retry";
 import { AUTH_ISSUER, getAuthSigningSecret } from "./config";
 import {
   AUTH_STATE_COOKIE_MAX_AGE_SECONDS,
@@ -289,7 +290,7 @@ export async function exchangeAuthorizationCode(
     redirect_uri: config.redirectUri,
   });
 
-  const response = await fetch(config.tokenEndpoint, {
+  const response = await fetchWithRetry(config.tokenEndpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",

@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   recordSyncFailure: vi.fn(),
   upsertCandidateFromATS: vi.fn().mockResolvedValue(undefined),
   upsertCandidateFromEmailFull: vi.fn().mockResolvedValue(undefined),
+  batchUpsertCandidatesFromATS: vi.fn().mockResolvedValue({ inserted: 0, failed: 0 }),
 }));
 
 vi.mock('@/modules/ats', () => ({
@@ -32,6 +33,7 @@ vi.mock('@/modules/ingestion/index', () => ({
   recordSyncFailure: mocks.recordSyncFailure,
   upsertCandidateFromATS: mocks.upsertCandidateFromATS,
   upsertCandidateFromEmailFull: mocks.upsertCandidateFromEmailFull,
+  batchUpsertCandidatesFromATS: mocks.batchUpsertCandidatesFromATS,
 }));
 
 import { CeipalIngestionJob, EmailIngestionJob, registerIngestionJobs } from '@/modules/ingestion/jobs';
@@ -41,38 +43,39 @@ describe('CeipalIngestionJob', () => {
     vi.clearAllMocks();
   });
 
-  it('fetches applicants and upserts each one', async () => {
+  it('fetches applicants and batch-upserts them', async () => {
     mocks.fetchCeipalApplicants.mockResolvedValue([
       { first_name: 'Jane', last_name: 'Doe', email_address: 'jane@test.com' },
       { first_name: 'John', last_name: 'Smith', email_address: 'john@test.com' },
     ]);
+    mocks.batchUpsertCandidatesFromATS.mockResolvedValue({ inserted: 2, failed: 0 });
 
     const job = new CeipalIngestionJob();
     await job.run();
 
     expect(mocks.fetchCeipalApplicants).toHaveBeenCalledTimes(1);
     expect(mocks.mapCeipalApplicantToCandidate).toHaveBeenCalledTimes(2);
-    expect(mocks.upsertCandidateFromATS).toHaveBeenCalledTimes(2);
+    expect(mocks.batchUpsertCandidatesFromATS).toHaveBeenCalledTimes(1);
+    expect(mocks.batchUpsertCandidatesFromATS).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ firstName: 'Jane', source: 'ceipal' }),
+        expect.objectContaining({ firstName: 'John', source: 'ceipal' }),
+      ])
+    );
     expect(mocks.recordSyncFailure).not.toHaveBeenCalled();
   });
 
-  it('records sync failure on per-record upsert error without stopping batch', async () => {
+  it('records sync failure when batch upsert throws', async () => {
     mocks.fetchCeipalApplicants.mockResolvedValue([
       { first_name: 'Good', last_name: 'One', email_address: 'good@test.com' },
-      { first_name: 'Bad', last_name: 'One', email_address: 'bad@test.com' },
-      { first_name: 'Also', last_name: 'Good', email_address: 'also@test.com' },
     ]);
-    mocks.upsertCandidateFromATS
-      .mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(new Error('constraint violation'))
-      .mockResolvedValueOnce(undefined);
+    mocks.batchUpsertCandidatesFromATS.mockRejectedValue(new Error('batch insert failed'));
 
     const job = new CeipalIngestionJob();
     await job.run();
 
-    expect(mocks.upsertCandidateFromATS).toHaveBeenCalledTimes(3);
-    expect(mocks.recordSyncFailure).toHaveBeenCalledTimes(1);
-    expect(mocks.recordSyncFailure).toHaveBeenCalledWith('ceipal', 'bad@test.com', expect.any(Error));
+    expect(mocks.batchUpsertCandidatesFromATS).toHaveBeenCalledTimes(1);
+    expect(mocks.recordSyncFailure).toHaveBeenCalledWith('ceipal', 'polling', expect.any(Error));
   });
 
   it('records sync failure on polling error', async () => {
@@ -87,30 +90,29 @@ describe('CeipalIngestionJob', () => {
 
   it('passes lastRunAt for incremental sync on second run', async () => {
     mocks.fetchCeipalApplicants.mockResolvedValue([]);
+    mocks.batchUpsertCandidatesFromATS.mockResolvedValue({ inserted: 0, failed: 0 });
 
     const job = new CeipalIngestionJob();
     await job.run();
 
     // First run — no since date
-    expect(mocks.fetchCeipalApplicants).toHaveBeenCalledWith({ since: undefined });
+    const firstCallArgs = mocks.fetchCeipalApplicants.mock.calls[0][0];
+    expect(firstCallArgs.since).toBeUndefined();
 
     await job.run();
 
-    // Second run — should have a since date
+    // Second run — should have a since date from lastRunAt
     const secondCallArgs = mocks.fetchCeipalApplicants.mock.calls[1][0];
     expect(secondCallArgs.since).toBeInstanceOf(Date);
   });
 
-  it('uses email_address as record ID, falls back to name when email is null', async () => {
-    mocks.fetchCeipalApplicants.mockResolvedValue([
-      { first_name: 'NoEmail', last_name: 'Person', email_address: null },
-    ]);
-    mocks.upsertCandidateFromATS.mockRejectedValue(new Error('fail'));
+  it('skips empty applicant lists without calling batch upsert', async () => {
+    mocks.fetchCeipalApplicants.mockResolvedValue([]);
 
     const job = new CeipalIngestionJob();
     await job.run();
 
-    expect(mocks.recordSyncFailure).toHaveBeenCalledWith('ceipal', 'NoEmail-Person', expect.any(Error));
+    expect(mocks.batchUpsertCandidatesFromATS).not.toHaveBeenCalled();
   });
 });
 

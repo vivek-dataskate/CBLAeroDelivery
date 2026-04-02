@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAccess, validateActiveSession } from '@/modules/auth';
 import { recordImportBatchAccessEvent } from '@/modules/audit';
 import { getSupabaseAdminClient } from '@/modules/persistence';
-import { extractCandidateFromDocument, type ContentType } from '@/features/candidate-management/application/candidate-extraction';
+import { extractCandidateFromDocument } from '@/features/candidate-management/application/candidate-extraction';
 import {
   createInMemoryResumeBatch,
   extractSessionToken,
@@ -16,28 +16,11 @@ const BATCH_SIZE = 50;
 const ATTACHMENT_BUCKET = 'candidate-attachments';
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per file
 
-const ACCEPTED_EXTENSIONS = new Set(['.pdf', '.doc', '.docx']);
-const ACCEPTED_MIME_TYPES = new Set([
-  'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-]);
-
-function isAcceptedResumeFile(file: File): boolean {
-  const ext = '.' + file.name.toLowerCase().split('.').pop();
-  return ACCEPTED_MIME_TYPES.has(file.type) || ACCEPTED_EXTENSIONS.has(ext);
-}
-
-function getContentType(file: File): ContentType {
-  const name = file.name.toLowerCase();
-  if (name.endsWith('.docx') || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-    return 'docx';
-  }
-  // .doc (legacy Word) — attempt docx extraction; mammoth handles both formats
-  if (name.endsWith('.doc') || file.type === 'application/msword') {
-    return 'docx';
-  }
-  return 'pdf';
+function isPdfFile(file: File): boolean {
+  return (
+    file.type === 'application/pdf' ||
+    file.name.toLowerCase().endsWith('.pdf')
+  );
 }
 
 export async function POST(request: NextRequest) {
@@ -100,14 +83,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const unsupportedFiles = files.filter((f) => !isAcceptedResumeFile(f));
+  const unsupportedFiles = files.filter((f) => !isPdfFile(f));
   if (unsupportedFiles.length > 0) {
     return NextResponse.json(
       {
         error: {
           code: 'invalid_file_type',
           message:
-            'Only PDF, DOC, and DOCX files are supported for resume uploads.',
+            'Only PDF files are supported. Please convert Word, RTF, or other formats to PDF before uploading.',
           details: { rejectedFiles: unsupportedFiles.map((f) => f.name) },
         },
       },
@@ -179,7 +162,7 @@ export async function POST(request: NextRequest) {
             const { error: uploadError } = await db.storage
               .from(ATTACHMENT_BUCKET)
               .upload(storagePath, buffer, {
-                contentType: file.type || 'application/octet-stream',
+                contentType: 'application/pdf',
                 upsert: true,
               });
 
@@ -192,7 +175,7 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          const result = await extractCandidateFromDocument(buffer, getContentType(file), {
+          const result = await extractCandidateFromDocument(buffer, 'pdf', {
             source: 'resume_upload',
             tenantId,
             batchId,
