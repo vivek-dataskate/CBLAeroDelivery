@@ -119,6 +119,31 @@ Every request receives a `x-trace-id` (UUID) in `proxy.ts` middleware. This ID m
 - Included in all audit events (`trace_id` field)
 - Logged in all structured log entries
 - Used as the primary key for end-to-end request tracing
+
+### Observability & Logging Strategy
+
+**Decision:** Progressive observability — start with structured stdout, add managed log drains as scale demands, defer self-hosted ELK/Elasticsearch until Epic 7+.
+
+**Tiered progression:**
+
+| Tier | Trigger | Stack | Cost |
+|------|---------|-------|------|
+| **1 — Current (Tier 1 MVP)** | Now | Structured JSON via `console.log(JSON.stringify({...}))` → Render stdout capture | Free |
+| **2 — Log Drain** | Story 2.7 (scheduler) or multi-instance deployment | Render → Logtail (or Datadog/Papertrail) log drain. No code changes — reads structured JSON from stdout. | Free tier (Logtail: 1GB/day, Papertrail: 50MB/day) |
+| **3 — Managed Observability** | Epic 3+ (outreach, multi-service) or when log search becomes painful | Grafana Cloud (free: 50GB logs/mo, 10K metrics) or Elastic Cloud (free: 14-day retention). Add OpenTelemetry SDK for distributed tracing. | Free tier or ~$50-100/mo |
+| **4 — Full Stack** | Epic 7 (metrics/dashboards) or compliance audit search requirements | Elastic Cloud or self-hosted ELK. Long-term retention, complex queries, dashboards, alerting. | ~$95+/mo |
+
+**Rules for all tiers:**
+- All logs MUST be structured JSON for job summaries, errors, LLM calls, and auth events (see development-standards.md §23)
+- Simple `console.log('[Module] message')` is acceptable for development/debug lines
+- Correlation IDs (`x-trace-id`) included in all structured logs regardless of tier
+- No code changes required between tiers — the log drain reads stdout, structured format ensures compatibility
+- Never add Elasticsearch, Kibana, or Logstash as application dependencies — they are infrastructure, not code
+
+**What NOT to do:**
+- Do not self-host ELK for a single-instance MVP — operational cost exceeds value
+- Do not add logging SDKs (winston, pino, bunyan) until Tier 3 — `console.log` with JSON.stringify is sufficient and zero-dependency
+- Do not store logs in Supabase — that's for application data, not observability
   - `gold_dataset_cases`, `logic_regression_runs`, `logic_regression_results` (LLM logic regression testing corpus and staged evaluation runs — see _Resilience §18_)
   - `provider_routing_policies`, `provider_health_events` (kill switch, warm-standby routing, and provider health state — see _Resilience §19_)
   - `policy_registry`, `policy_versions` (versioned scoring weights, thresholds, and operational policies — see _Resilience §24_)
