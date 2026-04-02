@@ -33,7 +33,11 @@ Based on user's direct instructions:
 - Identify the specific files that need changes
 - Note file locations and purposes
 
-### 2. Find Relevant Patterns
+### 2. Load Development Standards
+
+If the project has a development standards file (glob `**/development-standards*.md` under planning artifacts), load it and note all mandatory patterns that apply to the changes being made (retry, error handling, type safety, auth, testing, logging).
+
+### 3. Find Relevant Patterns
 
 Examine the identified files and their surroundings:
 
@@ -42,8 +46,9 @@ Examine the identified files and their surroundings:
 - Import/export patterns
 - Error handling approaches
 - Test patterns (if tests exist nearby)
+- **Development standards compliance** (cross-reference with loaded standards)
 
-### 3. Note Dependencies
+### 4. Note Dependencies
 
 Identify:
 
@@ -52,7 +57,7 @@ Identify:
 - Configuration files that may need updates
 - Related files that might be affected
 
-### 4. Create Mental Plan
+### 5. Create Mental Plan
 
 Synthesize gathered context into:
 

@@ -264,7 +264,7 @@ export async function upsertCandidateFromEmailFull(record: {
     return;
   }
 
-  // 3. Insert submission with attachment paths
+  // 3. Build submission record
   const submissionId = crypto.randomUUID();
   const submissionRow = {
     id: submissionId,
@@ -281,7 +281,7 @@ export async function upsertCandidateFromEmailFull(record: {
     extraction_model: record.candidate.extractionMethod === 'llm' ? 'claude-haiku-4-5-20251001' : 'regex-fallback',
   };
 
-  // 3. Upload attachments to Supabase Storage
+  // 4. Upload attachments to Supabase Storage
   const attachmentMeta: Array<{ filename: string; url: string; size: number }> = [];
   for (const att of record.attachments ?? []) {
     if (!att.content) {
@@ -298,7 +298,7 @@ export async function upsertCandidateFromEmailFull(record: {
   }
   submissionRow.attachments = attachmentMeta;
 
-  // 4. Save submission evidence with attachment URLs
+  // 5. Save submission evidence with attachment URLs
   const { error: subError } = await db.from('candidate_submissions').insert(submissionRow);
   if (subError) {
     console.error(`[Ingestion] Submission evidence insert failed: ${subError.message}`);

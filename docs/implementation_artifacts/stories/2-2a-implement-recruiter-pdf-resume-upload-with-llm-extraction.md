@@ -155,6 +155,7 @@ Modified files:
 
 ### References
 
+- [Source: docs/planning_artifacts/development-standards.md — mandatory implementation rules, error handling, retry, type safety, auth, testing patterns]
 - [Source: docs/planning_artifacts/architecture.md — Candidate Data Ingestion Architecture, Path 2b]
 - [Source: docs/planning_artifacts/architecture.md — Unified Candidate Extraction Service]
 - [Source: docs/planning_artifacts/ux-design-specification.md — §7 Data Import and Sync Console, PDF resume upload]

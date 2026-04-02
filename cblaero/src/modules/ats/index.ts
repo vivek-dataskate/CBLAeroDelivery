@@ -1,4 +1,3 @@
-import { IngestionEnvelope } from '../ingestion';
 export { fetchCeipalApplicants, mapCeipalApplicantToCandidate } from './ceipal';
 export type { CeipalApplicant } from './ceipal';
 
@@ -11,11 +10,4 @@ export interface ATSRecord {
   id: string;
   candidate: Record<string, unknown>;
   updatedAt: string;
-}
-
-export function createATSIngestionEnvelope(record: ATSRecord): IngestionEnvelope {
-  return {
-    source: 'ats',
-    receivedAtIso: record.updatedAt,
-  };
 }

@@ -944,6 +944,60 @@ sequenceDiagram
 
 All stories must follow the coding standards and best practices documented in [development-standards.md](development-standards.md). Key areas: external API retry/backoff patterns, LLM integration safety, data ingestion dedup, Supabase error handling, token caching, and evidence preservation. Code reviews should verify compliance.
 
+## Implemented Capabilities Registry
+
+_Dev agents: read this section BEFORE implementing any story. If a capability exists, reuse or extend it — never recreate. After implementing a new reusable capability, add it here._
+
+### HTTP & External APIs
+| Capability | Location | When to Use |
+|-----------|----------|-------------|
+| `fetchWithRetry(url, init, opts)` | `src/modules/ingestion/fetch-with-retry.ts` | ALL external HTTP calls (Ceipal, Graph, OneDrive, Azure AD). 3 retries, exponential backoff, handles 429/5xx/network errors. |
+| `acquireGraphToken()` | `src/modules/email/graph-auth.ts` | Microsoft Graph API calls (email, OneDrive, calendar). Caches token with 60s buffer. |
+| `acquireCeipalToken()` | `src/modules/ats/ceipal.ts` (internal) | Ceipal API calls. Caches token with 5min buffer. Called internally by `fetchCeipalApplicants`. |
+
+### Candidate Data Pipeline
+| Capability | Location | When to Use |
+|-----------|----------|-------------|
+| `extractCandidateFromDocument(input, type, opts)` | `src/features/candidate-management/application/candidate-extraction.ts` | LLM extraction from any document type (email, PDF, DOCX). Returns structured candidate data. Haiku 4.5, 10K char limit. |
+| `extractCandidateFromEmail(body, subject)` | `src/modules/email/nlp-extract-and-upload.ts` | Thin wrapper for email-specific extraction. Delegates to `extractCandidateFromDocument`. |
+| `mapToCandidateRow(record, source, overrides?)` | `src/modules/ingestion/index.ts` | Maps any extracted candidate data to `candidates` table columns. Handles all 30+ fields. |
+| `mapCeipalApplicantToCandidate(applicant)` | `src/modules/ats/ceipal.ts` | Maps Ceipal API response to ingestion candidate shape. |
+| `uploadAttachmentToStorage(db, buffer, filename, candidateId, submissionId)` | `src/modules/email/nlp-extract-and-upload.ts` | Upload files to Supabase Storage `candidate-attachments` bucket with sanitized paths. |
+
+### Database Operations (RPCs & Repositories)
+| Capability | Location | When to Use |
+|-----------|----------|-------------|
+| `process_import_chunk` RPC | `supabase/schema.sql` | Batch candidate upsert with per-row error tracking. Used by CSV upload, resume upload, OneDrive poller. |
+| `listCandidates(tenantId, params)` | `src/features/candidate-management/infrastructure/candidate-repository.ts` | Filtered, paginated candidate list with cursor-based pagination. Supports 15+ filters. |
+| `getCandidateById(tenantId, candidateId)` | `src/features/candidate-management/infrastructure/candidate-repository.ts` | Single candidate detail with all columns. |
+| `batchUpsertCandidatesFromATS(records)` | `src/modules/ingestion/index.ts` | Batch upsert with email dedup + fallback to individual inserts on conflict. |
+| `upsertCandidateFromEmailFull(record)` | `src/modules/ingestion/index.ts` | Single email submission: candidate upsert + submission evidence + attachment upload. |
+| `recordSyncFailure(source, recordId, err)` | `src/modules/ingestion/index.ts` | Log sync errors to Supabase `sync_errors` table with in-memory fallback. |
+| `listRecentSyncErrors()` | `src/modules/ingestion/index.ts` | Fetch recent sync errors for admin dashboard. |
+
+### Ingestion Jobs (Scheduler-Ready)
+| Capability | Location | When to Use |
+|-----------|----------|-------------|
+| `CeipalIngestionJob` | `src/modules/ingestion/jobs.ts` | Polls Ceipal API for applicants, batch upserts. Supports `startPage`, `maxPages`, `since` params. |
+| `EmailIngestionJob` | `src/modules/ingestion/jobs.ts` | Polls Graph inbox for submission emails, LLM extraction, persist. Skips already-processed messages. |
+| `OneDriveResumePollerJob` | `src/modules/ingestion/jobs.ts` | Polls OneDrive folder for PDFs, LLM extraction, persist via `process_import_chunk` RPC. Deletes source only after backup confirmed. |
+| `registerIngestionJobs(scheduler)` | `src/modules/ingestion/jobs.ts` | Registers all 3 jobs with any scheduler implementing `{ register(job: SchedulerJob): void }`. |
+
+### Auth & Admin
+| Capability | Location | When to Use |
+|-----------|----------|-------------|
+| `authorizeAccess(input)` | `src/modules/auth/authorization.ts` | RBAC check for any route. Returns `{ allowed, reason }`. |
+| `validateActiveSession(token)` | `src/modules/auth/session.ts` | Validate session token, check revocation. |
+| `registerOrSyncUserFromSession(session)` | `src/modules/admin/index.ts` | Upsert user record from SSO session. |
+| `resolveEffectiveRole(actorId, tokenRole)` | `src/modules/admin/index.ts` | Get latest role from DB, falling back to token role. |
+
+### UI Components (Reusable)
+| Capability | Location | When to Use |
+|-----------|----------|-------------|
+| `SyncErrorStatusCard` | `src/app/dashboard/admin/SyncErrorStatusCard.tsx` | Display sync errors on admin dashboard. Accepts `errors: SyncError[]`. |
+| `MigrationStatusCard` | `src/app/dashboard/admin/MigrationStatusCard.tsx` | Display import batch status. Accepts `tenantId`, `actorId`. |
+| `BatchProgressCard` | `src/app/dashboard/recruiter/upload/BatchProgressCard.tsx` | Real-time batch progress with polling. Accepts `batchId`. |
+
 ## Architecture Resilience Decisions
 
 Closed decisions for 8 operational risk areas identified during architecture review.

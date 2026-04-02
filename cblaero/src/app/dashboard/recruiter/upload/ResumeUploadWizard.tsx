@@ -45,7 +45,6 @@ const DISPLAY_FIELDS = [
 export default function ResumeUploadWizard() {
   const [step, setStep] = useState<WizardStep>(1);
   const [files, setFiles] = useState<File[]>([]);
-  const [folderMode, setFolderMode] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [batchId, setBatchId] = useState<string | null>(null);
@@ -54,18 +53,16 @@ export default function ResumeUploadWizard() {
   const [confirming, setConfirming] = useState(false);
   const [summary, setSummary] = useState<{ imported: number; skipped: number; errors: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const folderInputRef = useRef<HTMLInputElement>(null);
 
+  // Additive file selection — new picks are merged with existing selection, deduped by name
   const onFilesSelected = useCallback((selectedFiles: FileList | null) => {
     if (!selectedFiles) return;
-    const ACCEPTED_EXTENSIONS = new Set([".pdf", ".doc", ".docx"]);
     const accepted: File[] = [];
     const rejected: string[] = [];
 
     for (let i = 0; i < selectedFiles.length; i++) {
       const f = selectedFiles[i];
-      const ext = "." + f.name.toLowerCase().split(".").pop();
-      if (ACCEPTED_EXTENSIONS.has(ext)) {
+      if (f.name.toLowerCase().endsWith(".pdf")) {
         accepted.push(f);
       } else {
         rejected.push(f.name);
@@ -74,18 +71,25 @@ export default function ResumeUploadWizard() {
 
     if (rejected.length > 0) {
       setError(
-        `Only PDF, DOC, and DOCX files are supported. Rejected: ${rejected.join(", ")}`
+        `Only PDF files are supported. Please convert other formats to PDF before uploading. Rejected: ${rejected.join(", ")}`
       );
     } else {
       setError(null);
     }
 
-    setFiles(accepted);
-    setBatchId(null);
-    setResults([]);
-    setCards([]);
-    setSummary(null);
+    // Merge with existing files, dedup by name
+    setFiles((prev) => {
+      const existing = new Map(prev.map((f) => [f.name, f]));
+      for (const f of accepted) {
+        existing.set(f.name, f);
+      }
+      return [...existing.values()];
+    });
   }, []);
+
+  const removeFile = (name: string) => {
+    setFiles((prev) => prev.filter((f) => f.name !== name));
+  };
 
   const onUpload = async () => {
     if (files.length === 0) {
@@ -130,7 +134,7 @@ export default function ResumeUploadWizard() {
         const confirmed = successFiles.map((f: ExtractionResult) => ({
           submissionId: f.submissionId,
         }));
-        const rejected: string[] = [];
+        const rejectedIds: string[] = [];
 
         try {
           const confirmRes = await fetch(
@@ -138,7 +142,7 @@ export default function ResumeUploadWizard() {
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ confirmed, rejected }),
+              body: JSON.stringify({ confirmed, rejected: rejectedIds }),
             }
           );
           const confirmPayload = await confirmRes.json();
@@ -206,13 +210,13 @@ export default function ResumeUploadWizard() {
         edits: Object.keys(c.edits).length > 0 ? c.edits : undefined,
       }));
 
-    const rejected = cards.filter((c) => c.rejected).map((c) => c.submissionId);
+    const rejectedIds = cards.filter((c) => c.rejected).map((c) => c.submissionId);
 
     try {
       const response = await fetch(`/api/internal/recruiter/resume-upload/${batchId}/confirm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ confirmed, rejected }),
+        body: JSON.stringify({ confirmed, rejected: rejectedIds }),
       });
 
       const payload = await response.json();
@@ -229,6 +233,17 @@ export default function ResumeUploadWizard() {
     }
   };
 
+  const onStartNew = () => {
+    setStep(1);
+    setFiles([]);
+    setBatchId(null);
+    setResults([]);
+    setCards([]);
+    setSummary(null);
+    setError(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   const completeCount = results.filter((r) => r.status === "complete").length;
   const failedCount = results.filter((r) => r.status === "failed").length;
 
@@ -238,56 +253,41 @@ export default function ResumeUploadWizard() {
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <p className="text-xs uppercase tracking-[0.15em] text-slate-400">Step 1 - Select Resumes</p>
 
-        <div className="mt-3 flex items-center gap-4">
-          <label className="flex items-center gap-2 text-sm text-slate-600">
-            <input
-              type="checkbox"
-              checked={folderMode}
-              onChange={(e) => {
-                setFolderMode(e.target.checked);
-                setFiles([]);
-              }}
-              className="rounded border-slate-300"
-            />
-            Folder mode
-          </label>
-        </div>
-
         <div className="mt-3 rounded-lg border border-dashed border-slate-300 p-5">
-          {folderMode ? (
-            <input
-              ref={folderInputRef}
-              type="file"
-              accept=".pdf,.doc,.docx"
-              multiple
-              // @ts-expect-error — webkitdirectory is non-standard but widely supported
-              webkitdirectory=""
-              onChange={(e) => onFilesSelected(e.target.files)}
-              className="text-sm text-slate-700"
-            />
-          ) : (
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pdf,.doc,.docx"
-              multiple
-              onChange={(e) => onFilesSelected(e.target.files)}
-              className="text-sm text-slate-700"
-            />
-          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf"
+            multiple
+            onChange={(e) => {
+              onFilesSelected(e.target.files);
+              // Reset input so the same files can be re-selected if needed
+              if (e.target) e.target.value = "";
+            }}
+            className="text-sm text-slate-700"
+          />
           <p className="mt-2 text-xs text-slate-400">
-            PDF, DOC, or DOCX files. Select individual files or use folder mode to upload an entire directory.
+            PDF files only. Select files from multiple folders — each selection adds to the list.
           </p>
         </div>
 
         {files.length > 0 && (
           <div className="mt-3">
             <p className="text-sm text-slate-600">{files.length} resume{files.length !== 1 ? "s" : ""} selected</p>
-            <div className="mt-1 max-h-32 overflow-y-auto text-xs text-slate-400">
-              {files.slice(0, 20).map((f) => (
-                <p key={f.name}>{f.name}</p>
+            <div className="mt-1 max-h-40 overflow-y-auto space-y-0.5">
+              {files.map((f) => (
+                <div key={f.name} className="flex items-center justify-between text-xs text-slate-500">
+                  <span className="truncate">{f.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeFile(f.name)}
+                    className="ml-2 shrink-0 text-slate-300 hover:text-rose-500"
+                    title="Remove"
+                  >
+                    x
+                  </button>
+                </div>
               ))}
-              {files.length > 20 && <p>...and {files.length - 20} more</p>}
             </div>
           </div>
         )}
@@ -433,6 +433,13 @@ export default function ResumeUploadWizard() {
             <p>Skipped: <span className="font-medium text-amber-600">{summary.skipped}</span></p>
             <p>Errors: <span className="font-medium text-rose-600">{summary.errors}</span></p>
           </div>
+          <button
+            type="button"
+            onClick={onStartNew}
+            className="mt-4 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
+          >
+            Upload More Resumes
+          </button>
         </section>
       )}
     </div>

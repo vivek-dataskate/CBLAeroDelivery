@@ -16,5 +16,13 @@ validation: "{installed_path}/checklist.md"
 
 story_file: "" # Explicit story path; auto-discovered if empty
 implementation_artifacts: "{config_source}:implementation_artifacts"
+planning_artifacts: "{config_source}:planning_artifacts"
 sprint_status: "{implementation_artifacts}/sprint-status.yaml"
 project_context: "**/project-context.md"
+
+# Auto-load development standards so dev agents follow established patterns
+input_file_patterns:
+  development_standards:
+    description: "Mandatory implementation rules and patterns for all stories"
+    whole: "{planning_artifacts}/*development-standards*.md"
+    load_strategy: "FULL_LOAD"

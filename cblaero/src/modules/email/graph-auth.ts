@@ -1,3 +1,5 @@
+import { fetchWithRetry } from '../ingestion/fetch-with-retry';
+
 /**
  * Microsoft Graph client credentials token acquisition.
  * Uses the same Azure app registration as SSO (CBL_SSO_* env vars).
@@ -9,6 +11,7 @@ type TokenCache = {
   expiresAt: number;
 };
 
+// Module-level cache: resets on serverless cold starts (acceptable — re-auth is cheap)
 let tokenCache: TokenCache | null = null;
 
 export function getGraphConfig() {
@@ -41,7 +44,7 @@ export async function acquireGraphToken(): Promise<string> {
     scope: 'https://graph.microsoft.com/.default',
   });
 
-  const response = await fetch(url, {
+  const response = await fetchWithRetry(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),

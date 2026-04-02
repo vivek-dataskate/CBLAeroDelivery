@@ -46,6 +46,17 @@ This step will generate content and present choices for each decision category:
 - Focus on decisions not already made by starter template or existing preferences
 - Collaborative decision making, not recommendations
 
+## REFERENCE KNOWLEDGE:
+
+Load `{installed_path}/data/ai-dev-best-practices.md` as background knowledge. Use it to inform decisions about:
+- AI/LLM architecture patterns (complexity ladder, agent patterns)
+- Observability and monitoring strategies
+- Security and governance for AI systems
+- Cost optimization approaches
+- Testing strategies for AI-integrated systems
+
+Do NOT present this as a separate topic — weave relevant patterns into the decision categories naturally.
+
 ## YOUR TASK:
 
 Facilitate collaborative architectural decision making, leveraging existing technical preferences and starter template decisions, focusing on remaining choices critical to the project's success.

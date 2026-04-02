@@ -67,6 +67,7 @@ Try to discover the following:
 - Product Requirements Document (`*prd*.md`)
 - UX Design (`*ux-design*.md`) and other
 - Research Documents (`*research*.md`)
+- Development Standards (`*development-standards*.md`) — if exists from prior work, these MUST be respected and extended, not replaced
 - Project Documentation (generally multiple documents might be found for this in the `{product_knowledge}` or `docs` folder.)
 - Project Context (`**/project-context.md`)
 

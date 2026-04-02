@@ -1,3 +1,5 @@
+import { fetchWithRetry } from '../ingestion/fetch-with-retry';
+
 /**
  * Ceipal ATS connector — v1 API
  *
@@ -22,6 +24,7 @@ type CeipalTokenCache = {
   expiresAt: number;
 };
 
+// Module-level cache: resets on serverless cold starts (acceptable — re-auth is cheap)
 let tokenCache: CeipalTokenCache | null = null;
 
 function getCeipalConfig() {
@@ -49,7 +52,7 @@ async function acquireCeipalToken(): Promise<string> {
 
   const { apiKey, username, password, authUrl } = getCeipalConfig();
 
-  const response = await fetch(authUrl, {
+  const response = await fetchWithRetry(authUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ api_key: apiKey, email: username, password, json: 1 }),
@@ -133,7 +136,7 @@ export type CeipalApplicant = {
   referral_employee?: string;
   video_reference?: string;
   skype_id?: string;
-  ssn?: string;
+  // ssn intentionally excluded — PII that must not be stored or logged
   modified_date?: string;
   created_on?: string;
   created_by?: string;
@@ -165,7 +168,7 @@ export async function fetchCeipalApplicants(options?: {
     // Delay between pages to avoid connection resets
     if (page > 1) await new Promise((r) => setTimeout(r, 1_000));
 
-    const response = await fetch(url, {
+    const response = await fetchWithRetry(url, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
@@ -228,17 +231,17 @@ export function mapCeipalApplicantToCandidate(a: CeipalApplicant): Record<string
     source: 'ceipal',
     // Additional fields stored in extra_attributes via additionalFields
     additionalFields: {
-      ...(clean(a.linkedin_profile_url) ? { linkedinUrl: a.linkedin_profile_url } : {}),
-      ...(clean(a.resume_path) ? { resumeUrl: a.resume_path } : {}),
-      ...(clean(a.applicant_status) ? { applicantStatus: a.applicant_status } : {}),
-      ...(clean(a.source) ? { originalSource: a.source } : {}),
-      ...(clean(a.relocation) ? { relocation: a.relocation } : {}),
-      ...(clean(a.referred_by) ? { referredBy: a.referred_by } : {}),
-      ...(clean(a.primary_skills) ? { primarySkills: a.primary_skills } : {}),
-      ...(clean(a.technology) ? { technology: a.technology } : {}),
-      ...(clean(a.work_authorization_expiry) ? { workAuthorizationExpiry: a.work_authorization_expiry } : {}),
-      ...(clean(a.additional_comments) ? { comments: a.additional_comments } : {}),
-      ...(a.date_of_birth ? { dateOfBirth: a.date_of_birth } : {}),
+      ...(clean(a.linkedin_profile_url) ? { linkedinUrl: clean(a.linkedin_profile_url) } : {}),
+      ...(clean(a.resume_path) ? { resumeUrl: clean(a.resume_path) } : {}),
+      ...(clean(a.applicant_status) ? { applicantStatus: clean(a.applicant_status) } : {}),
+      ...(clean(a.source) ? { originalSource: clean(a.source) } : {}),
+      ...(clean(a.relocation) ? { relocation: clean(a.relocation) } : {}),
+      ...(clean(a.referred_by) ? { referredBy: clean(a.referred_by) } : {}),
+      ...(clean(a.primary_skills) ? { primarySkills: clean(a.primary_skills) } : {}),
+      ...(clean(a.technology) ? { technology: clean(a.technology) } : {}),
+      ...(clean(a.work_authorization_expiry) ? { workAuthorizationExpiry: clean(a.work_authorization_expiry) } : {}),
+      ...(clean(a.additional_comments) ? { comments: clean(a.additional_comments) } : {}),
+      ...(clean(a.date_of_birth) ? { dateOfBirth: clean(a.date_of_birth) } : {}),
     },
   };
 }
