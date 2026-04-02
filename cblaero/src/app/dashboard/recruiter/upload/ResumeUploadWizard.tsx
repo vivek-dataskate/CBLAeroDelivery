@@ -58,13 +58,15 @@ export default function ResumeUploadWizard() {
 
   const onFilesSelected = useCallback((selectedFiles: FileList | null) => {
     if (!selectedFiles) return;
-    const pdfFiles: File[] = [];
+    const ACCEPTED_EXTENSIONS = new Set([".pdf", ".doc", ".docx"]);
+    const accepted: File[] = [];
     const rejected: string[] = [];
 
     for (let i = 0; i < selectedFiles.length; i++) {
       const f = selectedFiles[i];
-      if (f.name.toLowerCase().endsWith(".pdf")) {
-        pdfFiles.push(f);
+      const ext = "." + f.name.toLowerCase().split(".").pop();
+      if (ACCEPTED_EXTENSIONS.has(ext)) {
+        accepted.push(f);
       } else {
         rejected.push(f.name);
       }
@@ -72,13 +74,13 @@ export default function ResumeUploadWizard() {
 
     if (rejected.length > 0) {
       setError(
-        `Only text-based PDF files are supported (no scanned images). Please convert other formats to PDF before uploading. Rejected: ${rejected.join(", ")}`
+        `Only PDF, DOC, and DOCX files are supported. Rejected: ${rejected.join(", ")}`
       );
     } else {
       setError(null);
     }
 
-    setFiles(pdfFiles);
+    setFiles(accepted);
     setBatchId(null);
     setResults([]);
     setCards([]);
@@ -150,11 +152,11 @@ export default function ResumeUploadWizard() {
             return;
           }
         } catch {
-          // Fall through to manual review if auto-confirm fails
+          setError("Auto-confirm failed. Please review and confirm candidates manually.");
         }
       }
 
-      // Manual review for small uploads (< 6 files)
+      // Manual review (small uploads or auto-confirm failure)
       const successCards: CandidateCard[] = successFiles.map((f: ExtractionResult) => ({
         submissionId: f.submissionId ?? "",
         filename: f.filename,
@@ -256,7 +258,7 @@ export default function ResumeUploadWizard() {
             <input
               ref={folderInputRef}
               type="file"
-              accept=".pdf"
+              accept=".pdf,.doc,.docx"
               multiple
               // @ts-expect-error — webkitdirectory is non-standard but widely supported
               webkitdirectory=""
@@ -267,14 +269,14 @@ export default function ResumeUploadWizard() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf"
+              accept=".pdf,.doc,.docx"
               multiple
               onChange={(e) => onFilesSelected(e.target.files)}
               className="text-sm text-slate-700"
             />
           )}
           <p className="mt-2 text-xs text-slate-400">
-            PDF files only (text-based, not scanned images). Select individual files or use folder mode to upload an entire directory.
+            PDF, DOC, or DOCX files. Select individual files or use folder mode to upload an entire directory.
           </p>
         </div>
 

@@ -1,17 +1,6 @@
-import { NextRequest } from 'next/server';
-import { SESSION_COOKIE_NAME } from '@/modules/auth';
+export { toErrorCode, extractSessionToken } from '@/modules/auth';
 import { shouldUseInMemoryPersistenceForTests } from '@/modules/persistence';
 import type { CandidateExtraction } from '@/features/candidate-management/application/candidate-extraction';
-
-export function toErrorCode(reason: 'unauthenticated' | 'forbidden_role' | 'tenant_mismatch'): string {
-  if (reason === 'unauthenticated') return 'unauthenticated';
-  if (reason === 'tenant_mismatch') return 'tenant_forbidden';
-  return 'forbidden';
-}
-
-export function extractSessionToken(request: NextRequest): string | null {
-  return request.cookies.get(SESSION_COOKIE_NAME)?.value ?? null;
-}
 
 export type FileStatus = 'queued' | 'processing' | 'complete' | 'failed';
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAccess, validateActiveSession } from '@/modules/auth';
 import { recordImportBatchAccessEvent } from '@/modules/audit';
 import { getSupabaseAdminClient } from '@/modules/persistence';
+import { mapToCandidateRow } from '@/modules/ingestion';
 import {
   extractSessionToken,
   finalizeInMemoryResumeBatch,
@@ -81,6 +82,13 @@ export async function POST(
       );
     }
 
+    if (batch.status === 'complete') {
+      return NextResponse.json(
+        { error: { code: 'already_confirmed', message: 'This batch has already been confirmed.' } },
+        { status: 409 }
+      );
+    }
+
     const imported = payload.confirmed.length;
     const skipped = payload.rejected.length;
     const errors = batch.files.filter((f) => f.status === 'failed').length;
@@ -115,6 +123,13 @@ export async function POST(
     return NextResponse.json(
       { error: { code: 'not_found', message: 'Batch not found.' } },
       { status: 404 }
+    );
+  }
+
+  if (batch.status === 'complete') {
+    return NextResponse.json(
+      { error: { code: 'already_confirmed', message: 'This batch has already been confirmed.' } },
+      { status: 409 }
     );
   }
 
@@ -161,39 +176,20 @@ export async function POST(
       }
     }
     const merged = Object.keys(safeEdits).length > 0 ? { ...extraction, ...safeEdits } : extraction;
-    const attachments = Array.isArray(submission.attachments) ? submission.attachments : [];
-    const resumeUrl = attachments[0]?.url ?? null;
 
-    const str = (key: string) => typeof merged[key] === 'string' ? (merged[key] as string).trim() : null;
-    const email = str('email')?.toLowerCase() ?? null;
+    const baseRow = mapToCandidateRow(
+      { ...merged, createdByActorId: session.actorId },
+      'resume_upload',
+      { ingestion_state: 'pending_enrichment' },
+    );
+    const email = baseRow.email;
 
     candidateRows.push({
+      ...baseRow,
+      tenant_id: tenantId,
       row_number: rowNum,
       raw_data: merged,
-      tenant_id: tenantId,
-      email,
-      phone: str('phone'),
-      first_name: str('firstName') ?? '',
-      last_name: str('lastName') ?? '',
-      middle_name: str('middleName'),
-      home_phone: null,
-      work_phone: null,
-      location: str('location'),
-      address: str('address'),
-      city: str('city'),
-      state: str('state'),
-      country: str('country'),
-      postal_code: str('zipCode'),
-      current_company: str('client'),
-      job_title: str('jobTitle'),
-      alternate_email: null,
-      skills: Array.isArray(merged.skills) ? merged.skills : [],
-      availability_status: 'active',
-      ingestion_state: 'pending_enrichment',
-      source: 'resume_upload',
       source_batch_id: batchId,
-      created_by_actor_id: session.actorId,
-      resume_url: resumeUrl,
       extra_attributes: {},
     });
 
@@ -236,19 +232,21 @@ export async function POST(
           .filter((s) => s.email && emailToId.has(s.email))
           .map((s) => ({ submissionId: s.submissionId, candidateId: emailToId.get(s.email!)! }));
 
-        // Batch update submissions grouped by candidate_id
+        // Batch update submissions grouped by candidate_id (parallel)
         const byCandidateId = new Map<string, string[]>();
         for (const u of updates) {
           const arr = byCandidateId.get(u.candidateId) ?? [];
           arr.push(u.submissionId);
           byCandidateId.set(u.candidateId, arr);
         }
-        for (const [candidateId, subIds] of byCandidateId) {
-          await db
-            .from('candidate_submissions')
-            .update({ candidate_id: candidateId })
-            .in('id', subIds);
-        }
+        await Promise.all(
+          [...byCandidateId.entries()].map(([candidateId, subIds]) =>
+            db
+              .from('candidate_submissions')
+              .update({ candidate_id: candidateId })
+              .in('id', subIds)
+          )
+        );
       }
     }
   }

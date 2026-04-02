@@ -64,7 +64,7 @@ export interface CandidateExtraction {
   isSubmission?: boolean;
 }
 
-export type ContentType = 'pdf' | 'email_body' | 'email_attachment';
+export type ContentType = 'pdf' | 'docx' | 'email_body' | 'email_attachment';
 
 export interface ExtractionMetadata {
   source: string;
@@ -180,6 +180,31 @@ export async function preprocessPdf(content: Buffer): Promise<string> {
   return text.slice(0, MAX_CONTENT_LENGTH);
 }
 
+// Lazy-loaded mammoth function for docx extraction — allows test injection via _setDocxParseForTest
+let _docxParseFn: ((buf: Buffer) => Promise<{ value: string }>) | null = null;
+
+async function getDocxParse(): Promise<(buf: Buffer) => Promise<{ value: string }>> {
+  if (_docxParseFn) return _docxParseFn;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const mammoth = require('mammoth');
+  _docxParseFn = (buf: Buffer) => mammoth.extractRawText({ buffer: buf });
+  return _docxParseFn!;
+}
+
+export function _setDocxParseForTest(fn: ((buf: Buffer) => Promise<{ value: string }>) | null): void {
+  _docxParseFn = fn;
+}
+
+export async function preprocessDocx(content: Buffer): Promise<string> {
+  const docxParse = await getDocxParse();
+  const result = await docxParse(content);
+  const text = (result.value as string).trim();
+  if (!text) {
+    throw new Error('This document appears to contain no extractable text');
+  }
+  return text.slice(0, MAX_CONTENT_LENGTH);
+}
+
 export function preprocessEmailBody(content: string, subject?: string): string {
   const plainBody = content
     .replace(/<[^>]+>/g, ' ')
@@ -210,6 +235,12 @@ export async function extractCandidateFromDocument(
           return { extraction: null, error: 'PDF content must be a Buffer' };
         }
         plainText = await preprocessPdf(content);
+        break;
+      case 'docx':
+        if (!(content instanceof Buffer)) {
+          return { extraction: null, error: 'DOCX content must be a Buffer' };
+        }
+        plainText = await preprocessDocx(content);
         break;
       case 'email_body':
         if (typeof content !== 'string') {

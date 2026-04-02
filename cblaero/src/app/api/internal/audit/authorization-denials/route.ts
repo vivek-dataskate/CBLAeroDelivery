@@ -1,24 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { SESSION_COOKIE_NAME, authorizeAccess, validateActiveSession } from "@/modules/auth";
+import { authorizeAccess, extractSessionToken, toErrorCode, validateActiveSession } from "@/modules/auth";
 import { listAuthorizationDenyEvents } from "@/modules/audit";
-
-function toErrorCode(reason: "unauthenticated" | "forbidden_role" | "tenant_mismatch"): string {
-  if (reason === "unauthenticated") {
-    return "unauthenticated";
-  }
-
-  if (reason === "tenant_mismatch") {
-    return "tenant_forbidden";
-  }
-
-  return "forbidden";
-}
 
 export async function GET(request: NextRequest) {
   const requestedTenantId = request.nextUrl.searchParams.get("tenantId");
-  const sessionToken = request.cookies.get(SESSION_COOKIE_NAME)?.value ?? null;
-  const session = await validateActiveSession(sessionToken);
+  const session = await validateActiveSession(extractSessionToken(request));
 
   const authz = await authorizeAccess({
     session,

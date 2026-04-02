@@ -292,3 +292,29 @@ Modified files:
 - TypeScript: clean
 - ESLint: clean (only pre-existing `@typescript-eslint/no-explicit-any` in ingestion-jobs test)
 - All ACs verified as implemented
+
+### Senior Developer Review Pass 3 (AI)
+
+**Reviewer:** Code Review Workflow — 2026-04-01
+**Outcome:** 6 issues found, 4 fixed + 2 deferred as action items
+
+#### Issues Fixed
+
+1. **[HIGH] Confirm route allows double-confirm — no batch status guard** — Added `if (batch.status === 'complete') return 409` guard in both in-memory and Supabase paths of `[batchId]/confirm/route.ts`. Added regression test verifying 409 on second confirm call.
+
+2. **[MEDIUM] Sequential `await` in submission-candidate linkage** — Replaced sequential `for...of` loop with `Promise.all` over `byCandidateId` entries in `confirm/route.ts`, parallelizing all submission-candidate update queries.
+
+3. **[MEDIUM] Auto-confirm failure falls through silently** — Empty `catch` block in `ResumeUploadWizard.tsx` now sets an error message: "Auto-confirm failed. Please review and confirm candidates manually."
+
+4. **[MEDIUM] No audit event on batch status GET route** — Added `recordImportBatchAccessEvent` (action `resume_upload_access`) to `[batchId]/route.ts` GET handler in both in-memory and Supabase paths (best-effort).
+
+#### Deferred Action Items
+
+- **[LOW] 50 concurrent LLM calls per chunk** — `Promise.all` on chunk of 50 files fires all Anthropic API calls simultaneously. Consider adding a concurrency limiter (e.g., p-limit) for production.
+- **[LOW] In-memory confirm path doesn't persist candidates** — Tests only verify response shape, not actual candidate records. Reduced test fidelity compared to CSV upload suite.
+
+#### Test Results After Fixes
+
+- 19 resume-upload tests passing (+1 new double-confirm guard test)
+- TypeScript: clean
+- All ACs verified as implemented

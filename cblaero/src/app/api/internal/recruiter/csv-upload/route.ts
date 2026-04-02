@@ -8,6 +8,8 @@ import {
 } from "@/modules/persistence";
 import {
   type CanonicalField,
+  CANONICAL_FIELDS,
+  EMAIL_REGEX,
   FIELD_ALIASES,
   inferFieldForHeader,
   normalizeHeaderKey,
@@ -48,30 +50,7 @@ type PreparedErrorRow = {
   errorDetail: string;
 };
 
-const CANONICAL_FIELDS = new Set<CanonicalField>([
-  "first_name",
-  "last_name",
-  "middle_name",
-  "email",
-  "alternate_email",
-  "mobile",
-  "home_phone",
-  "work_phone",
-  "address",
-  "city",
-  "state",
-  "country",
-  "postal_code",
-  "current_company",
-  "job_title",
-  "skills",
-  "availability_status",
-  "(ignore)",
-]);
-
 const BLOCKED_EXTRA_ATTRIBUTE_KEYS = new Set(["password", "token", "secret", "api_key"]);
-
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function parseColumnMap(input: string | null): ColumnMap {
   if (!input) {
