@@ -5,12 +5,11 @@ import { recordImportBatchAccessEvent } from "@/modules/audit";
 import { shouldUseInMemoryPersistenceForTests } from "@/modules/persistence";
 import { getImportBatchById } from "@/features/candidate-management/infrastructure/import-batch-repository";
 
-import { findCsvUploadBatchForTenant, toBatchStatusPayload, type CsvUploadBatchRow } from "../shared";
+import { findCsvUploadBatchForTenant, resolveRequestTenantId, toBatchStatusPayload, type CsvUploadBatchRow } from "../shared";
 
 export const GET = withAuth<{ batchId: string }>(async ({ session, params, traceId, request }) => {
   const { batchId } = params;
-  const requestedTenantId = request.headers.get("x-active-client-id")?.trim() || null;
-  const tenantId = requestedTenantId ?? session.tenantId;
+  const tenantId = resolveRequestTenantId(session, request);
 
   if (shouldUseInMemoryPersistenceForTests()) {
     const batch = findCsvUploadBatchForTenant(batchId, tenantId);
@@ -45,11 +44,16 @@ export const GET = withAuth<{ batchId: string }>(async ({ session, params, trace
     );
   }
 
+  const VALID_STATUSES: Set<string> = new Set(["validating", "running", "paused_on_error_threshold", "complete", "rolled_back"]);
+  const safeStatus: CsvUploadBatchRow["status"] = VALID_STATUSES.has(batch.status)
+    ? (batch.status as CsvUploadBatchRow["status"])
+    : "running";
+
   const batchRow: CsvUploadBatchRow = {
     id: batch.id,
     tenant_id: batch.tenantId,
     source: "csv_upload",
-    status: batch.status as CsvUploadBatchRow["status"],
+    status: safeStatus,
     total_rows: batch.totalRows,
     imported: batch.imported,
     skipped: batch.skipped,
@@ -68,8 +72,8 @@ export const GET = withAuth<{ batchId: string }>(async ({ session, params, trace
       batchId,
       action: "read_import_batch_detail",
     });
-  } catch {
-    // Audit is best-effort — do not block status reads
+  } catch (err) {
+    console.error(JSON.stringify({ level: "error", module: "recruiter/csv-upload/status", action: "audit_event", traceId, batchId, error: err instanceof Error ? err.message : String(err) }));
   }
 
   return NextResponse.json({ data: toBatchStatusPayload(batchRow), meta: {} });

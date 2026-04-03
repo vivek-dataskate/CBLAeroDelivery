@@ -23,7 +23,7 @@ import {
 import {
   computeRowHash,
   loadRecentFingerprints,
-  recordFingerprint,
+  recordFingerprintBatch,
 } from "@/features/candidate-management/infrastructure/fingerprint-repository";
 
 import {
@@ -36,6 +36,7 @@ import {
   listCsvUploadErrorsForTest,
   markInMemoryCsvBatchRunning,
   MAX_EXTRA_ATTRIBUTE_BYTES,
+  resolveRequestTenantId,
   MAX_EXTRA_ATTRIBUTE_KEYS,
   MAX_RECRUITER_CSV_ROWS,
   toBatchStatusPayload,
@@ -341,9 +342,15 @@ async function processSupabaseBatch(input: {
   const allCandidates = input.candidates.map(toRpcCandidate);
   const allErrors = input.errors.map(toRpcError);
 
-  for (let start = 0; start < Math.max(allCandidates.length, 1); start += CSV_PROCESSING_CHUNK_SIZE) {
+  if (allCandidates.length === 0 && allErrors.length === 0) {
+    return { imported: 0, skipped: 0, errors: 0 };
+  }
+
+  // Chunk candidates and errors independently so large error sets are not truncated
+  const maxLen = Math.max(allCandidates.length, allErrors.length);
+  for (let start = 0; start < maxLen; start += CSV_PROCESSING_CHUNK_SIZE) {
     const candidateChunk = allCandidates.slice(start, start + CSV_PROCESSING_CHUNK_SIZE);
-    const errorChunk = start === 0 ? allErrors : [];
+    const errorChunk = allErrors.slice(start, start + CSV_PROCESSING_CHUNK_SIZE);
 
     const result = await processImportChunk({
       batchId: input.batchId,
@@ -414,13 +421,13 @@ function processInMemoryBatch(input: {
 }
 
 export const POST = withAuth(async ({ session, request, traceId }) => {
-  const requestedTenantId = request.headers.get("x-active-client-id")?.trim() || null;
-  const tenantId = requestedTenantId ?? session.tenantId;
+  const tenantId = resolveRequestTenantId(session, request);
 
   let formData: FormData;
   try {
     formData = await request.formData();
-  } catch {
+  } catch (err) {
+    console.warn(JSON.stringify({ level: "warn", module: "recruiter/csv-upload", action: "parse_form_data", traceId, error: err instanceof Error ? err.message : String(err) }));
     return NextResponse.json(
       { error: { code: "invalid_form_data", message: "Expected multipart/form-data payload." } },
       { status: 400 },
@@ -465,7 +472,8 @@ export const POST = withAuth(async ({ session, request, traceId }) => {
   let columnMap: ColumnMap = {};
   try {
     columnMap = parseColumnMap((formData.get("columnMap") as string | null) ?? null);
-  } catch {
+  } catch (err) {
+    console.warn(JSON.stringify({ level: "warn", module: "recruiter/csv-upload", action: "parse_column_map", traceId, error: err instanceof Error ? err.message : String(err) }));
     return NextResponse.json(
       {
         error: {
@@ -529,7 +537,8 @@ export const POST = withAuth(async ({ session, request, traceId }) => {
       startedAtIso = batch.startedAt;
 
       await updateImportBatch(batchId, { status: "running" });
-    } catch {
+    } catch (err) {
+      console.error(JSON.stringify({ level: "error", module: "recruiter/csv-upload", action: "create_batch", traceId, tenantId, error: err instanceof Error ? err.message : String(err) }));
       return NextResponse.json(
         { error: { code: "database_error", message: "Failed to create import batch." } },
         { status: 500 },
@@ -552,14 +561,13 @@ export const POST = withAuth(async ({ session, request, traceId }) => {
   prepared.candidates = prepared.candidates.filter((c) => {
     const hash = computeRowHash(c.email, c.first_name, c.last_name, c.phone);
     if (knownHashes.has(hash)) {
-      console.log(JSON.stringify({ event: "fingerprint_hit", type: "csv_row_hash", source: "csv", tenantId, hash: hash.slice(0, 12) }));
       return false;
     }
     return true;
   });
   const skippedByFingerprint = originalCount - prepared.candidates.length;
   if (skippedByFingerprint > 0) {
-    console.log(`[csv-upload] ${skippedByFingerprint} rows skipped via fingerprint gate`);
+    console.log(JSON.stringify({ level: "info", module: "recruiter/csv-upload", action: "fingerprint_gate", traceId, batchId, skipped: skippedByFingerprint, total: originalCount, timestamp: new Date().toISOString() }));
   }
 
   try {
@@ -575,11 +583,29 @@ export const POST = withAuth(async ({ session, request, traceId }) => {
           errors: prepared.errors,
         });
 
-    // Record fingerprints for all prepared candidates — per-row errors are tracked
-    // separately in import_row_errors; fingerprinting prevents re-processing on re-upload
+    // Record fingerprints for processed candidates in a single batch upsert.
+    // Isolated from the main try/catch: fingerprint failure must NOT trigger candidate rollback.
     if (prepared.candidates.length > 0) {
-      for (const c of prepared.candidates) {
-        await recordFingerprint({ tenantId, type: "csv_row_hash", hash: computeRowHash(c.email, c.first_name, c.last_name, c.phone), source: "csv" });
+      try {
+        await recordFingerprintBatch(
+          prepared.candidates.map((c) => ({
+            tenantId,
+            type: "csv_row_hash" as const,
+            hash: computeRowHash(c.email, c.first_name, c.last_name, c.phone),
+            source: "csv" as const,
+          })),
+        );
+      } catch (fpError) {
+        console.error(JSON.stringify({
+          level: "error",
+          module: "recruiter/csv-upload",
+          action: "fingerprint_batch_record",
+          traceId,
+          batchId,
+          candidateCount: prepared.candidates.length,
+          error: fpError instanceof Error ? fpError.message : String(fpError),
+          timestamp: new Date().toISOString(),
+        }));
       }
     }
 

@@ -148,6 +148,13 @@ export function splitCsvRows(text: string): string[] {
     const char = text[i];
 
     if (char === '"') {
+      // Handle RFC 4180 escaped double-quotes ("") inside quoted fields.
+      // If we're inside quotes and the next char is also ", this is an escape — not a close.
+      if (inQuotes && text[i + 1] === '"') {
+        current += '""';
+        i += 1; // skip the second "
+        continue;
+      }
       inQuotes = !inQuotes;
       current += char;
       continue;

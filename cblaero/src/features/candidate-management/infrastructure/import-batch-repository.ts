@@ -11,6 +11,7 @@ export type ImportBatchStatus =
   | "validating"
   | "processing"
   | "running"
+  | "paused_on_error_threshold"
   | "complete"
   | "rolled_back";
 

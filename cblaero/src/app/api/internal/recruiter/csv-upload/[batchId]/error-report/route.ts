@@ -7,7 +7,7 @@ import {
 } from "@/modules/persistence";
 import { getImportBatchById, listImportRowErrors } from "@/features/candidate-management/infrastructure/import-batch-repository";
 
-import { findCsvUploadBatchForTenant, listCsvUploadErrorsForBatch } from "../../shared";
+import { findCsvUploadBatchForTenant, listCsvUploadErrorsForBatch, resolveRequestTenantId } from "../../shared";
 
 type ImportRowErrorRow = {
   row_number: number;
@@ -45,8 +45,7 @@ function toCsv(errors: ImportRowErrorRow[]): string {
 
 export const GET = withAuth<{ batchId: string }>(async ({ session, params, traceId, request }) => {
   const { batchId } = params;
-  const requestedTenantId = request.headers.get("x-active-client-id")?.trim() || null;
-  const tenantId = requestedTenantId ?? session.tenantId;
+  const tenantId = resolveRequestTenantId(session, request);
 
   let errors: ImportRowErrorRow[] = [];
 
@@ -111,13 +110,14 @@ export const GET = withAuth<{ batchId: string }>(async ({ session, params, trace
   }
 
   const csv = toCsv(errors);
-  const fileName = `error-report-${batchId.slice(0, 8)}.csv`;
+  const safePrefix = batchId.slice(0, 8).replace(/[^a-zA-Z0-9._-]/g, "_");
+  const fileName = `error-report-${safePrefix}.csv`;
 
   return new NextResponse(csv, {
     status: 200,
     headers: {
       "content-type": "text/csv; charset=utf-8",
-      "content-disposition": `attachment; filename=\"${fileName}\"`,
+      "content-disposition": `attachment; filename="${fileName}"`,
       "cache-control": "no-store",
     },
   });

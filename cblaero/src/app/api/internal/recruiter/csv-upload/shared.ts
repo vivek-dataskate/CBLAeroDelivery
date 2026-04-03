@@ -1,4 +1,22 @@
-export { toErrorCode, extractSessionToken } from "@/modules/auth";
+import { shouldUseInMemoryPersistenceForTests } from "@/modules/persistence";
+
+/**
+ * Resolves the effective tenant ID for a request. Uses the x-active-client-id header
+ * only if it is present in the session's clientIds allowlist; otherwise falls back to
+ * session.tenantId. withAuth already validates this header via authorizeAccess, but
+ * business logic must not re-derive tenantId from the raw header independently.
+ */
+export function resolveRequestTenantId(
+  session: { tenantId: string; clientIds?: string[] },
+  request: { headers: { get(name: string): string | null } },
+): string {
+  const requested = request.headers.get("x-active-client-id")?.trim() || null;
+  if (requested) {
+    const allowed = session.clientIds ?? [session.tenantId];
+    if (allowed.includes(requested)) return requested;
+  }
+  return session.tenantId;
+}
 
 export const MAX_RECRUITER_CSV_ROWS = 10_000;
 export const MAX_EXTRA_ATTRIBUTE_KEYS = 64;
@@ -81,6 +99,7 @@ export function listCsvCandidatesForTest(): CsvCandidateRow[] {
 }
 
 export function clearCsvUploadStoreForTest(): void {
+  if (!shouldUseInMemoryPersistenceForTests()) return;
   inMemoryBatches.length = 0;
   inMemoryRowErrors.length = 0;
   inMemoryCandidates.length = 0;
