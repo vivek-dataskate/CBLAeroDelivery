@@ -172,7 +172,7 @@ export default function CsvUploadWizard() {
 
     setFile(nextFile);
     setParsed(parsedCsv);
-    setPreviewRows(parsedCsv.rows.slice(0, 1));
+    setPreviewRows(parsedCsv.rows.slice(0, 5));
     setMapping(inferMapping(parsedCsv.headers));
     setStep(2);
   };

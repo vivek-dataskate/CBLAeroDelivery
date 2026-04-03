@@ -243,6 +243,27 @@ GPT-5.3-Codex
 - [x] L1: Added `UploadModeSelector.tsx` and `@/modules/csv/index.ts` to story File List
 - [x] L2: Added 401 (unauthenticated) and 403 (compliance-officer) auth tests to `[batchId]/__tests__/route.test.ts` — test count 16 → 18
 
+### Review-Driven Fixes (2026-04-03, code-review pass 5 — adversarial standards audit)
+
+- [x] H1: Fixed cross-tenant privilege escalation — all 3 routes now use `resolveRequestTenantId()` which validates `x-active-client-id` against `session.clientIds` instead of trusting the raw header
+- [x] H2: Replaced sequential `recordFingerprint()` loop (N DB calls) with single `recordFingerprintBatch()` upsert — prevents timeout at 10K rows
+- [x] H3: Isolated fingerprint recording from rollback path �� fingerprint failure no longer triggers compensating candidate delete
+- [x] H4: Fixed `splitCsvRows()` to handle RFC 4180 `""` escape sequences — previously corrupted rows containing literal double-quotes
+- [x] H5: Added `paused_on_error_threshold` to `ImportBatchStatus` type in repository — was missing, causing type/contract mismatch
+- [x] H6: Added `shouldUseInMemoryPersistenceForTests()` mode guard to `clearCsvUploadStoreForTest()` — previously unguarded per §15
+- [x] H7: Fixed error row chunking — errors now distributed across chunks instead of pinned to chunk-0, preventing silent truncation of large error sets
+- [x] H8: Registered `@/modules/csv` in architecture.md §Implemented Capabilities and development-standards.md §18 �� was missing per §20
+- [x] H9: Sanitized `batchId` in `content-disposition` header — strips non-alphanumeric chars to prevent header injection
+- [x] H10: Removed redundant `authorizeAccess(null)` call before redirect in `page.tsx` — was a crash risk
+- [x] M3: Added logging to all bare `catch {}` blocks in route.ts and [batchId]/route.ts — violating §12
+- [x] M4: Added runtime status validation in [batchId]/route.ts — unsafe cast replaced with allowlist guard
+- [x] M8: Standardized all fingerprint/batch logging to structured JSON with `traceId` — was inconsistent per §17/§23
+- [x] M9: Fixed `BatchProgressCard` to stop polling on 401/403 responses — was flooding server indefinitely
+- [x] M11: Increased preview rows from 1 to 5 in `CsvUploadWizard.tsx`
+- [x] M14: Changed "Updated" label to "Skipped" in `BatchProgressCard.tsx` — aligned with API field semantics
+- [x] Removed dead re-exports (`toErrorCode`, `extractSessionToken`) from `shared.ts`
+- [x] Added `recordFingerprintBatch()` and `resolveRequestTenantId()` to architecture.md capability registry
+
 ### Review-Driven Action Items (2026-03-30)
 
 - [ ] Add tests for audit event emission (verify `recordImportBatchAccessEvent` on upload and error report download)
