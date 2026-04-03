@@ -515,7 +515,7 @@ Before writing a new helper, check if one already exists:
 | Prompt version listing | `listPromptVersions()` | `@/modules/ai/prompt-registry` |
 | LLM extraction | `extractCandidateFromDocument()` | `@/features/candidate-management/application/candidate-extraction` |
 | Batch import processing | `process_import_chunk` RPC | `supabase/schema.sql` |
-| Import batch CRUD | `createImportBatch()`, `getImportBatchById()`, `updateImportBatch()`, `listImportBatchesByTenant()` | `@/features/candidate-management/infrastructure/import-batch-repository` |
+| Import batch CRUD | `createImportBatch()`, `getImportBatchById()`, `updateImportBatch()`, `listImportBatchesByTenant()`, `getLatestMigrationBatch()` | `@/features/candidate-management/infrastructure/import-batch-repository` |
 | Import chunk RPC wrapper | `processImportChunk()` | `@/features/candidate-management/infrastructure/import-batch-repository` |
 | Import row errors | `listImportRowErrors()` | `@/features/candidate-management/infrastructure/import-batch-repository` |
 | Submission evidence CRUD | `insertSubmission()`, `findSubmissionByMessageId()`, `listSubmissionsByBatch()` | `@/features/candidate-management/infrastructure/submission-repository` |
@@ -523,6 +523,7 @@ Before writing a new helper, check if one already exists:
 | Resume storage upload | `uploadResumeToStorage()` | `@/features/candidate-management/infrastructure/submission-repository` |
 | Candidate email lookup | `findCandidateIdsByEmails()` | `@/features/candidate-management/infrastructure/candidate-repository` |
 | Candidate source stats | `countCandidatesBySource()`, `getLastCandidateUpdateBySource()` | `@/features/candidate-management/infrastructure/candidate-repository` |
+| Import batch audit | `recordImportBatchAccessEvent()`, `listImportBatchAccessEvents()` | `@/modules/audit` |
 | Cross-client confirmation | `issueCrossClientConfirmationToken()`, `verifyCrossClientConfirmationToken()`, `consumeCrossClientConfirmationToken()` | `@/modules/auth/cross-client-confirmation` |
 
 ### If 2+ files need the same logic, extract to a shared module

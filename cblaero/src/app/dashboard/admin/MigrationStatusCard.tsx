@@ -1,22 +1,15 @@
 import Link from "next/link";
 
-import { getSupabaseAdminClient, shouldUseInMemoryPersistenceForTests } from "@/modules/persistence";
 import { recordImportBatchAccessEvent } from "@/modules/audit";
+import {
+  getLatestMigrationBatch,
+  type ImportBatch,
+} from "@/features/candidate-management/infrastructure/import-batch-repository";
 
 type MigrationStatusCardProps = {
   tenantId: string;
   actorId?: string;
-};
-
-type ImportBatchSummary = {
-  id: string;
-  source: string;
-  status: string;
-  totalRows: number;
-  imported: number;
-  errors: number;
-  startedAt: string;
-  completedAt: string | null;
+  traceId?: string;
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -65,60 +58,51 @@ function formatElapsedMs(startedAt: string, completedAt: string | null): string 
   return `${seconds}s`;
 }
 
-async function fetchLatestMigrationBatch(tenantId: string): Promise<ImportBatchSummary | null> {
-  if (shouldUseInMemoryPersistenceForTests()) {
-    return null;
-  }
-
-  const client = getSupabaseAdminClient();
-  const { data } = await client
-    .from("import_batch")
-    .select("id, source, status, total_rows, imported, errors, started_at, completed_at")
-    .eq("tenant_id", tenantId)
-    .eq("source", "migration")
-    .order("started_at", { ascending: false })
-    .limit(1);
-
-  if (!data || data.length === 0) return null;
-
-  const row = data[0];
-  return {
-    id: row.id as string,
-    source: row.source as string,
-    status: row.status as string,
-    totalRows: row.total_rows as number,
-    imported: row.imported as number,
-    errors: row.errors as number,
-    startedAt: row.started_at as string,
-    completedAt: row.completed_at as string | null,
-  };
-}
-
 export default async function MigrationStatusCard({
   tenantId,
   actorId,
+  traceId: parentTraceId,
 }: MigrationStatusCardProps) {
-  const batch = await fetchLatestMigrationBatch(tenantId);
+  // Use parent page's traceId for correlation chain; fall back to component-level UUID
+  const traceId = parentTraceId ?? crypto.randomUUID();
 
+  // Audit BEFORE data fetch so access is recorded even if fetch fails
   if (actorId) {
-    const traceId = crypto.randomUUID();
     try {
       await recordImportBatchAccessEvent({
         traceId,
         actorId,
         tenantId,
-        batchId: batch?.id ?? null,
+        batchId: null,
         action: "list_import_batches",
       });
     } catch (error) {
-      console.error("[dashboard/admin] failed to persist audit event; rendering page anyway", {
+      console.error(JSON.stringify({
+        level: "error",
+        module: "dashboard/admin/MigrationStatusCard",
+        action: "audit_event_persist",
         traceId,
         actorId,
         tenantId,
-        batchId: batch?.id ?? null,
-        error,
-      });
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: new Date().toISOString(),
+      }));
     }
+  }
+
+  let batch: Awaited<ReturnType<typeof getLatestMigrationBatch>> = null;
+  try {
+    batch = await getLatestMigrationBatch(tenantId);
+  } catch (error) {
+    console.error(JSON.stringify({
+      level: "error",
+      module: "dashboard/admin/MigrationStatusCard",
+      action: "fetch_latest_migration_batch",
+      traceId,
+      tenantId,
+      error: error instanceof Error ? error.message : String(error),
+      timestamp: new Date().toISOString(),
+    }));
   }
 
   if (!batch) {
