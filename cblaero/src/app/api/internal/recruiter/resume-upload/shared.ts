@@ -1,4 +1,3 @@
-export { toErrorCode, extractSessionToken } from '@/modules/auth';
 import { shouldUseInMemoryPersistenceForTests } from '@/modules/persistence';
 import type { CandidateExtraction } from '@/features/candidate-management/application/candidate-extraction';
 
@@ -70,6 +69,7 @@ export function finalizeInMemoryResumeBatch(
 }
 
 export function clearResumeUploadStoreForTest(): void {
+  if (!shouldUseInMemoryPersistenceForTests()) return;
   inMemoryBatches.splice(0);
 }
 

@@ -12,9 +12,11 @@ import {
 import {
   type ResumeFileResult,
 } from './shared';
+import { resolveRequestTenantId } from '@/app/api/internal/recruiter/csv-upload/shared';
 
 const BATCH_SIZE = 50;
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per file
+const MAX_FILES_PER_UPLOAD = 200;
 
 function isPdfFile(file: File): boolean {
   return (
@@ -24,14 +26,13 @@ function isPdfFile(file: File): boolean {
 }
 
 export const POST = withAuth(async ({ session, request, traceId }) => {
-  const requestedTenantId =
-    request.headers.get('x-active-client-id')?.trim() || null;
-  const tenantId = requestedTenantId ?? session.tenantId;
+  const tenantId = resolveRequestTenantId(session, request);
 
   let formData: FormData;
   try {
     formData = await request.formData();
-  } catch {
+  } catch (err) {
+    console.warn(JSON.stringify({ level: 'warn', module: 'recruiter/resume-upload', action: 'parse_form_data', traceId, error: err instanceof Error ? err.message : String(err) }));
     return NextResponse.json(
       { error: { code: 'invalid_form_data', message: 'Expected multipart/form-data payload.' } },
       { status: 400 }
@@ -49,6 +50,18 @@ export const POST = withAuth(async ({ session, request, traceId }) => {
     return NextResponse.json(
       { error: { code: 'missing_file', message: 'At least one PDF file is required.' } },
       { status: 400 }
+    );
+  }
+
+  if (files.length > MAX_FILES_PER_UPLOAD) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'too_many_files',
+          message: `Maximum ${MAX_FILES_PER_UPLOAD} files per upload. You submitted ${files.length}.`,
+        },
+      },
+      { status: 422 }
     );
   }
 
@@ -92,7 +105,8 @@ export const POST = withAuth(async ({ session, request, traceId }) => {
       createdByActorId: session.actorId,
     });
     batchId = batch.id;
-  } catch {
+  } catch (err) {
+    console.error(JSON.stringify({ level: 'error', module: 'recruiter/resume-upload', action: 'create_batch', traceId, tenantId, error: err instanceof Error ? err.message : String(err) }));
     return NextResponse.json(
       { error: { code: 'database_error', message: 'Failed to create import batch.' } },
       { status: 500 }
@@ -115,7 +129,7 @@ export const POST = withAuth(async ({ session, request, traceId }) => {
           // Fingerprint gate: skip LLM extraction if this exact file was already processed
           fileHash = computeFileHash(buffer);
           if (await isAlreadyProcessed(tenantId, 'file_sha256', fileHash)) {
-            console.log(JSON.stringify({ event: 'fingerprint_hit', type: 'file_sha256', source: 'resume_upload', tenantId, hash: fileHash.slice(0, 12) }));
+            console.log(JSON.stringify({ level: 'info', module: 'recruiter/resume-upload', action: 'fingerprint_hit', traceId, tenantId, hash: fileHash.slice(0, 12), timestamp: new Date().toISOString() }));
             return {
               filename: file.name,
               status: 'skipped',
@@ -162,7 +176,7 @@ export const POST = withAuth(async ({ session, request, traceId }) => {
             tenantId,
             source: 'resume_upload',
             importBatchId: batchId,
-            extractedData: result.extraction as unknown as Record<string, unknown>,
+            extractedData: result.extraction ? { ...result.extraction } as Record<string, unknown> : null,
             extractionModel: 'claude-haiku-4-5-20251001',
             attachments: [{ filename: file.name, url: storageUrl, size: buffer.length }],
           });
@@ -181,7 +195,7 @@ export const POST = withAuth(async ({ session, request, traceId }) => {
           const message = err instanceof Error ? err.message : String(err);
           // Record failed fingerprint if hash was computed (allows retry on next upload)
           if (typeof fileHash === 'string') {
-            recordFingerprint({ tenantId, type: 'file_sha256', hash: fileHash, source: 'resume_upload', status: 'failed' }).catch(() => {});
+            recordFingerprint({ tenantId, type: 'file_sha256', hash: fileHash, source: 'resume_upload', status: 'failed' }).catch((e) => console.warn(JSON.stringify({ level: 'warn', module: 'recruiter/resume-upload', action: 'record_failed_fingerprint', traceId, error: e instanceof Error ? e.message : String(e) })));
           }
           return {
             filename: file.name,
@@ -195,6 +209,16 @@ export const POST = withAuth(async ({ session, request, traceId }) => {
 
     fileResults.push(...chunkResults);
   }
+
+  const completedFiles = fileResults.filter((f) => f.status === 'complete').length;
+  const skippedFiles = fileResults.filter((f) => f.status === 'skipped').length;
+  const failedFiles = fileResults.filter((f) => f.status === 'failed').length;
+  console.log(JSON.stringify({
+    level: 'info', module: 'recruiter/resume-upload', action: 'batch_complete',
+    traceId, batchId, totalFiles: files.length, complete: completedFiles, skipped: skippedFiles,
+    failed: failedFiles, llmCalls: completedFiles + failedFiles - skippedFiles,
+    timestamp: new Date().toISOString(),
+  }));
 
   await recordImportBatchAccessEvent({
     traceId,

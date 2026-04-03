@@ -150,11 +150,12 @@ export default function ResumeUploadWizard() {
             setSummary({
               imported: confirmPayload.data.imported,
               skipped: confirmPayload.data.skipped,
-              errors: failedFiles.length,
+              errors: confirmPayload.data.errors ?? failedFiles.length,
             });
             setStep(3);
             return;
           }
+          setError(confirmPayload?.error?.message ?? "Auto-confirm failed. Please review and confirm candidates manually.");
         } catch {
           setError("Auto-confirm failed. Please review and confirm candidates manually.");
         }
@@ -292,7 +293,7 @@ export default function ResumeUploadWizard() {
           </div>
         )}
 
-        {error && step === 1 && <p className="mt-3 text-sm text-rose-600">{error}</p>}
+        {error && <p className="mt-3 text-sm text-rose-600">{error}</p>}
 
         <button
           type="button"
