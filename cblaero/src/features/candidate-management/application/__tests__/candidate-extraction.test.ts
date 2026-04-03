@@ -24,6 +24,7 @@ vi.mock('@anthropic-ai/sdk', () => ({
             }),
           },
         ],
+        usage: { input_tokens: 50, output_tokens: 20 },
       }),
     },
   })),

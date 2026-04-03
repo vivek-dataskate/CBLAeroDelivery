@@ -1071,10 +1071,20 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 | `acquireGraphToken()` | `src/modules/email/graph-auth.ts` | Microsoft Graph API calls (email, OneDrive, calendar). Caches token with 60s buffer. |
 | `acquireCeipalToken()` | `src/modules/ats/ceipal.ts` (internal) | Ceipal API calls. Caches token with 5min buffer. Called internally by `fetchCeipalApplicants`. |
 
+### AI Inference Service
+| Capability | Location | When to Use |
+|-----------|----------|-------------|
+| `getSharedAnthropicClient()` | `src/modules/ai/client.ts` | Shared Anthropic SDK singleton. Returns null if no API key. ALL LLM usage must go through this — never `new Anthropic()` directly. |
+| `callLlm(model, systemPrompt, userContent, opts)` | `src/modules/ai/inference.ts` | Centralized LLM call wrapper with token counting, cost estimation, structured logging, anomaly detection, and usage persistence. Returns `{ text, inputTokens, outputTokens, estimatedCostUsd, durationMs, model }`. |
+| `recordLlmUsage(entry)` | `src/modules/ai/usage-log.ts` | Persist per-call token counts and estimated cost to `llm_usage_log` table. Called automatically by `callLlm()` (fire-and-forget). |
+| `loadPrompt(name, version?)` | `src/modules/ai/prompt-registry.ts` | Load prompt from `prompt_registry` table (DB-first, in-memory fallback). Returns `{ name, version, prompt_text, model }`. |
+| `registerFallbackPrompt(record)` | `src/modules/ai/prompt-registry.ts` | Register inline fallback prompt for when DB is unavailable (tests, no Supabase). |
+| `clearClientForTest()` | `src/modules/ai/client.ts` | Reset Anthropic singleton for test isolation. |
+
 ### Candidate Data Pipeline
 | Capability | Location | When to Use |
 |-----------|----------|-------------|
-| `extractCandidateFromDocument(input, type, opts)` | `src/features/candidate-management/application/candidate-extraction.ts` | LLM extraction from any document type (email, PDF, DOCX). Returns structured candidate data. Haiku 4.5, 10K char limit. |
+| `extractCandidateFromDocument(input, type, opts)` | `src/features/candidate-management/application/candidate-extraction.ts` | LLM extraction from any document type (email, PDF, DOCX). Uses `callLlm()` from `modules/ai/`. Haiku 4.5, 10K char limit. |
 | `extractCandidateFromEmail(body, subject)` | `src/modules/email/nlp-extract-and-upload.ts` | Thin wrapper for email-specific extraction. Delegates to `extractCandidateFromDocument`. |
 | `mapToCandidateRow(record, source, overrides?)` | `src/modules/ingestion/index.ts` | Maps any extracted candidate data to `candidates` table columns. Handles all 30+ fields. |
 | `mapCeipalApplicantToCandidate(applicant)` | `src/modules/ats/ceipal.ts` | Maps Ceipal API response to ingestion candidate shape. |
