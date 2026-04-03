@@ -1,43 +1,13 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAccess, validateActiveSession } from '@/modules/auth';
+import { NextResponse } from 'next/server';
+import { withAuth } from '@/modules/auth';
 import { recordImportBatchAccessEvent } from '@/modules/audit';
 import { getImportBatchById } from '@/features/candidate-management/infrastructure/import-batch-repository';
 import { listSubmissionsByBatch } from '@/features/candidate-management/infrastructure/submission-repository';
-import { extractSessionToken, toErrorCode } from '../shared';
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ batchId: string }> }
-) {
-  const { batchId } = await params;
-  const traceId = request.headers.get('x-trace-id') ?? crypto.randomUUID();
-  const session = await validateActiveSession(extractSessionToken(request));
+export const GET = withAuth<{ batchId: string }>(async ({ session, params, traceId, request }) => {
+  const { batchId } = params;
   const requestedTenantId =
-    request.headers.get('x-active-client-id')?.trim() || session?.tenantId || null;
-
-  const authz = await authorizeAccess({
-    session,
-    action: 'recruiter:csv-upload',
-    path: request.nextUrl.pathname,
-    method: request.method,
-    requestedTenantId,
-    traceId,
-  });
-
-  if (!authz.allowed) {
-    return NextResponse.json(
-      { error: { code: toErrorCode(authz.reason), message: 'Access denied.' } },
-      { status: authz.status }
-    );
-  }
-
-  if (!session) {
-    return NextResponse.json(
-      { error: { code: 'unauthenticated', message: 'Authentication required.' } },
-      { status: 401 }
-    );
-  }
-
+    request.headers.get('x-active-client-id')?.trim() || null;
   const tenantId = requestedTenantId ?? session.tenantId;
 
   const batch = await getImportBatchById(batchId, tenantId);
@@ -91,4 +61,4 @@ export async function GET(
     },
     meta: {},
   });
-}
+}, { action: 'recruiter:csv-upload' });
