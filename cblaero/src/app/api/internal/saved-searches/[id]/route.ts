@@ -1,47 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
-import {
-  authorizeAccess,
-  extractSessionToken,
-  toErrorCode,
-  validateActiveSession,
-} from "@/modules/auth";
+import { withAuth } from "@/modules/auth";
 import {
   updateSavedSearch,
   deleteSavedSearch,
   SavedSearchNotFoundError,
 } from "@/features/candidate-management/infrastructure/saved-search-repository";
 
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const { id } = await params;
-  const traceId = request.headers.get("x-trace-id") ?? crypto.randomUUID();
-  const session = await validateActiveSession(extractSessionToken(request));
-
-  const authz = await authorizeAccess({
-    session,
-    action: "candidate:write",
-    path: request.nextUrl.pathname,
-    method: request.method,
-    traceId,
-  });
-
-  if (!authz.allowed) {
-    return NextResponse.json(
-      { error: { code: toErrorCode(authz.reason), message: "Access denied." } },
-      { status: authz.status },
-    );
-  }
-
-  if (!session) {
-    return NextResponse.json(
-      { error: { code: "unauthenticated", message: "Authentication is required." } },
-      { status: 401 },
-    );
-  }
-
+export const PATCH = withAuth<{ id: string }>(async ({ session, request, params }) => {
   let body: { name?: string; digestEnabled?: boolean };
   try {
     body = await request.json();
@@ -66,7 +32,7 @@ export async function PATCH(
   }
 
   try {
-    const updated = await updateSavedSearch(id, session.actorId, session.tenantId, {
+    const updated = await updateSavedSearch(params.id, session.actorId, session.tenantId, {
       name: body.name?.trim(),
       digestEnabled: body.digestEnabled,
     });
@@ -80,40 +46,11 @@ export async function PATCH(
     }
     throw err;
   }
-}
+}, { action: "candidate:write" });
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const { id } = await params;
-  const traceId = request.headers.get("x-trace-id") ?? crypto.randomUUID();
-  const session = await validateActiveSession(extractSessionToken(request));
-
-  const authz = await authorizeAccess({
-    session,
-    action: "candidate:write",
-    path: request.nextUrl.pathname,
-    method: request.method,
-    traceId,
-  });
-
-  if (!authz.allowed) {
-    return NextResponse.json(
-      { error: { code: toErrorCode(authz.reason), message: "Access denied." } },
-      { status: authz.status },
-    );
-  }
-
-  if (!session) {
-    return NextResponse.json(
-      { error: { code: "unauthenticated", message: "Authentication is required." } },
-      { status: 401 },
-    );
-  }
-
+export const DELETE = withAuth<{ id: string }>(async ({ session, params }) => {
   try {
-    await deleteSavedSearch(id, session.actorId, session.tenantId);
+    await deleteSavedSearch(params.id, session.actorId, session.tenantId);
     return NextResponse.json({ data: { deleted: true } });
   } catch (err) {
     if (err instanceof SavedSearchNotFoundError) {
@@ -124,4 +61,4 @@ export async function DELETE(
     }
     throw err;
   }
-}
+}, { action: "candidate:write" });

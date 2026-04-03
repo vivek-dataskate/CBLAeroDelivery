@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
-import { authorizeAccess, extractSessionToken, toErrorCode, validateActiveSession } from "@/modules/auth";
+import { withAuth } from "@/modules/auth";
 import { recordImportBatchAccessEvent } from "@/modules/audit";
 import {
   shouldUseInMemoryPersistenceForTests,
@@ -46,46 +46,8 @@ export function clearImportBatchDetailForTest(): void {
   inMemoryRowErrors.length = 0;
 }
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ batchId: string }> },
-) {
-  const { batchId } = await params;
-  const traceId = request.headers.get("x-trace-id") ?? crypto.randomUUID();
-  const session = await validateActiveSession(extractSessionToken(request));
-
-  const authz = await authorizeAccess({
-    session,
-    action: "admin:read-import-batches",
-    path: request.nextUrl.pathname,
-    method: request.method,
-    traceId,
-  });
-
-  if (!authz.allowed) {
-    return NextResponse.json(
-      {
-        error: {
-          code: toErrorCode(authz.reason),
-          message: "Access denied. Admin role required to view import batch details.",
-        },
-      },
-      { status: authz.status },
-    );
-  }
-
-  // Defensive narrowing for TypeScript; authorizeAccess already rejects null sessions.
-  if (!session) {
-    return NextResponse.json(
-      {
-        error: {
-          code: "unauthenticated",
-          message: "Authentication required.",
-        },
-      },
-      { status: 401 },
-    );
-  }
+export const GET = withAuth<{ batchId: string }>(async ({ session, params, traceId }) => {
+  const { batchId } = params;
 
   try {
     await recordImportBatchAccessEvent({
@@ -149,4 +111,4 @@ export async function GET(
   };
 
   return NextResponse.json({ data: detail });
-}
+}, { action: "admin:read-import-batches" });

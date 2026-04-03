@@ -1,55 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
 import {
-  authorizeAccess,
-  extractSessionToken,
-  toErrorCode,
-  validateActiveSession,
+  withAuth,
 } from "@/modules/auth";
 import {
   getCandidateById,
   CandidateNotFoundError,
 } from "@/features/candidate-management/infrastructure/candidate-repository";
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ candidateId: string }> },
-) {
-  const { candidateId } = await params;
-  const traceId = request.headers.get("x-trace-id") ?? crypto.randomUUID();
-  const session = await validateActiveSession(extractSessionToken(request));
-
-  const authz = await authorizeAccess({
-    session,
-    action: "candidate:read",
-    path: request.nextUrl.pathname,
-    method: request.method,
-    traceId,
-  });
-
-  if (!authz.allowed) {
-    return NextResponse.json(
-      {
-        error: {
-          code: toErrorCode(authz.reason),
-          message: "Access denied for candidate read operation.",
-        },
-      },
-      { status: authz.status },
-    );
-  }
-
-  if (!session) {
-    return NextResponse.json(
-      {
-        error: { code: "unauthenticated", message: "Authentication is required." },
-      },
-      { status: 401 },
-    );
-  }
-
+export const GET = withAuth<{ candidateId: string }>(async ({ session, params }) => {
   try {
-    const candidate = await getCandidateById(candidateId, session.tenantId);
+    const candidate = await getCandidateById(params.candidateId, session.tenantId);
     return NextResponse.json({
       data: candidate,
       meta: {
@@ -71,4 +32,4 @@ export async function GET(
     }
     throw err;
   }
-}
+}, { action: "candidate:read" });
