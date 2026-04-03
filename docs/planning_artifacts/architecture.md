@@ -1109,6 +1109,7 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 | `getImportBatchById(batchId, tenantId)` | `src/features/candidate-management/infrastructure/import-batch-repository.ts` | Fetch single import batch by id with tenant isolation. |
 | `updateImportBatch(batchId, updates)` | `src/features/candidate-management/infrastructure/import-batch-repository.ts` | Update batch status, counts, completedAt. |
 | `listImportBatchesByTenant(tenantId, page, pageSize)` | `src/features/candidate-management/infrastructure/import-batch-repository.ts` | Paginated import batch list for admin dashboard. |
+| `getLatestMigrationBatch(tenantId)` | `src/features/candidate-management/infrastructure/import-batch-repository.ts` | Fetch most recent migration-source batch for admin MigrationStatusCard. |
 | `processImportChunk(params)` | `src/features/candidate-management/infrastructure/import-batch-repository.ts` | Wrapper for `process_import_chunk` RPC. Routes must use this instead of calling RPC directly. |
 | `listImportRowErrors(batchId, limit)` | `src/features/candidate-management/infrastructure/import-batch-repository.ts` | Fetch import row errors for batch detail and error reports. |
 | `insertSubmission(params)` | `src/features/candidate-management/infrastructure/submission-repository.ts` | Insert candidate submission evidence. Used by resume upload, email ingestion. |
@@ -1144,6 +1145,8 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 | `issueCrossClientConfirmationToken(input)` | `src/modules/auth/cross-client-confirmation.ts` | Issue HS256 JWT for cross-client confirmation. 5-minute TTL. |
 | `verifyCrossClientConfirmationToken(input)` | `src/modules/auth/cross-client-confirmation.ts` | Verify JWT claims match request context. Returns jti + expiry or null. |
 | `consumeCrossClientConfirmationToken(jti, exp)` | `src/modules/auth/cross-client-confirmation.ts` | Replay prevention: consume JTI once. DB-backed in prod, Map in test. |
+| `recordImportBatchAccessEvent(input)` | `src/modules/audit/index.ts` | Record audit event for import batch access (list, detail, CSV upload, resume upload). Append-only. |
+| `listImportBatchAccessEvents(tenantId?)` | `src/modules/audit/index.ts` | Retrieve import batch access audit trail. Tenant-scoped optional filter. |
 
 ### UI Components (Reusable)
 | Capability | Location | When to Use |

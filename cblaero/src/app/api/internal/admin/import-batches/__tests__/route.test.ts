@@ -239,6 +239,7 @@ describe("GET /api/internal/admin/import-batches", () => {
 
 describe("GET /api/internal/admin/import-batches/[batchId]", () => {
   beforeEach(async () => {
+    clearImportBatchesForTest();
     clearImportBatchDetailForTest();
     await clearAuthorizationDenyEventsForTest();
     await clearImportBatchAccessEventsForTest();

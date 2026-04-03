@@ -118,9 +118,8 @@ export async function listImportBatchAccessEvents(
 }
 
 export async function clearImportBatchAccessEventsForTest(): Promise<void> {
-  importBatchAccessEvents.length = 0;
-
   if (isInMemoryMode()) {
+    importBatchAccessEvents.length = 0;
     return;
   }
 
@@ -649,9 +648,8 @@ export async function listClientContextConfirmationEvents(
 }
 
 export async function clearClientContextConfirmationEventsForTest(): Promise<void> {
-  clientContextConfirmationEvents.length = 0;
-
   if (isInMemoryMode()) {
+    clientContextConfirmationEvents.length = 0;
     return;
   }
 
@@ -772,9 +770,8 @@ export async function listDataResidencyCheckEvents(
 }
 
 export async function clearDataResidencyCheckEventsForTest(): Promise<void> {
-  dataResidencyCheckEvents.length = 0;
-
   if (isInMemoryMode()) {
+    dataResidencyCheckEvents.length = 0;
     return;
   }
 
