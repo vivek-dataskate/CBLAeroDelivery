@@ -82,11 +82,12 @@ export interface ExtractionMetadata {
 export interface ExtractionResult {
   extraction: CandidateExtraction | null;
   error?: string;
+  extractionModel?: string;
 }
 
 // ---- Prompt ----
 
-export const EXTRACTION_PROMPT = `You are a candidate data extraction agent for a multi-business staffing company (CBL Solutions — includes CBL Aero, DataSkate, and other divisions).
+const EXTRACTION_PROMPT = `You are a candidate data extraction agent for a multi-business staffing company (CBL Solutions — includes CBL Aero, DataSkate, and other divisions).
 
 You will receive text content from a document (resume, email, or attachment). Extract ALL candidate information into structured JSON.
 
@@ -291,7 +292,7 @@ async function extractWithLLM(
   });
 
   if (!result) {
-    return { extraction: null, error: 'LLM call returned null — client unavailable' };
+    return { extraction: null, error: 'LLM call returned null — client unavailable', extractionModel: model };
   }
 
   let responseText = result.text
@@ -308,6 +309,7 @@ async function extractWithLLM(
           firstName: '', lastName: '', email: '', source,
           extractionMethod: 'llm' as const, isSubmission: false,
         },
+        extractionModel: model,
       };
     }
 
@@ -337,12 +339,17 @@ async function extractWithLLM(
         ...sanitized,
         source,
         extractionMethod: 'llm' as const,
-        isSubmission: contentType === 'pdf' ? true : parsed.isSubmission ?? true,
+        isSubmission: contentType === 'pdf' ? true : parsed.isSubmission === true,
       } as CandidateExtraction,
+      extractionModel: model,
     };
-  } catch {
-    console.error('[CandidateExtraction] Failed to parse LLM response:', responseText.slice(0, 200));
-    return { extraction: null, error: 'Failed to parse LLM extraction response' };
+  } catch (err) {
+    console.error(JSON.stringify({
+      level: 'error', module: 'candidate-extraction', action: 'parse_llm_response',
+      error: err instanceof Error ? err.message : String(err),
+      responseSnippet: responseText.slice(0, 200),
+    }));
+    return { extraction: null, error: 'Failed to parse LLM extraction response', extractionModel: model };
   }
 }
 

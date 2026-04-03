@@ -319,3 +319,28 @@ Modified files:
 - 19 resume-upload tests passing (+1 new double-confirm guard test)
 - TypeScript: clean
 - All ACs verified as implemented
+
+### Review-Driven Fixes (2026-04-03, code-review pass 4 — adversarial standards audit)
+
+- [x] H1: Fixed cross-tenant privilege escalation — all 3 resume routes now use `resolveRequestTenantId()` instead of raw `x-active-client-id` header
+- [x] H2: Removed `as unknown as Record<string, unknown>` double type cast — replaced with spread-copy `{ ...result.extraction }`
+- [x] H3: Added `MAX_FILES_PER_UPLOAD = 200` file count limit to prevent unbounded memory/DoS
+- [x] H4: Added structured error logging to all bare `catch {}` blocks (formData, createImportBatch, JSON parse, audit) per §12
+- [x] H5: Fixed `isSubmission ?? true` to `isSubmission === true` — empty LLM responses no longer silently treated as submissions
+- [x] H6: Added `extractionModel` field to `ExtractionResult` type and populated on all return paths — audit trail now complete per §2
+- [x] H7: Replaced bare `catch {}` in LLM parse failure with structured JSON error logging per §12
+- [x] H8: Removed `step === 1` gate on error display — errors from upload/extraction (step 2+) now visible to recruiter
+- [x] M2: Fire-and-forget `recordFingerprint` `.catch(() => {})` now logs warning per §4.7/§12
+- [x] M5: RPC failure in confirm route now returns HTTP 500 instead of silently marking batch `complete`
+- [x] M6: Added `shouldUseInMemoryPersistenceForTests()` mode guard to `clearResumeUploadStoreForTest` per §15
+- [x] M7/M9: Standardized fingerprint hit and batch summary logging to structured JSON with `module`, `level`, `traceId`, `timestamp`
+- [x] M12: Auto-confirm non-exception API failure now shows error message instead of silently falling through
+- [x] L1: Removed `export` from `EXTRACTION_PROMPT` to prevent accidental exposure per §25 rule 5
+- [x] L6: Added batch-level LLM call summary log after processing per §19/§23
+- [x] Removed dead re-exports (`toErrorCode`, `extractSessionToken`) from resume-upload `shared.ts`
+
+#### Test Results After Fixes (Pass 4)
+
+- 279 tests passing, 0 failures
+- TypeScript: clean
+- All ACs verified

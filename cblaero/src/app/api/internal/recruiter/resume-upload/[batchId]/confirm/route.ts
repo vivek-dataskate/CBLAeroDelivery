@@ -26,16 +26,17 @@ interface ConfirmPayload {
   rejected: string[];
 }
 
+import { resolveRequestTenantId } from '@/app/api/internal/recruiter/csv-upload/shared';
+
 export const POST = withAuth<{ batchId: string }>(async ({ session, request, params, traceId }) => {
   const { batchId } = params;
-  const requestedTenantId =
-    request.headers.get('x-active-client-id')?.trim() || null;
-  const tenantId = requestedTenantId ?? session.tenantId;
+  const tenantId = resolveRequestTenantId(session, request);
 
   let payload: ConfirmPayload;
   try {
     payload = await request.json();
-  } catch {
+  } catch (err) {
+    console.warn(JSON.stringify({ level: 'warn', module: 'recruiter/resume-upload/confirm', action: 'parse_body', traceId, error: err instanceof Error ? err.message : String(err) }));
     return NextResponse.json(
       { error: { code: 'invalid_body', message: 'Expected JSON body with confirmed and rejected arrays.' } },
       { status: 400 }
@@ -133,7 +134,11 @@ export const POST = withAuth<{ batchId: string }>(async ({ session, request, par
       });
       imported = rpcResult.imported;
     } catch (err) {
-      console.error(`[ResumeConfirm] RPC failed for batch ${batchId}:`, err instanceof Error ? err.message : err);
+      console.error(JSON.stringify({ level: 'error', module: 'recruiter/resume-upload/confirm', action: 'rpc_failed', traceId, batchId, candidateCount: candidateRows.length, error: err instanceof Error ? err.message : String(err) }));
+      return NextResponse.json(
+        { error: { code: 'processing_error', message: 'Failed to persist confirmed candidates.' } },
+        { status: 500 }
+      );
     }
 
     // Link submissions to persisted candidates by email
