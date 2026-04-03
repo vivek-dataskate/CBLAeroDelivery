@@ -1,6 +1,6 @@
 # Story 1.10: Implement Shared API Auth Middleware
 
-Status: review
+Status: done
 
 ## Story
 
@@ -132,10 +132,25 @@ Claude Opus 4.6 (1M context)
 - Reads `x-active-client-id` header and `tenantId` query param for tenant context
 - Generates or forwards `x-trace-id` for request correlation
 - Wrote 10 unit tests covering: valid session, no session, invalid token, wrong role, trace ID propagation, tenant isolation, route params, handler isolation
-- Refactored 16 route files (22 handler functions total) from inline auth to `withAuth()`
+- Refactored 17 route files (23 handler functions total) from inline auth to `withAuth()`
 - Updated 1 existing test (`data-residency` production semantics test) to mock source modules used by `withAuth()` internals
 - All 279 tests pass, zero TypeScript errors
 - Registered `withAuth()` in architecture.md §Implemented Capabilities and development-standards.md §18 utility table
+
+### Senior Developer Review (AI)
+
+**Reviewer:** Claude Sonnet 4.6 (different model from implementation agent)
+**Date:** 2026-04-03
+**Outcome:** Changes Requested → All fixed
+
+#### Action Items (all resolved)
+- [x] [HIGH] Removed dead `requireStepUp`/`requireFreshAuth` options from `AuthOptions` — unused fields that silently did nothing
+- [x] [HIGH] Fixed unreachable null guard in `withAuth()` — replaced dead branch with non-null assertion `session!`
+- [x] [HIGH] Refactored missed `csv-upload/[batchId]/error-report/route.ts` to use `withAuth()`
+- [x] [MEDIUM] Fixed `as unknown as` double type cast in `with-auth.test.ts`
+- [x] [MEDIUM] Added error logging to bare `catch {}` in `admin/import-batches/route.ts`
+- [x] [PRE-EXISTING/HIGH] Resume-upload routes use `action: 'recruiter:csv-upload'` — confirmed pre-existing from original code, not a regression from this story. Deferred to future RBAC story.
+- [x] [PRE-EXISTING/MEDIUM] `data-residency/route.ts` and `candidates/route.ts` §16 envelope violations — pre-existing, not introduced by this story. Deferred.
 
 ### Implementation Plan
 
@@ -148,7 +163,8 @@ Claude Opus 4.6 (1M context)
 
 ### Change Log
 
-- 2026-04-03: Story 1.10 implemented — shared `withAuth()` API auth middleware wrapper, 16 route files refactored, 10 new tests, zero regressions
+- 2026-04-03: Story 1.10 implemented — shared `withAuth()` API auth middleware wrapper, 17 route files refactored, 10 new tests, zero regressions
+- 2026-04-03: Code review (Sonnet 4.6) — 4 HIGH + 4 MEDIUM findings. Fixed: removed dead AuthOptions fields, replaced unreachable null guard, refactored missed error-report route, fixed §11/§12 violations. 2 pre-existing issues deferred.
 
 ### File List
 
@@ -159,6 +175,7 @@ cblaero/src/app/api/internal/candidates/route.ts (modified — refactored GET+PO
 cblaero/src/app/api/internal/candidates/[candidateId]/route.ts (modified — refactored GET to withAuth)
 cblaero/src/app/api/internal/recruiter/csv-upload/route.ts (modified — refactored POST to withAuth)
 cblaero/src/app/api/internal/recruiter/csv-upload/[batchId]/route.ts (modified — refactored GET to withAuth)
+cblaero/src/app/api/internal/recruiter/csv-upload/[batchId]/error-report/route.ts (modified — refactored GET to withAuth)
 cblaero/src/app/api/internal/recruiter/resume-upload/route.ts (modified — refactored POST to withAuth)
 cblaero/src/app/api/internal/recruiter/resume-upload/[batchId]/route.ts (modified — refactored GET to withAuth)
 cblaero/src/app/api/internal/recruiter/resume-upload/[batchId]/confirm/route.ts (modified — refactored POST to withAuth)
