@@ -1,50 +1,14 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
-import { authorizeAccess, extractSessionToken, toErrorCode, validateActiveSession } from "@/modules/auth";
+import { withAuth } from "@/modules/auth";
 import {
   listDataResidencyCheckEvents,
   recordDataResidencyCheckEvent,
 } from "@/modules/audit";
 import { evaluateUsaDataResidencyPolicy } from "@/modules/persistence/data-residency";
 
-export async function GET(request: NextRequest) {
-  const traceId = request.headers.get("x-trace-id") ?? crypto.randomUUID();
+export const GET = withAuth(async ({ session, request, traceId }) => {
   const requestedTenantId = request.nextUrl.searchParams.get("tenantId");
-  const session = await validateActiveSession(extractSessionToken(request));
-
-  const authz = await authorizeAccess({
-    session,
-    action: "compliance:read-data-residency",
-    requestedTenantId,
-    path: request.nextUrl.pathname,
-    method: request.method,
-    traceId,
-  });
-
-  if (!authz.allowed) {
-    return NextResponse.json(
-      {
-        error: {
-          code: toErrorCode(authz.reason),
-          message: "Access denied for data residency compliance evidence query.",
-        },
-      },
-      { status: authz.status },
-    );
-  }
-
-  if (!session) {
-    return NextResponse.json(
-      {
-        error: {
-          code: "unauthenticated",
-          message: "Authentication is required.",
-        },
-      },
-      { status: 401 },
-    );
-  }
-
   const tenantId = requestedTenantId ?? session.tenantId;
   const validation = evaluateUsaDataResidencyPolicy();
   const status = validation.valid ? "pass" : "fail";
@@ -123,4 +87,4 @@ export async function GET(request: NextRequest) {
   };
 
   return NextResponse.json(responseBody);
-}
+}, { action: "compliance:read-data-residency" });

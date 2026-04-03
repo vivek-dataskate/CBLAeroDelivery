@@ -1,13 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
 import {
-  authorizeAccess,
   buildStepUpReauthenticateUrl,
-  extractSessionToken,
   isSessionFreshForStepUp,
-  toErrorCode,
+  withAuth,
   type SessionRole,
-  validateActiveSession,
 } from "@/modules/auth";
 import {
   AdminGovernanceError,
@@ -131,42 +128,8 @@ function buildGovernancePayload(tenantId: string) {
   }));
 }
 
-export async function GET(request: NextRequest) {
+export const GET = withAuth(async ({ session, request }) => {
   const requestedTenantId = request.nextUrl.searchParams.get("tenantId");
-  const session = await validateActiveSession(extractSessionToken(request));
-
-  const authz = await authorizeAccess({
-    session,
-    action: "admin:manage-users",
-    requestedTenantId,
-    path: request.nextUrl.pathname,
-    method: request.method,
-    traceId: request.headers.get("x-trace-id"),
-  });
-
-  if (!authz.allowed) {
-    return NextResponse.json(
-      {
-        error: {
-          code: toErrorCode(authz.reason),
-          message: "Access denied for admin governance operations.",
-        },
-      },
-      { status: authz.status },
-    );
-  }
-
-  if (!session) {
-    return NextResponse.json(
-      {
-        error: {
-          code: "unauthenticated",
-          message: "Authentication is required.",
-        },
-      },
-      { status: 401 },
-    );
-  }
 
   await registerOrSyncUserFromSession(session);
   const tenantId = requestedTenantId ?? session.tenantId;
@@ -177,44 +140,9 @@ export async function GET(request: NextRequest) {
       tenantId,
     },
   });
-}
+}, { action: "admin:manage-users" });
 
-export async function POST(request: NextRequest) {
-  const traceId = request.headers.get("x-trace-id") ?? crypto.randomUUID();
-  const session = await validateActiveSession(extractSessionToken(request));
-
-  const authz = await authorizeAccess({
-    session,
-    action: "admin:manage-users",
-    path: request.nextUrl.pathname,
-    method: request.method,
-    traceId,
-  });
-
-  if (!authz.allowed) {
-    return NextResponse.json(
-      {
-        error: {
-          code: toErrorCode(authz.reason),
-          message: "Access denied for admin governance operations.",
-        },
-      },
-      { status: authz.status },
-    );
-  }
-
-  if (!session) {
-    return NextResponse.json(
-      {
-        error: {
-          code: "unauthenticated",
-          message: "Authentication is required.",
-        },
-      },
-      { status: 401 },
-    );
-  }
-
+export const POST = withAuth(async ({ session, request, traceId }) => {
   let payload: GovernancePostBody;
   try {
     payload = (await request.json()) as GovernancePostBody;
@@ -378,4 +306,4 @@ export async function POST(request: NextRequest) {
       { status: 500 },
     );
   }
-}
+}, { action: "admin:manage-users" });

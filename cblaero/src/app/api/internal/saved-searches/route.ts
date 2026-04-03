@@ -1,76 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import {
-  authorizeAccess,
-  extractSessionToken,
-  toErrorCode,
-  validateActiveSession,
-} from "@/modules/auth";
+import { withAuth } from "@/modules/auth";
 import {
   listSavedSearches,
   createSavedSearch,
 } from "@/features/candidate-management/infrastructure/saved-search-repository";
 
-export async function GET(request: NextRequest) {
-  const traceId = request.headers.get("x-trace-id") ?? crypto.randomUUID();
-  const session = await validateActiveSession(extractSessionToken(request));
-
-  const authz = await authorizeAccess({
-    session,
-    action: "candidate:read",
-    path: request.nextUrl.pathname,
-    method: request.method,
-    traceId,
-  });
-
-  if (!authz.allowed) {
-    return NextResponse.json(
-      { error: { code: toErrorCode(authz.reason), message: "Access denied." } },
-      { status: authz.status },
-    );
-  }
-
-  if (!session) {
-    return NextResponse.json(
-      { error: { code: "unauthenticated", message: "Authentication is required." } },
-      { status: 401 },
-    );
-  }
-
+export const GET = withAuth(async ({ session }) => {
   const searches = await listSavedSearches(session.actorId, session.tenantId);
 
   return NextResponse.json({
     data: searches,
     meta: { tenantId: session.tenantId },
   });
-}
+}, { action: "candidate:read" });
 
-export async function POST(request: NextRequest) {
-  const traceId = request.headers.get("x-trace-id") ?? crypto.randomUUID();
-  const session = await validateActiveSession(extractSessionToken(request));
-
-  const authz = await authorizeAccess({
-    session,
-    action: "candidate:write",
-    path: request.nextUrl.pathname,
-    method: request.method,
-    traceId,
-  });
-
-  if (!authz.allowed) {
-    return NextResponse.json(
-      { error: { code: toErrorCode(authz.reason), message: "Access denied." } },
-      { status: authz.status },
-    );
-  }
-
-  if (!session) {
-    return NextResponse.json(
-      { error: { code: "unauthenticated", message: "Authentication is required." } },
-      { status: 401 },
-    );
-  }
-
+export const POST = withAuth(async ({ session, request }) => {
   let body: { name?: string; filters?: Record<string, unknown> };
   try {
     body = await request.json();
@@ -104,4 +49,4 @@ export async function POST(request: NextRequest) {
   });
 
   return NextResponse.json({ data: search }, { status: 201 });
-}
+}, { action: "candidate:write" });

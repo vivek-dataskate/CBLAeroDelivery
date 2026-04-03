@@ -10,12 +10,11 @@ import {
   authorizeAccess,
   buildStepUpReauthenticateUrl,
   consumeCrossClientConfirmationToken,
-  extractSessionToken,
   isSessionFreshForStepUp,
   issueCrossClientConfirmationToken,
   toErrorCode,
-  validateActiveSession,
   verifyCrossClientConfirmationToken,
+  withAuth,
   type AuthSession,
 } from "@/modules/auth";
 import {
@@ -311,43 +310,8 @@ async function enforceStepUpForSensitiveOperation(
   return null;
 }
 
-export async function GET(request: NextRequest) {
-  const traceId = request.headers.get("x-trace-id") ?? crypto.randomUUID();
+export const GET = withAuth(async ({ session, request, traceId }) => {
   const requestedTenantId = request.nextUrl.searchParams.get("tenantId");
-  const session = await validateActiveSession(extractSessionToken(request));
-
-  const authz = await authorizeAccess({
-    session,
-    action: "candidate:read",
-    requestedTenantId,
-    path: request.nextUrl.pathname,
-    method: request.method,
-    traceId,
-  });
-
-  if (!authz.allowed) {
-    return NextResponse.json(
-      {
-        error: {
-          code: toErrorCode(authz.reason),
-          message: "Access denied for candidate read operation.",
-        },
-      },
-      { status: authz.status },
-    );
-  }
-
-  if (!session) {
-    return NextResponse.json(
-      {
-        error: {
-          code: "unauthenticated",
-          message: "Authentication is required.",
-        },
-      },
-      { status: 401 },
-    );
-  }
 
   const stepUpResponse = await enforceStepUpForSensitiveOperation(
     request,
@@ -477,32 +441,9 @@ export async function GET(request: NextRequest) {
       sortedBy: result.sortedBy,
     },
   });
-}
+}, { action: "candidate:read" });
 
-export async function POST(request: NextRequest) {
-  const traceId = request.headers.get("x-trace-id") ?? crypto.randomUUID();
-  const session = await validateActiveSession(extractSessionToken(request));
-
-  const authz = await authorizeAccess({
-    session,
-    action: "candidate:write",
-    path: request.nextUrl.pathname,
-    method: request.method,
-    traceId,
-  });
-
-  if (!authz.allowed) {
-    return NextResponse.json(
-      {
-        error: {
-          code: toErrorCode(authz.reason),
-          message: "Access denied for candidate write operation.",
-        },
-      },
-      { status: authz.status },
-    );
-  }
-
+export const POST = withAuth(async ({ session, request, traceId }) => {
   let payload: CandidatePostBody;
   try {
     payload = (await request.json()) as CandidatePostBody;
@@ -515,18 +456,6 @@ export async function POST(request: NextRequest) {
         },
       },
       { status: 400 },
-    );
-  }
-
-  if (!session) {
-    return NextResponse.json(
-      {
-        error: {
-          code: "unauthenticated",
-          message: "Authentication is required.",
-        },
-      },
-      { status: 401 },
     );
   }
 
@@ -629,4 +558,4 @@ export async function POST(request: NextRequest) {
       writeScope: "tenant-isolated",
     },
   });
-}
+}, { action: "candidate:write" });

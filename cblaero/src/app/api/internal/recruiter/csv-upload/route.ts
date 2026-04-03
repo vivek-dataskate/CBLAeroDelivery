@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
-import { authorizeAccess, validateActiveSession } from "@/modules/auth";
+import { withAuth } from "@/modules/auth";
 import { recordImportBatchAccessEvent } from "@/modules/audit";
 import {
   shouldUseInMemoryPersistenceForTests,
@@ -41,8 +41,6 @@ import {
   toBatchStatusPayload,
   upsertInMemoryCandidates,
   clearCsvUploadStoreForTest,
-  toErrorCode,
-  extractSessionToken,
   type CsvCandidateRow,
 } from "./shared";
 
@@ -415,41 +413,8 @@ function processInMemoryBatch(input: {
   };
 }
 
-export async function POST(request: NextRequest) {
-  const traceId = request.headers.get("x-trace-id") ?? crypto.randomUUID();
-  const session = await validateActiveSession(extractSessionToken(request));
-  const requestedTenantId = request.headers.get("x-active-client-id")?.trim() || session?.tenantId || null;
-
-  const authz = await authorizeAccess({
-    session,
-    action: "recruiter:csv-upload",
-    path: request.nextUrl.pathname,
-    method: request.method,
-    requestedTenantId,
-    traceId,
-  });
-
-  if (!authz.allowed) {
-    return NextResponse.json(
-      {
-        error: {
-          code: toErrorCode(authz.reason),
-          message: "Access denied. CSV upload requires recruiter, delivery-head, or admin role.",
-        },
-      },
-      { status: authz.status },
-    );
-  }
-
-  // TypeScript type narrowing: authorizeAccess() only returns allowed:true when session is
-  // non-null (see authorization.ts:105-107). This guard satisfies the type checker only.
-  if (!session) {
-    return NextResponse.json(
-      { error: { code: "unauthenticated", message: "Authentication required." } },
-      { status: 401 },
-    );
-  }
-
+export const POST = withAuth(async ({ session, request, traceId }) => {
+  const requestedTenantId = request.headers.get("x-active-client-id")?.trim() || null;
   const tenantId = requestedTenantId ?? session.tenantId;
 
   let formData: FormData;
@@ -708,6 +673,6 @@ export async function POST(request: NextRequest) {
       { status: 500 },
     );
   }
-}
+}, { action: "recruiter:csv-upload" });
 
 export { clearCsvUploadStoreForTest, listCsvUploadBatchesForTest, listCsvUploadErrorsForTest, listCsvCandidatesForTest };

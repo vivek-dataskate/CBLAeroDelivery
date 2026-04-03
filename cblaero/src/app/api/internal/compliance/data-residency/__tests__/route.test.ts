@@ -3,6 +3,8 @@ import { NextRequest } from "next/server";
 
 import { SESSION_COOKIE_NAME, issueSessionToken } from "@/modules/auth";
 import * as authModule from "@/modules/auth";
+import * as authorizationSource from "@/modules/auth/authorization";
+import * as sessionSource from "@/modules/auth/session";
 import {
   clearAuthorizationDenyEventsForTest,
   clearDataResidencyCheckEventsForTest,
@@ -235,17 +237,21 @@ describe("internal data residency compliance API", () => {
   it("returns explicit failure details in production semantics without throwing 500", async () => {
     vi.stubEnv("NODE_ENV", "production");
 
-    vi.spyOn(authModule, "validateActiveSession").mockResolvedValue({
+    const mockSession = {
       actorId: "actor-admin-prod-1",
       email: "admin-prod@cblsolutions.com",
       tenantId: "tenant-a",
-      role: "admin",
+      role: "admin" as const,
       sessionId: "session-prod-1",
       rememberDevice: false,
       issuedAtEpochSec: 1,
       expiresAtEpochSec: 2,
-    });
+    };
+    vi.spyOn(authModule, "validateActiveSession").mockResolvedValue(mockSession);
     vi.spyOn(authModule, "authorizeAccess").mockResolvedValue({ allowed: true });
+    // Also mock source modules used by withAuth() wrapper
+    vi.spyOn(sessionSource, "validateActiveSession").mockResolvedValue(mockSession);
+    vi.spyOn(authorizationSource, "authorizeAccess").mockResolvedValue({ allowed: true });
     const recordSpy = vi
       .spyOn(auditModule, "recordDataResidencyCheckEvent")
       .mockRejectedValue(new Error("audit persistence unavailable"));

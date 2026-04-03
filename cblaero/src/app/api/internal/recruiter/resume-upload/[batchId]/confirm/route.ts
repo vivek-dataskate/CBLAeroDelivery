@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAccess, validateActiveSession } from '@/modules/auth';
+import { NextResponse } from 'next/server';
+import { withAuth } from '@/modules/auth';
 import { recordImportBatchAccessEvent } from '@/modules/audit';
 import { mapToCandidateRow } from '@/modules/ingestion';
 import {
@@ -15,10 +15,6 @@ import {
 import {
   findCandidateIdsByEmails,
 } from '@/features/candidate-management/infrastructure/candidate-repository';
-import {
-  extractSessionToken,
-  toErrorCode,
-} from '../../shared';
 
 interface ConfirmedCandidate {
   submissionId: string;
@@ -30,39 +26,10 @@ interface ConfirmPayload {
   rejected: string[];
 }
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ batchId: string }> }
-) {
-  const { batchId } = await params;
-  const traceId = request.headers.get('x-trace-id') ?? crypto.randomUUID();
-  const session = await validateActiveSession(extractSessionToken(request));
+export const POST = withAuth<{ batchId: string }>(async ({ session, request, params, traceId }) => {
+  const { batchId } = params;
   const requestedTenantId =
-    request.headers.get('x-active-client-id')?.trim() || session?.tenantId || null;
-
-  const authz = await authorizeAccess({
-    session,
-    action: 'recruiter:csv-upload',
-    path: request.nextUrl.pathname,
-    method: request.method,
-    requestedTenantId,
-    traceId,
-  });
-
-  if (!authz.allowed) {
-    return NextResponse.json(
-      { error: { code: toErrorCode(authz.reason), message: 'Access denied.' } },
-      { status: authz.status }
-    );
-  }
-
-  if (!session) {
-    return NextResponse.json(
-      { error: { code: 'unauthenticated', message: 'Authentication required.' } },
-      { status: 401 }
-    );
-  }
-
+    request.headers.get('x-active-client-id')?.trim() || null;
   const tenantId = requestedTenantId ?? session.tenantId;
 
   let payload: ConfirmPayload;
@@ -216,4 +183,4 @@ export async function POST(
     data: { batchId, status: 'complete', imported, skipped, errors },
     meta: {},
   });
-}
+}, { action: 'recruiter:csv-upload' });
