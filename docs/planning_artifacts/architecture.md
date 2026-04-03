@@ -1080,6 +1080,11 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 | `loadPrompt(name, version?)` | `src/modules/ai/prompt-registry.ts` | Load prompt from `prompt_registry` table (DB-first, in-memory fallback). Returns `{ name, version, prompt_text, model }`. |
 | `registerFallbackPrompt(record)` | `src/modules/ai/prompt-registry.ts` | Register inline fallback prompt for when DB is unavailable (tests, no Supabase). |
 | `clearClientForTest()` | `src/modules/ai/client.ts` | Reset Anthropic singleton for test isolation. |
+| `getAggregatedUsage(params)` | `src/modules/ai/usage-repository.ts` | Aggregate `llm_usage_log` by day/model/promptName with filtering. Returns `{ daily, totals }`. Used by AI cost dashboard API. |
+| `checkBudgetThreshold(thresholdUsd?)` | `src/modules/ai/budget-alert.ts` | Check if today's AI spend exceeds threshold (default $10/day). Emits structured warn log if exceeded. |
+| `deprecatePrompt(name, version)` | `src/modules/ai/prompt-registry.ts` | Mark a prompt version as deprecated (append-only). `loadPrompt()` stops returning deprecated versions. |
+| `updatePromptStatus(name, version, status)` | `src/modules/ai/prompt-registry.ts` | Update prompt status to active/staged/deprecated. Used for staged rollout lifecycle. |
+| `listPromptVersions(name)` | `src/modules/ai/prompt-registry.ts` | List all versions of a prompt (including deprecated) sorted by created_at desc. |
 
 ### Candidate Data Pipeline
 | Capability | Location | When to Use |
@@ -1131,6 +1136,7 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 ### Auth & Admin
 | Capability | Location | When to Use |
 |-----------|----------|-------------|
+| `withAuth(handler, options)` | `src/modules/auth/with-auth.ts` | Shared API auth middleware wrapper. Consolidates extractSessionToken → validateActiveSession → authorizeAccess → error envelope → null guard into a single HOF. All protected routes MUST use this instead of inline auth boilerplate. |
 | `authorizeAccess(input)` | `src/modules/auth/authorization.ts` | RBAC check for any route. Returns `{ allowed, reason }`. |
 | `validateActiveSession(token)` | `src/modules/auth/session.ts` | Validate session token, check revocation. |
 | `registerOrSyncUserFromSession(session)` | `src/modules/admin/index.ts` | Upsert user record from SSO session. |
@@ -1145,6 +1151,7 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 | `SyncErrorStatusCard` | `src/app/dashboard/admin/SyncErrorStatusCard.tsx` | Display sync errors on admin dashboard. Accepts `errors: SyncError[]`. |
 | `MigrationStatusCard` | `src/app/dashboard/admin/MigrationStatusCard.tsx` | Display import batch status. Accepts `tenantId`, `actorId`. |
 | `BatchProgressCard` | `src/app/dashboard/recruiter/upload/BatchProgressCard.tsx` | Real-time batch progress with polling. Accepts `batchId`. |
+| `AiCostDashboard` | `src/app/dashboard/admin/AiCostDashboard.tsx` | AI cost dashboard with daily spend chart, budget alert, prompt version comparison. Client component, self-fetching. |
 
 ## Architecture Resilience Decisions
 

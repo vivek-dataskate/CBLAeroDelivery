@@ -63,8 +63,8 @@ development_status:
   1-7-add-active-client-context-safeguards: done
   1-8-extract-data-service-repositories-and-eliminate-route-db-calls: done
   1-9-create-centralized-ai-inference-service-with-prompt-registry: done
-  1-9a-ai-cost-dashboard-and-prompt-deployment-gates: backlog  # depends on 1.9
-  1-10-implement-shared-api-auth-middleware: ready-for-dev  # depends on 1.8
+  1-9a-ai-cost-dashboard-and-prompt-deployment-gates: done  # depends on 1.9
+  1-10-implement-shared-api-auth-middleware: review  # depends on 1.8
   1-11-implement-content-fingerprint-gate-for-all-ingestion-paths: done  # prerequisite for 2.5 dedup
   epic-1-retrospective: done
 
