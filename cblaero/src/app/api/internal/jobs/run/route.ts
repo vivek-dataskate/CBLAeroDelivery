@@ -84,31 +84,26 @@ async function getResumePage(): Promise<number> {
   if (!isSupabaseConfigured()) return 1;
   try {
     const candidateCount = await countCandidatesBySource('ceipal');
-    const basePage = Math.floor(candidateCount / 50) + 1;
 
-    // Problem: when the fingerprint gate skips all records on a page (already processed),
-    // no new candidates are inserted → count doesn't change → same page forever.
-    // Fix: count ats_external_id fingerprints and advance past pages they cover.
-    // Fingerprints are recorded for EVERY record the job encounters (new or duplicate),
-    // so they track the true high-water mark of pages seen.
+    // The total Ceipal records seen = candidates + records that were fetched but
+    // didn't produce new candidates (identity-missing failures, upsert-updates).
+    // Fingerprints track every record the job encounters. Since each new candidate
+    // also gets a fingerprint, totalSeen = max(candidateCount, fingerprintCount).
+    let fpCount = 0;
     try {
       const db = getSupabaseAdminClient();
-      const { count: fpCount, error } = await db
+      const { count, error } = await db
         .from('content_fingerprints')
         .select('id', { count: 'exact', head: true })
         .eq('fingerprint_type', 'ats_external_id')
         .eq('tenant_id', 'cbl-aero');
-      if (!error && fpCount && fpCount > 0) {
-        // Each fingerprint = 1 Ceipal record seen. Pages beyond the candidate count
-        // that were fingerprinted but didn't increase the count need to be skipped.
-        const fpPages = Math.ceil(fpCount / 50);
-        return basePage + fpPages;
-      }
+      if (!error && count !== null) fpCount = count;
     } catch {
       // fingerprint count unavailable — use candidate count only
     }
 
-    return basePage;
+    const totalSeen = Math.max(candidateCount, fpCount);
+    return Math.floor(totalSeen / 50) + 1;
   } catch {
     return 1;
   }
