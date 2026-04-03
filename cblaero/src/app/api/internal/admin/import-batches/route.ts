@@ -53,7 +53,8 @@ export const GET = withAuth(async ({ session, request, traceId }) => {
       }),
       meta: { page, pageSize, total: result.total },
     });
-  } catch {
+  } catch (err) {
+    console.error("[admin/import-batches] Failed to load batches:", err instanceof Error ? err.message : err);
     return NextResponse.json(
       { error: { code: "database_error", message: "Failed to load import batches." } },
       { status: 500 },
