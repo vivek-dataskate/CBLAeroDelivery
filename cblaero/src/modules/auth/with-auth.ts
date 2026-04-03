@@ -8,14 +8,14 @@ import { extractSessionToken, toErrorCode } from "./api-helpers";
 
 /**
  * Options controlling how withAuth enforces authentication and authorization.
+ *
+ * Note: Step-up (fresh auth) enforcement is route-specific business logic and is
+ * handled inside the handler, not by withAuth. See governance/route.ts and
+ * candidates/route.ts for step-up patterns.
  */
 export type AuthOptions = {
   /** The RBAC action to authorize (e.g. 'candidate:read'). */
   action: ProtectedAction;
-  /** When true, step-up (fresh auth) is enforced by the caller after auth passes. */
-  requireStepUp?: boolean;
-  /** When true, the session must have been issued recently (same as requireStepUp semantically). */
-  requireFreshAuth?: boolean;
 };
 
 /**
@@ -82,17 +82,12 @@ export function withAuth<T = Record<string, string>>(
       );
     }
 
-    // authorizeAccess only returns allowed:true when session is non-null.
-    // This guard satisfies TypeScript's type narrowing.
-    if (!session) {
-      return NextResponse.json(
-        { error: { code: "unauthenticated", message: "Authentication is required." } },
-        { status: 401 },
-      );
-    }
+    // authorizeAccess returns allowed:true only when session is non-null
+    // (see authorization.ts — null session → deny "unauthenticated").
+    const authenticatedSession = session!;
 
     const params = context?.params ? await context.params : ({} as T);
 
-    return handler({ session, request, params, traceId });
+    return handler({ session: authenticatedSession, request, params, traceId });
   };
 }
