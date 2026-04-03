@@ -14,6 +14,9 @@ export type ProtectedAction =
   | "audit:read-denials"
   | "admin:manage-users"
   | "admin:read-import-batches"
+  | "admin:read-ai-usage"
+  | "admin:read-prompt-registry"
+  | "admin:manage-prompt-registry"
   | "compliance:read-data-residency";
 
 type AuthorizationAllow = {
@@ -40,6 +43,8 @@ const ROLE_ACTION_MAP: Record<SessionRole, ReadonlySet<ProtectedAction>> = {
     "candidate:read",
     "candidate:write",
     "recruiter:csv-upload",
+    "admin:read-ai-usage",
+    "admin:read-prompt-registry",
   ]),
   admin: new Set([
     "dashboard:view",
@@ -50,6 +55,9 @@ const ROLE_ACTION_MAP: Record<SessionRole, ReadonlySet<ProtectedAction>> = {
     "audit:read-denials",
     "admin:manage-users",
     "admin:read-import-batches",
+    "admin:read-ai-usage",
+    "admin:read-prompt-registry",
+    "admin:manage-prompt-registry",
     "compliance:read-data-residency",
   ]),
   "compliance-officer": new Set([

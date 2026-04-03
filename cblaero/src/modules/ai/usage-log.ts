@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, getSupabaseAdminClient } from '../persistence';
+import { maybeCheckBudgetProactive } from './budget-alert';
 
 export interface LlmUsageEntry {
   model: string;
@@ -36,4 +37,9 @@ export async function recordLlmUsage(entry: LlmUsageEntry): Promise<void> {
   if (error) {
     console.warn('[ai/usage-log] Insert failed:', error.message);
   }
+
+  // Proactive budget check — sampled every N calls to avoid per-call overhead
+  maybeCheckBudgetProactive().catch((err) => {
+    console.warn('[ai/usage-log] Budget check failed:', err instanceof Error ? err.message : err);
+  });
 }
