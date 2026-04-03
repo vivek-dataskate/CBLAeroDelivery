@@ -1,13 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
-import { authorizeAccess, validateActiveSession } from "@/modules/auth";
+import { withAuth } from "@/modules/auth";
 import { recordImportBatchAccessEvent } from "@/modules/audit";
 import {
   shouldUseInMemoryPersistenceForTests,
 } from "@/modules/persistence";
 import { getImportBatchById, listImportRowErrors } from "@/features/candidate-management/infrastructure/import-batch-repository";
 
-import { extractSessionToken, findCsvUploadBatchForTenant, listCsvUploadErrorsForBatch, toErrorCode } from "../../shared";
+import { findCsvUploadBatchForTenant, listCsvUploadErrorsForBatch } from "../../shared";
 
 type ImportRowErrorRow = {
   row_number: number;
@@ -43,45 +43,9 @@ function toCsv(errors: ImportRowErrorRow[]): string {
   return [header, ...lines].join("\n");
 }
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ batchId: string }> },
-) {
-  const { batchId } = await params;
-  const traceId = request.headers.get("x-trace-id") ?? crypto.randomUUID();
-  const session = await validateActiveSession(extractSessionToken(request));
-  const requestedTenantId = request.headers.get("x-active-client-id")?.trim() || session?.tenantId || null;
-
-  const authz = await authorizeAccess({
-    session,
-    action: "recruiter:csv-upload",
-    path: request.nextUrl.pathname,
-    method: request.method,
-    requestedTenantId,
-    traceId,
-  });
-
-  if (!authz.allowed) {
-    return NextResponse.json(
-      {
-        error: {
-          code: toErrorCode(authz.reason),
-          message: "Access denied. CSV error report requires recruiter, delivery-head, or admin role.",
-        },
-      },
-      { status: authz.status },
-    );
-  }
-
-  // TypeScript type narrowing: authorizeAccess() only returns allowed:true when session is
-  // non-null (see authorization.ts:105-107). This guard satisfies the type checker only.
-  if (!session) {
-    return NextResponse.json(
-      { error: { code: "unauthenticated", message: "Authentication required." } },
-      { status: 401 },
-    );
-  }
-
+export const GET = withAuth<{ batchId: string }>(async ({ session, params, traceId, request }) => {
+  const { batchId } = params;
+  const requestedTenantId = request.headers.get("x-active-client-id")?.trim() || null;
   const tenantId = requestedTenantId ?? session.tenantId;
 
   let errors: ImportRowErrorRow[] = [];
@@ -119,7 +83,8 @@ export async function GET(
         error_detail: e.errorDetail,
         raw_data: e.rawData,
       }));
-    } catch {
+    } catch (err) {
+      console.error("[error-report] Failed to load row errors:", err instanceof Error ? err.message : err);
       return NextResponse.json(
         { error: { code: "database_error", message: "Failed to load import row errors." } },
         { status: 500 },
@@ -156,4 +121,4 @@ export async function GET(
       "cache-control": "no-store",
     },
   });
-}
+}, { action: "recruiter:csv-upload" });
