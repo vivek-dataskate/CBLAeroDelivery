@@ -79,8 +79,22 @@ if (error) throw new Error(`Update failed: ${error.message}`);
 
 ## 3. Data Ingestion Standards
 
-### Dedup Before Processing
-- Always check if a record was already processed BEFORE calling the LLM or doing expensive work
+### Content Fingerprint Gate (Mandatory First Step)
+- **Every ingestion path MUST call `FingerprintRepository.isAlreadyProcessed()` before any expensive work** — LLM extraction, enrichment API calls, or database upserts
+- Compute the fingerprint as the first operation after receiving input:
+  - **File uploads (PDF, DOCX):** `SHA-256(raw file bytes)` → `fingerprint_type: 'file_sha256'`
+  - **Email ingestion:** Graph API `message.id` → `fingerprint_type: 'email_message_id'`
+  - **CSV rows:** `SHA-256(lower(email)|lower(first+last)|phone)` → `fingerprint_type: 'csv_row_hash'`
+  - **ATS sync:** `ceipal:{applicant_id}` → `fingerprint_type: 'ats_external_id'`
+  - **OneDrive poll:** `SHA-256(raw file bytes)` → `fingerprint_type: 'file_sha256'`
+- If `isAlreadyProcessed()` returns `true` → log a structured skip event and return early. No further processing.
+- After successful processing → call `recordFingerprint()` with the candidate_id linkage
+- After failed processing → call `recordFingerprint()` with `status: 'failed'` to allow retry on next run
+- For batch paths (CSV 10K rows, ATS bulk sync): pre-load recent fingerprints into `Set<string>` at batch start to avoid per-row DB lookups
+- **Violation of this rule is a bug, not a style issue** — code review must reject any ingestion path that skips the fingerprint check
+
+### Dedup Before Processing (Legacy — Subsumed by Fingerprint Gate)
+- The fingerprint gate above replaces ad-hoc dedup checks. Existing `email_message_id` checks in `candidate_submissions` remain valid but are secondary to the fingerprint gate.
 - Use a persistent identifier (e.g., `email_message_id`, `ceipal_id`) as the dedup key
 - Query `candidate_submissions` or equivalent table for existing records
 - Pass processed IDs as a `Set<string>` to skip known records early in the pipeline
@@ -491,6 +505,15 @@ Before writing a new helper, check if one already exists:
 | Graph token | `acquireGraphToken()` | `@/modules/email/graph-auth` |
 | LLM extraction | `extractCandidateFromDocument()` | `@/features/candidate-management/application/candidate-extraction` |
 | Batch import processing | `process_import_chunk` RPC | `supabase/schema.sql` |
+| Import batch CRUD | `createImportBatch()`, `getImportBatchById()`, `updateImportBatch()`, `listImportBatchesByTenant()` | `@/features/candidate-management/infrastructure/import-batch-repository` |
+| Import chunk RPC wrapper | `processImportChunk()` | `@/features/candidate-management/infrastructure/import-batch-repository` |
+| Import row errors | `listImportRowErrors()` | `@/features/candidate-management/infrastructure/import-batch-repository` |
+| Submission evidence CRUD | `insertSubmission()`, `findSubmissionByMessageId()`, `listSubmissionsByBatch()` | `@/features/candidate-management/infrastructure/submission-repository` |
+| Submission failure count | `countFailedSubmissions()` | `@/features/candidate-management/infrastructure/submission-repository` |
+| Resume storage upload | `uploadResumeToStorage()` | `@/features/candidate-management/infrastructure/submission-repository` |
+| Candidate email lookup | `findCandidateIdsByEmails()` | `@/features/candidate-management/infrastructure/candidate-repository` |
+| Candidate source stats | `countCandidatesBySource()`, `getLastCandidateUpdateBySource()` | `@/features/candidate-management/infrastructure/candidate-repository` |
+| Cross-client confirmation | `issueCrossClientConfirmationToken()`, `verifyCrossClientConfirmationToken()`, `consumeCrossClientConfirmationToken()` | `@/modules/auth/cross-client-confirmation` |
 
 ### If 2+ files need the same logic, extract to a shared module
 ```typescript
@@ -509,8 +532,8 @@ Every table must have a dedicated repository or module with named functions for 
 |-------|-------------------|--------|
 | `candidates` | `candidate-repository.ts` | Exists |
 | `saved_searches` | `saved-search-repository.ts` | Exists |
-| `candidate_submissions` | (inline in ingestion) | **Needs extraction** |
-| `import_batch` | (inline in routes + jobs) | **Needs extraction** |
+| `candidate_submissions` | `submission-repository.ts` | Exists |
+| `import_batch` | `import-batch-repository.ts` | Exists |
 | `sync_errors` | (in ingestion/index.ts) | OK (simple, self-contained) |
 | `admin_managed_users` | `admin/index.ts` | OK (module owns table) |
 | `admin_invitations` | `admin/index.ts` | OK (module owns table) |

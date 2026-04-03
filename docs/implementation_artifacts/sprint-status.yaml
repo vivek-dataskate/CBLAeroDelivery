@@ -64,7 +64,7 @@ development_status:
   1-8-extract-data-service-repositories-and-eliminate-route-db-calls: done
   1-9-create-centralized-ai-inference-service-with-prompt-registry: ready-for-dev
   1-10-implement-shared-api-auth-middleware: ready-for-dev  # depends on 1.8
-  1-11-implement-content-fingerprint-gate-for-all-ingestion-paths: in-progress  # prerequisite for 2.5 dedup
+  1-11-implement-content-fingerprint-gate-for-all-ingestion-paths: done  # prerequisite for 2.5 dedup
   epic-1-retrospective: done
 
   epic-2: in-progress

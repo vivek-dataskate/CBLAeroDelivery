@@ -11,6 +11,10 @@ const mocks = vi.hoisted(() => ({
   upsertCandidateFromATS: vi.fn().mockResolvedValue(undefined),
   upsertCandidateFromEmailFull: vi.fn().mockResolvedValue(undefined),
   batchUpsertCandidatesFromATS: vi.fn().mockResolvedValue({ inserted: 0, failed: 0 }),
+  isAlreadyProcessed: vi.fn().mockResolvedValue(false),
+  recordFingerprint: vi.fn().mockResolvedValue(undefined),
+  loadRecentFingerprints: vi.fn().mockResolvedValue(new Set()),
+  computeFileHash: vi.fn().mockReturnValue('mock-hash'),
 }));
 
 vi.mock('@/modules/ats', () => ({
@@ -34,6 +38,14 @@ vi.mock('@/modules/ingestion/index', () => ({
   upsertCandidateFromATS: mocks.upsertCandidateFromATS,
   upsertCandidateFromEmailFull: mocks.upsertCandidateFromEmailFull,
   batchUpsertCandidatesFromATS: mocks.batchUpsertCandidatesFromATS,
+  DEFAULT_TENANT_ID: 'cbl-aero',
+}));
+
+vi.mock('@/features/candidate-management/infrastructure/fingerprint-repository', () => ({
+  isAlreadyProcessed: mocks.isAlreadyProcessed,
+  recordFingerprint: mocks.recordFingerprint,
+  loadRecentFingerprints: mocks.loadRecentFingerprints,
+  computeFileHash: mocks.computeFileHash,
 }));
 
 import { CeipalIngestionJob, EmailIngestionJob, registerIngestionJobs } from '@/modules/ingestion/jobs';

@@ -152,6 +152,7 @@ Every request receives a `x-trace-id` (UUID) in `proxy.ts` middleware. This ID m
   - `rag_documents`, `rag_chunks`, `rag_embeddings` (tenant-scoped retrieval corpus and vector index state)
   - `rag_queries`, `rag_citations` (RAG query auditability and source-grounding evidence)
 - Dedupe strategy:
+  - **Content Fingerprint Gate** — every ingestion path must compute a content fingerprint and check `content_fingerprints` before any expensive processing (LLM extraction, enrichment, DB upsert). If the fingerprint exists and status is `processed`, the pipeline short-circuits immediately. See _Content Fingerprint Gate_ section below.
   - Deterministic identity confidence thresholds per PRD
   - Manual review queue for uncertain merges
   - Dedupe runs asynchronously post-import; records are created in `pending_dedup` state before promotion to active
@@ -217,6 +218,75 @@ extractCandidateFromDocument(
 - Email inbox parsing: the global scheduler emits due `inbox_parse.requested` jobs for designated recruiter inboxes. The parse worker then uses Microsoft Graph to read forwarded resumes and candidate reply threads, extracting candidate stubs that are queued for recruiter review before activation (not auto-activated).
 - Both paths write to `import_batch` with source attribution; sync errors alert the admin and never silently discard records.
 - Admin console shows per-connector: last sync timestamp, records synced/skipped/errored, and error rate trend.
+
+### Content Fingerprint Gate
+
+**Decision:** No ingestion path may invoke LLM extraction, enrichment, or database upsert without first checking a centralized content fingerprint. The fingerprint is the single, universal pre-processing gate across all ingestion types.
+
+**Principle:** Never spend compute on content you have already seen. This applies to LLM calls, enrichment API calls, and unnecessary database round-trips equally.
+
+**`content_fingerprints` table:**
+
+```sql
+create table if not exists cblaero_app.content_fingerprints (
+  id bigint generated always as identity primary key,
+  tenant_id text not null,
+  fingerprint_type text not null check (fingerprint_type in (
+    'file_sha256', 'email_message_id', 'csv_row_hash', 'ats_external_id', 'candidate_identity'
+  )),
+  fingerprint_hash text not null,
+  source text not null check (source in ('email', 'ats', 'csv', 'ceipal', 'resume_upload', 'onedrive')),
+  status text not null default 'processed' check (status in ('processed', 'failed')),
+  candidate_id uuid references cblaero_app.candidates(id) on delete set null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists uq_fingerprint_tenant_type_hash
+  on cblaero_app.content_fingerprints (tenant_id, fingerprint_type, fingerprint_hash);
+```
+
+**Fingerprint computation by ingestion type:**
+
+| Ingestion Path | Fingerprint Type | Hash Input | What It Skips |
+|----------------|-----------------|------------|---------------|
+| PDF resume upload | `file_sha256` | `SHA-256(raw file bytes)` | LLM extraction + DB upsert |
+| Email ingestion | `email_message_id` | Graph API `message.id` | LLM extraction + submission insert |
+| CSV row | `csv_row_hash` | `SHA-256(normalized: lower(email)\|lower(first+last)\|phone)` | DB upsert call |
+| ATS sync (Ceipal) | `ats_external_id` | `ceipal:{applicant_id}` | Full sync processing |
+| OneDrive resume poll | `file_sha256` | `SHA-256(raw file bytes)` | Download + LLM extraction |
+| Candidate identity | `candidate_identity` | `SHA-256(lower(email))` or `SHA-256(lower(first+last)+normalized(phone))` | DB round-trip for known active candidates |
+
+**`FingerprintService` interface:**
+
+```typescript
+// features/candidate-management/infrastructure/fingerprint-repository.ts
+interface FingerprintService {
+  isAlreadyProcessed(tenantId: string, type: FingerprintType, hash: string): Promise<boolean>;
+  recordFingerprint(tenantId: string, type: FingerprintType, hash: string, source: string, candidateId?: string, metadata?: Record<string, unknown>): Promise<void>;
+  computeFileHash(content: Buffer): string;
+  computeIdentityHash(email?: string, firstName?: string, lastName?: string, phone?: string): string;
+}
+```
+
+**Pipeline integration — every ingestion path MUST follow this order:**
+
+```
+1. Receive input (file bytes, email, CSV row, ATS record)
+2. Compute fingerprint → call isAlreadyProcessed()
+3. If already processed → log skip, return early (NO LLM, NO DB write)
+4. If not processed → proceed with extraction/upsert
+5. On success → call recordFingerprint() with candidate_id linkage
+6. On failure → call recordFingerprint() with status='failed' (allows retry)
+```
+
+**In-memory acceleration (optional, Tier 2):**
+
+For high-throughput batch paths (CSV 10K rows, ATS bulk sync), the service loads recent fingerprints for the tenant into an in-memory `Set<string>` at batch start. This avoids per-row DB lookups. The set is populated from `content_fingerprints WHERE tenant_id = $1 AND fingerprint_type = $2 AND created_at > now() - interval '30 days'`. Cache invalidation is not required — false negatives (missed cache hit) simply fall through to the DB check; false positives are impossible because the set is read-only during the batch.
+
+**Observability:**
+
+Structured log on every skip: `{ event: 'fingerprint_hit', type, source, tenantId, hash: hash.slice(0,12) }`. This enables monitoring of duplicate submission rates per source and early detection of misconfigured connectors that re-send the same data.
 
 ### Authentication and Security
 
@@ -1020,6 +1090,25 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 | `upsertCandidateFromEmailFull(record)` | `src/modules/ingestion/index.ts` | Single email submission: candidate upsert + submission evidence + attachment upload. |
 | `recordSyncFailure(source, recordId, err)` | `src/modules/ingestion/index.ts` | Log sync errors to Supabase `sync_errors` table with in-memory fallback. |
 | `listRecentSyncErrors()` | `src/modules/ingestion/index.ts` | Fetch recent sync errors for admin dashboard. |
+| `createImportBatch(params)` | `src/features/candidate-management/infrastructure/import-batch-repository.ts` | Create new import batch (CSV, resume, email). Returns id + startedAt. Dual persistence. |
+| `getImportBatchById(batchId, tenantId)` | `src/features/candidate-management/infrastructure/import-batch-repository.ts` | Fetch single import batch by id with tenant isolation. |
+| `updateImportBatch(batchId, updates)` | `src/features/candidate-management/infrastructure/import-batch-repository.ts` | Update batch status, counts, completedAt. |
+| `listImportBatchesByTenant(tenantId, page, pageSize)` | `src/features/candidate-management/infrastructure/import-batch-repository.ts` | Paginated import batch list for admin dashboard. |
+| `processImportChunk(params)` | `src/features/candidate-management/infrastructure/import-batch-repository.ts` | Wrapper for `process_import_chunk` RPC. Routes must use this instead of calling RPC directly. |
+| `listImportRowErrors(batchId, limit)` | `src/features/candidate-management/infrastructure/import-batch-repository.ts` | Fetch import row errors for batch detail and error reports. |
+| `insertSubmission(params)` | `src/features/candidate-management/infrastructure/submission-repository.ts` | Insert candidate submission evidence. Used by resume upload, email ingestion. |
+| `findSubmissionByMessageId(messageId, tenantId)` | `src/features/candidate-management/infrastructure/submission-repository.ts` | Dedup check for email submissions. Returns existing submission or null. |
+| `listSubmissionsByBatch(batchId, tenantId)` | `src/features/candidate-management/infrastructure/submission-repository.ts` | List all submissions for a batch. Used by resume upload status. |
+| `countFailedSubmissions(batchId, tenantId)` | `src/features/candidate-management/infrastructure/submission-repository.ts` | Count submissions with null extracted_data. Used for error tallying. |
+| `findCandidateIdsByEmails(emails, tenantId)` | `src/features/candidate-management/infrastructure/candidate-repository.ts` | Batch email→candidateId lookup for submission linking. |
+| `countCandidatesBySource(source)` | `src/features/candidate-management/infrastructure/candidate-repository.ts` | Count candidates by source. Used for Ceipal sync resume page. |
+| `getLastCandidateUpdateBySource(source)` | `src/features/candidate-management/infrastructure/candidate-repository.ts` | Get latest updated_at for source. Used for Ceipal daily sync since date. |
+| `computeFileHash(content)` | `src/features/candidate-management/infrastructure/fingerprint-repository.ts` | SHA-256 hex digest of file bytes. Used before LLM extraction for PDF/resume dedup. |
+| `computeRowHash(email, first, last, phone)` | `src/features/candidate-management/infrastructure/fingerprint-repository.ts` | SHA-256 of normalized candidate identity fields. Used for CSV row dedup. |
+| `computeIdentityHash(email, first, last, phone)` | `src/features/candidate-management/infrastructure/fingerprint-repository.ts` | SHA-256 with email-preferred fallback to name+phone. Used for candidate identity dedup. |
+| `isAlreadyProcessed(tenantId, type, hash)` | `src/features/candidate-management/infrastructure/fingerprint-repository.ts` | Check if content fingerprint exists with status=processed. Mandatory gate before expensive processing. |
+| `recordFingerprint(params)` | `src/features/candidate-management/infrastructure/fingerprint-repository.ts` | Upsert fingerprint after processing. Supports processed/failed status. |
+| `loadRecentFingerprints(tenantId, type, days?)` | `src/features/candidate-management/infrastructure/fingerprint-repository.ts` | Batch pre-load fingerprints into Set for CSV/ATS batch paths. Default 30-day window. |
 
 ### Ingestion Jobs (Scheduler-Ready)
 | Capability | Location | When to Use |
@@ -1036,6 +1125,9 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 | `validateActiveSession(token)` | `src/modules/auth/session.ts` | Validate session token, check revocation. |
 | `registerOrSyncUserFromSession(session)` | `src/modules/admin/index.ts` | Upsert user record from SSO session. |
 | `resolveEffectiveRole(actorId, tokenRole)` | `src/modules/admin/index.ts` | Get latest role from DB, falling back to token role. |
+| `issueCrossClientConfirmationToken(input)` | `src/modules/auth/cross-client-confirmation.ts` | Issue HS256 JWT for cross-client confirmation. 5-minute TTL. |
+| `verifyCrossClientConfirmationToken(input)` | `src/modules/auth/cross-client-confirmation.ts` | Verify JWT claims match request context. Returns jti + expiry or null. |
+| `consumeCrossClientConfirmationToken(jti, exp)` | `src/modules/auth/cross-client-confirmation.ts` | Replay prevention: consume JTI once. DB-backed in prod, Map in test. |
 
 ### UI Components (Reusable)
 | Capability | Location | When to Use |
@@ -1411,6 +1503,7 @@ Client → API Routes → {AuthService, DataService, AIInferenceService, AuditSe
 | **Admin Service** | `modules/admin/` | User governance, invitations, role assignment | **Complete** — clean boundary |
 | **AI Inference Service** | `modules/ai/` (target) | Shared Anthropic client, prompt registry, extraction/scoring/drafting | **Planned** — currently embedded in `features/candidate-management/application/` |
 | **Data Service** | Repositories per entity | DB access abstraction, all queries go through named functions | **Partial** — `candidates` and `saved_searches` have repos; `import_batch`, `candidate_submissions` do not |
+| **Fingerprint Service** | `features/candidate-management/infrastructure/fingerprint-repository.ts` | Content fingerprint gate — pre-processing dedup check for all ingestion paths | **Complete** — Story 1.11 |
 | **Ingestion Service** | `modules/ingestion/` | Candidate upsert orchestration, sync errors, job scheduling | **Complete** — mostly clean |
 | **Email Service** | `modules/email/` | Graph API integration, email parsing | **Complete** — clean boundary |
 | **ATS Service** | `modules/ats/` | Ceipal connector, applicant mapping | **Complete** — clean boundary |
@@ -1422,6 +1515,7 @@ Client → API Routes → {AuthService, DataService, AIInferenceService, AuditSe
 2. **Each DB table must have a repository owner.** If a table is queried from 2+ files, extract a dedicated repository or module function.
 3. **LLM access must be centralized.** All Anthropic SDK usage goes through `modules/ai/` — no direct `new Anthropic()` in feature code.
 4. **Auth enforcement must use shared middleware/helpers.** The validate-session → authorize → step-up pattern should be a reusable function, not copy-pasted.
+5. **Every ingestion path must check the content fingerprint gate before any expensive processing.** No LLM extraction, enrichment API call, or database upsert may execute without first calling `FingerprintRepository.isAlreadyProcessed()`. Violations are treated as bugs, not style issues.
 
 ### Migration Path
 
@@ -1432,6 +1526,7 @@ These refactors are tracked as stories 1.8, 1.9, 1.10 in Epic 1 (Platform Founda
 | **1.8** | Extract `ImportBatchRepository`, `SubmissionRepository`; move cross-client token logic to auth module; eliminate all `db.from()` in routes | High — blocks clean Story 3.x implementation |
 | **1.9** | Create `modules/ai/` with shared client, prompt registry loader, extraction service; migrate `candidate-extraction.ts` | Medium — blocks Story 5.x (scoring) |
 | **1.10** | Create `withAuth()` middleware wrapper; refactor all routes to use it | Medium — reduces code duplication |
+| **1.11** | Create `content_fingerprints` table, `FingerprintRepository`, wire into all ingestion paths as pre-processing gate | High — eliminates redundant LLM calls, prerequisite for Story 2.5 dedup |
 
 ### Current Boundary Violations (Tech Debt)
 

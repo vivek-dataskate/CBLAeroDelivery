@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { authorizeAccess, validateActiveSession } from "@/modules/auth";
 import { recordImportBatchAccessEvent } from "@/modules/audit";
 import {
-  getSupabaseAdminClient,
   shouldUseInMemoryPersistenceForTests,
 } from "@/modules/persistence";
 import {
@@ -15,6 +14,17 @@ import {
   normalizeHeaderKey,
   parseCsv,
 } from "@/modules/csv";
+import {
+  createImportBatch,
+  updateImportBatch,
+  deleteImportBatchCandidates,
+  processImportChunk,
+} from "@/features/candidate-management/infrastructure/import-batch-repository";
+import {
+  computeRowHash,
+  loadRecentFingerprints,
+  recordFingerprint,
+} from "@/features/candidate-management/infrastructure/fingerprint-repository";
 
 import {
   appendInMemoryCsvErrors,
@@ -290,8 +300,6 @@ async function processSupabaseBatch(input: {
   candidates: PreparedCandidate[];
   errors: PreparedErrorRow[];
 }): Promise<{ imported: number; skipped: number; errors: number }> {
-  const client = getSupabaseAdminClient();
-
   const toRpcCandidate = (candidate: PreparedCandidate) => ({
     row_number: candidate.rowNumber,
     raw_data: candidate.rawData,
@@ -339,26 +347,18 @@ async function processSupabaseBatch(input: {
     const candidateChunk = allCandidates.slice(start, start + CSV_PROCESSING_CHUNK_SIZE);
     const errorChunk = start === 0 ? allErrors : [];
 
-    const { data, error } = await client.rpc("process_import_chunk", {
-      p_batch_id: input.batchId,
-      p_candidates: candidateChunk,
-      p_error_rows: errorChunk,
-      p_total_imported: imported,
-      p_total_skipped: skipped,
-      p_total_errors: errors,
+    const result = await processImportChunk({
+      batchId: input.batchId,
+      candidates: candidateChunk,
+      errorRows: errorChunk,
+      totalImported: imported,
+      totalSkipped: skipped,
+      totalErrors: errors,
     });
 
-    if (error) {
-      throw new Error(`Failed to process import chunk: ${error.message}`);
-    }
-
-    const rpcResult = Array.isArray(data) ? data[0] : null;
-    if (!rpcResult) {
-      throw new Error("process_import_chunk RPC returned no result");
-    }
-    imported += Number(rpcResult.imported);
-    skipped += Number(rpcResult.skipped);
-    errors += Number(rpcResult.errors);
+    imported += result.imported;
+    skipped += result.skipped;
+    errors += result.errors;
   }
 
   return { imported, skipped, errors };
@@ -552,37 +552,21 @@ export async function POST(request: NextRequest) {
     startedAtIso = batch.started_at;
     markInMemoryCsvBatchRunning(batch.id);
   } else {
-    const client = getSupabaseAdminClient();
-    const { data: batchRow, error: batchError } = await client
-      .from("import_batch")
-      .insert({
-        tenant_id: tenantId,
+    try {
+      const batch = await createImportBatch({
+        tenantId,
         source: "csv_upload",
         status: "validating",
-        total_rows: csv.rows.length,
-        created_by_actor_id: session.actorId,
-      })
-      .select("id, started_at")
-      .single();
+        totalRows: csv.rows.length,
+        createdByActorId: session.actorId,
+      });
+      batchId = batch.id;
+      startedAtIso = batch.startedAt;
 
-    if (batchError || !batchRow) {
+      await updateImportBatch(batchId, { status: "running" });
+    } catch {
       return NextResponse.json(
         { error: { code: "database_error", message: "Failed to create import batch." } },
-        { status: 500 },
-      );
-    }
-
-    batchId = String(batchRow.id);
-    startedAtIso = String(batchRow.started_at);
-
-    const { error: runningError } = await client
-      .from("import_batch")
-      .update({ status: "running" })
-      .eq("id", batchId);
-
-    if (runningError) {
-      return NextResponse.json(
-        { error: { code: "database_error", message: "Failed to update import batch status." } },
         { status: 500 },
       );
     }
@@ -597,6 +581,22 @@ export async function POST(request: NextRequest) {
     mapping: effectiveMapping,
   });
 
+  // Fingerprint gate: pre-load known row hashes and filter out duplicates
+  const knownHashes = await loadRecentFingerprints(tenantId, "csv_row_hash");
+  const originalCount = prepared.candidates.length;
+  prepared.candidates = prepared.candidates.filter((c) => {
+    const hash = computeRowHash(c.email, c.first_name, c.last_name, c.phone);
+    if (knownHashes.has(hash)) {
+      console.log(JSON.stringify({ event: "fingerprint_hit", type: "csv_row_hash", source: "csv", tenantId, hash: hash.slice(0, 12) }));
+      return false;
+    }
+    return true;
+  });
+  const skippedByFingerprint = originalCount - prepared.candidates.length;
+  if (skippedByFingerprint > 0) {
+    console.log(`[csv-upload] ${skippedByFingerprint} rows skipped via fingerprint gate`);
+  }
+
   try {
     const processed = shouldUseInMemoryPersistenceForTests()
       ? processInMemoryBatch({
@@ -609,6 +609,16 @@ export async function POST(request: NextRequest) {
           candidates: prepared.candidates,
           errors: prepared.errors,
         });
+
+    // Record fingerprints only when batch had zero errors — prevents marking failed rows as processed
+    if (processed.errors === 0 && prepared.candidates.length > 0) {
+      const hashes = prepared.candidates.map((c) => ({
+        tenantId, type: "csv_row_hash" as const, hash: computeRowHash(c.email, c.first_name, c.last_name, c.phone), source: "csv" as const,
+      }));
+      for (const h of hashes) {
+        await recordFingerprint(h);
+      }
+    }
 
     if (shouldUseInMemoryPersistenceForTests()) {
       const updated = finalizeInMemoryCsvBatch(batchId, {
@@ -642,22 +652,14 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const client = getSupabaseAdminClient();
     const completedAtIso = new Date().toISOString();
-    const { error: completeError } = await client
-      .from("import_batch")
-      .update({
-        status: "complete",
-        imported: processed.imported,
-        skipped: processed.skipped,
-        errors: processed.errors,
-        completed_at: completedAtIso,
-      })
-      .eq("id", batchId);
-
-    if (completeError) {
-      throw new Error(`Failed to finalize import batch: ${completeError.message}`);
-    }
+    await updateImportBatch(batchId, {
+      status: "complete",
+      imported: processed.imported,
+      skipped: processed.skipped,
+      errors: processed.errors,
+      completedAt: completedAtIso,
+    });
 
     await recordImportBatchAccessEvent({
       traceId,
@@ -689,19 +691,13 @@ export async function POST(request: NextRequest) {
         errors: prepared.errors.length,
       });
     } else {
-      const client = getSupabaseAdminClient();
-      // Compensating delete: remove any candidate rows already committed in earlier chunks
-      // so they are not picked up by the enrichment worker with a rolled_back batch.
       try {
-        await client.from("candidates").delete().eq("source_batch_id", batchId);
+        await deleteImportBatchCandidates(batchId);
       } catch (deleteError) {
         console.error("[recruiter/csv-upload] compensating candidate delete failed", { traceId, batchId, deleteError });
       }
       try {
-        await client
-          .from("import_batch")
-          .update({ status: "rolled_back", completed_at: new Date().toISOString() })
-          .eq("id", batchId);
+        await updateImportBatch(batchId, { status: "rolled_back", completedAt: new Date().toISOString() });
       } catch (rollbackError) {
         console.error("[recruiter/csv-upload] batch rollback status update failed", { traceId, batchId, rollbackError });
       }
