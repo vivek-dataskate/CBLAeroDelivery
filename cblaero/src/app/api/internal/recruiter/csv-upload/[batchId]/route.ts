@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { authorizeAccess, validateActiveSession } from "@/modules/auth";
 import { recordImportBatchAccessEvent } from "@/modules/audit";
-import { getSupabaseAdminClient, shouldUseInMemoryPersistenceForTests } from "@/modules/persistence";
+import { shouldUseInMemoryPersistenceForTests } from "@/modules/persistence";
+import { getImportBatchById } from "@/features/candidate-management/infrastructure/import-batch-repository";
 
 import { extractSessionToken, findCsvUploadBatchForTenant, toErrorCode, toBatchStatusPayload, type CsvUploadBatchRow } from "../shared";
 
@@ -71,15 +72,9 @@ export async function GET(
     return NextResponse.json({ data: toBatchStatusPayload(batch), meta: {} });
   }
 
-  const client = getSupabaseAdminClient();
-  const { data, error } = await client
-    .from("import_batch")
-    .select("id, tenant_id, status, imported, skipped, errors, total_rows, started_at, completed_at")
-    .eq("id", batchId)
-    .eq("tenant_id", tenantId)
-    .single();
+  const batch = await getImportBatchById(batchId, tenantId);
 
-  if (error || !data) {
+  if (!batch) {
     return NextResponse.json(
       { error: { code: "not_found", message: "Import batch not found." } },
       { status: 404 },
@@ -87,18 +82,18 @@ export async function GET(
   }
 
   const batchRow: CsvUploadBatchRow = {
-    id: String(data.id),
-    tenant_id: String(data.tenant_id),
+    id: batch.id,
+    tenant_id: batch.tenantId,
     source: "csv_upload",
-    status: data.status as CsvUploadBatchRow["status"],
-    total_rows: Number(data.total_rows),
-    imported: Number(data.imported),
-    skipped: Number(data.skipped),
-    errors: Number(data.errors),
-    error_threshold_pct: 5,
-    created_by_actor_id: null,
-    started_at: String(data.started_at),
-    completed_at: data.completed_at ? String(data.completed_at) : null,
+    status: batch.status as CsvUploadBatchRow["status"],
+    total_rows: batch.totalRows,
+    imported: batch.imported,
+    skipped: batch.skipped,
+    errors: batch.errors,
+    error_threshold_pct: batch.errorThresholdPct,
+    created_by_actor_id: batch.createdByActorId,
+    started_at: batch.startedAt,
+    completed_at: batch.completedAt,
   };
 
   try {

@@ -1,13 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAccess, validateActiveSession } from '@/modules/auth';
 import { recordImportBatchAccessEvent } from '@/modules/audit';
-import { getSupabaseAdminClient } from '@/modules/persistence';
 import { mapToCandidateRow } from '@/modules/ingestion';
 import {
+  getImportBatchById,
+  updateImportBatch,
+  processImportChunk,
+} from '@/features/candidate-management/infrastructure/import-batch-repository';
+import {
+  listSubmissionsByBatchIds,
+  updateSubmissionCandidateIds,
+  countFailedSubmissions,
+} from '@/features/candidate-management/infrastructure/submission-repository';
+import {
+  findCandidateIdsByEmails,
+} from '@/features/candidate-management/infrastructure/candidate-repository';
+import {
   extractSessionToken,
-  finalizeInMemoryResumeBatch,
-  getInMemoryResumeBatch,
-  isInMemoryMode,
   toErrorCode,
 } from '../../shared';
 
@@ -73,53 +82,8 @@ export async function POST(
     );
   }
 
-  if (isInMemoryMode()) {
-    const batch = getInMemoryResumeBatch(batchId, tenantId);
-    if (!batch) {
-      return NextResponse.json(
-        { error: { code: 'not_found', message: 'Batch not found.' } },
-        { status: 404 }
-      );
-    }
-
-    if (batch.status === 'complete') {
-      return NextResponse.json(
-        { error: { code: 'already_confirmed', message: 'This batch has already been confirmed.' } },
-        { status: 409 }
-      );
-    }
-
-    const imported = payload.confirmed.length;
-    const skipped = payload.rejected.length;
-    const errors = batch.files.filter((f) => f.status === 'failed').length;
-
-    finalizeInMemoryResumeBatch(batchId, tenantId, { imported, skipped, errors });
-
-    await recordImportBatchAccessEvent({
-      traceId,
-      actorId: session.actorId,
-      tenantId,
-      batchId,
-      action: 'resume_confirm_access',
-    });
-
-    return NextResponse.json({
-      data: { batchId, status: 'complete', imported, skipped, errors },
-      meta: {},
-    });
-  }
-
-  // Supabase mode
-  const db = getSupabaseAdminClient();
-
-  const { data: batch, error: batchErr } = await db
-    .from('import_batch')
-    .select('id, status')
-    .eq('id', batchId)
-    .eq('tenant_id', tenantId)
-    .single();
-
-  if (batchErr || !batch) {
+  const batch = await getImportBatchById(batchId, tenantId);
+  if (!batch) {
     return NextResponse.json(
       { error: { code: 'not_found', message: 'Batch not found.' } },
       { status: 404 }
@@ -135,20 +99,13 @@ export async function POST(
 
   const skipped = payload.rejected.length;
 
-  // Batch-fetch all confirmed submissions in one query
+  // Batch-fetch all confirmed submissions
   const confirmedIds = payload.confirmed.map((c) => c.submissionId);
   const editsMap = new Map(
     payload.confirmed.filter((c) => c.edits).map((c) => [c.submissionId, c.edits!])
   );
 
-  const { data: submissions } = confirmedIds.length > 0
-    ? await db
-        .from('candidate_submissions')
-        .select('id, extracted_data, attachments')
-        .in('id', confirmedIds)
-        .eq('tenant_id', tenantId)
-        .eq('import_batch_id', batchId)
-    : { data: [] as Array<{ id: string; extracted_data: unknown; attachments: unknown }> };
+  const submissions = await listSubmissionsByBatchIds(batchId, tenantId, confirmedIds);
 
   // Whitelist of editable fields to prevent field injection
   const ALLOWED_EDIT_KEYS = new Set([
@@ -162,13 +119,12 @@ export async function POST(
   const submissionEmails: Array<{ submissionId: string; email: string | null }> = [];
 
   let rowNum = 0;
-  for (const submission of submissions ?? []) {
-    if (!submission.extracted_data) continue;
+  for (const submission of submissions) {
+    if (!submission.extractedData) continue;
     rowNum++;
 
-    const extraction = submission.extracted_data as Record<string, unknown>;
+    const extraction = submission.extractedData;
     const rawEdits = editsMap.get(submission.id);
-    // Only apply whitelisted edit keys
     const safeEdits: Record<string, unknown> = {};
     if (rawEdits) {
       for (const key of Object.keys(rawEdits)) {
@@ -199,77 +155,54 @@ export async function POST(
   let imported = 0;
 
   if (candidateRows.length > 0) {
-    const { data: rpcResult, error: rpcError } = await db.rpc('process_import_chunk', {
-      p_batch_id: batchId,
-      p_candidates: candidateRows,
-      p_error_rows: [],
-      p_total_imported: 0,
-      p_total_skipped: skipped,
-      p_total_errors: 0,
-    });
-
-    if (rpcError) {
-      console.error(`[ResumeConfirm] RPC failed for batch ${batchId}:`, rpcError.message);
-    } else {
-      const result = Array.isArray(rpcResult) ? rpcResult[0] : null;
-      if (result) {
-        imported = Number(result.imported);
-      }
+    try {
+      const rpcResult = await processImportChunk({
+        batchId,
+        candidates: candidateRows,
+        errorRows: [],
+        totalImported: 0,
+        totalSkipped: skipped,
+        totalErrors: 0,
+      });
+      imported = rpcResult.imported;
+    } catch (err) {
+      console.error(`[ResumeConfirm] RPC failed for batch ${batchId}:`, err instanceof Error ? err.message : err);
     }
 
-    // Batch-fetch persisted candidates by email to link submissions
+    // Link submissions to persisted candidates by email
     const emailsToLink = submissionEmails.filter((s) => s.email).map((s) => s.email!);
     if (emailsToLink.length > 0) {
-      const { data: candidates } = await db
-        .from('candidates')
-        .select('id, email')
-        .in('email', emailsToLink)
-        .eq('tenant_id', tenantId);
+      const emailToId = await findCandidateIdsByEmails(emailsToLink, tenantId);
 
-      if (candidates && candidates.length > 0) {
-        const emailToId = new Map(candidates.map((c: { id: string; email: string }) => [c.email, c.id]));
-        const updates = submissionEmails
-          .filter((s) => s.email && emailToId.has(s.email))
-          .map((s) => ({ submissionId: s.submissionId, candidateId: emailToId.get(s.email!)! }));
-
-        // Batch update submissions grouped by candidate_id (parallel)
+      if (emailToId.size > 0) {
         const byCandidateId = new Map<string, string[]>();
-        for (const u of updates) {
-          const arr = byCandidateId.get(u.candidateId) ?? [];
-          arr.push(u.submissionId);
-          byCandidateId.set(u.candidateId, arr);
+        for (const s of submissionEmails) {
+          if (s.email && emailToId.has(s.email)) {
+            const candidateId = emailToId.get(s.email)!;
+            const arr = byCandidateId.get(candidateId) ?? [];
+            arr.push(s.submissionId);
+            byCandidateId.set(candidateId, arr);
+          }
         }
-        await Promise.all(
-          [...byCandidateId.entries()].map(([candidateId, subIds]) =>
-            db
-              .from('candidate_submissions')
-              .update({ candidate_id: candidateId })
-              .in('id', subIds)
-          )
+        await updateSubmissionCandidateIds(
+          [...byCandidateId.entries()].map(([candidateId, submissionIds]) => ({
+            candidateId,
+            submissionIds,
+          })),
         );
       }
     }
   }
 
-  // Count failed extractions (submissions with null extracted_data)
-  const { count: errorCount } = await db
-    .from('candidate_submissions')
-    .select('id', { count: 'exact', head: true })
-    .eq('import_batch_id', batchId)
-    .eq('tenant_id', tenantId)
-    .is('extracted_data', null);
-  const errors = errorCount ?? 0;
+  const errors = await countFailedSubmissions(batchId, tenantId);
 
-  await db
-    .from('import_batch')
-    .update({
-      status: 'complete',
-      imported,
-      skipped,
-      errors,
-      completed_at: new Date().toISOString(),
-    })
-    .eq('id', batchId);
+  await updateImportBatch(batchId, {
+    status: 'complete',
+    imported,
+    skipped,
+    errors,
+    completedAt: new Date().toISOString(),
+  });
 
   await recordImportBatchAccessEvent({
     traceId,

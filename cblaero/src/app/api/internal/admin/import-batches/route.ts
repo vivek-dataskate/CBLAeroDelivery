@@ -3,69 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { authorizeAccess, extractSessionToken, toErrorCode, validateActiveSession } from "@/modules/auth";
 import { recordImportBatchAccessEvent } from "@/modules/audit";
 import {
-  getSupabaseAdminClient,
-  shouldUseInMemoryPersistenceForTests,
-} from "@/modules/persistence";
-
-type ImportBatchRow = {
-  id: string;
-  tenant_id: string;
-  source: string;
-  status: string;
-  total_rows: number;
-  imported: number;
-  skipped: number;
-  errors: number;
-  error_threshold_pct: number;
-  created_by_actor_id: string | null;
-  started_at: string;
-  completed_at: string | null;
-};
-
-export type ImportBatchSummary = {
-  id: string;
-  tenantId: string;
-  source: string;
-  status: string;
-  totalRows: number;
-  imported: number;
-  skipped: number;
-  errors: number;
-  startedAt: string;
-  completedAt: string | null;
-  elapsedMs: number | null;
-};
-
-function toSummary(row: ImportBatchRow): ImportBatchSummary {
-  const startedMs = new Date(row.started_at).getTime();
-  const completedMs = row.completed_at ? new Date(row.completed_at).getTime() : null;
-  const elapsedMs = completedMs !== null ? completedMs - startedMs : Date.now() - startedMs;
-
-  return {
-    id: row.id,
-    tenantId: row.tenant_id,
-    source: row.source,
-    status: row.status,
-    totalRows: row.total_rows,
-    imported: row.imported,
-    skipped: row.skipped,
-    errors: row.errors,
-    startedAt: row.started_at,
-    completedAt: row.completed_at,
-    elapsedMs,
-  };
-}
-
-// In-memory store for tests (mirrors the pattern from other route modules)
-const inMemoryBatches: ImportBatchRow[] = [];
-
-export function seedImportBatchForTest(batch: ImportBatchRow): void {
-  inMemoryBatches.push(batch);
-}
-
-export function clearImportBatchesForTest(): void {
-  inMemoryBatches.length = 0;
-}
+  listImportBatchesByTenant,
+} from "@/features/candidate-management/infrastructure/import-batch-repository";
 
 export async function GET(request: NextRequest) {
   const traceId = request.headers.get("x-trace-id") ?? crypto.randomUUID();
@@ -124,34 +63,36 @@ export async function GET(request: NextRequest) {
   const pageStr = request.nextUrl.searchParams.get("page") ?? "1";
   const page = Math.max(1, Number.parseInt(pageStr, 10) || 1);
   const pageSize = 20;
-  const offset = (page - 1) * pageSize;
 
-  if (shouldUseInMemoryPersistenceForTests()) {
-    const tenantBatches = inMemoryBatches.filter((b) => b.tenant_id === session.tenantId);
-    const paginated = tenantBatches.slice(offset, offset + pageSize);
+  try {
+    const result = await listImportBatchesByTenant(session.tenantId, page, pageSize);
+
     return NextResponse.json({
-      data: paginated.map(toSummary),
-      meta: { page, pageSize, total: tenantBatches.length },
+      data: result.items.map((batch) => {
+        const startedMs = new Date(batch.startedAt).getTime();
+        const completedMs = batch.completedAt ? new Date(batch.completedAt).getTime() : null;
+        const elapsedMs = completedMs !== null ? completedMs - startedMs : Date.now() - startedMs;
+
+        return {
+          id: batch.id,
+          tenantId: batch.tenantId,
+          source: batch.source,
+          status: batch.status,
+          totalRows: batch.totalRows,
+          imported: batch.imported,
+          skipped: batch.skipped,
+          errors: batch.errors,
+          startedAt: batch.startedAt,
+          completedAt: batch.completedAt,
+          elapsedMs,
+        };
+      }),
+      meta: { page, pageSize, total: result.total },
     });
-  }
-
-  const client = getSupabaseAdminClient();
-  const { data, error, count } = await client
-    .from("import_batch")
-    .select("*", { count: "exact" })
-    .eq("tenant_id", session.tenantId)
-    .order("started_at", { ascending: false })
-    .range(offset, offset + pageSize - 1);
-
-  if (error) {
+  } catch {
     return NextResponse.json(
       { error: { code: "database_error", message: "Failed to load import batches." } },
       { status: 500 },
     );
   }
-
-  return NextResponse.json({
-    data: (data ?? []).map((row) => toSummary(row as ImportBatchRow)),
-    meta: { page, pageSize, total: count ?? 0 },
-  });
 }

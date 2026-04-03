@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { authorizeAccess, validateActiveSession } from "@/modules/auth";
 import { recordImportBatchAccessEvent } from "@/modules/audit";
-import { getSupabaseAdminClient, shouldUseInMemoryPersistenceForTests } from "@/modules/persistence";
+import {
+  shouldUseInMemoryPersistenceForTests,
+} from "@/modules/persistence";
+import { getImportBatchById, listImportRowErrors } from "@/features/candidate-management/infrastructure/import-batch-repository";
 
 import { extractSessionToken, findCsvUploadBatchForTenant, listCsvUploadErrorsForBatch, toErrorCode } from "../../shared";
 
@@ -99,35 +102,29 @@ export async function GET(
       raw_data: error.raw_data,
     }));
   } else {
-    const client = getSupabaseAdminClient();
-    const { data: batchData, error: batchError } = await client
-      .from("import_batch")
-      .select("id")
-      .eq("id", batchId)
-      .eq("tenant_id", tenantId)
-      .single();
+    const batch = await getImportBatchById(batchId, tenantId);
 
-    if (batchError || !batchData) {
+    if (!batch) {
       return NextResponse.json(
         { error: { code: "not_found", message: "Import batch not found." } },
         { status: 404 },
       );
     }
 
-    const { data: errorRows, error: rowError } = await client
-      .from("import_row_error")
-      .select("row_number, error_code, error_detail, raw_data")
-      .eq("batch_id", batchId)
-      .order("row_number", { ascending: true });
-
-    if (rowError) {
+    try {
+      const rowErrors = await listImportRowErrors(batchId, 10000);
+      errors = rowErrors.map((e) => ({
+        row_number: e.rowNumber,
+        error_code: e.errorCode,
+        error_detail: e.errorDetail,
+        raw_data: e.rawData,
+      }));
+    } catch {
       return NextResponse.json(
         { error: { code: "database_error", message: "Failed to load import row errors." } },
         { status: 500 },
       );
     }
-
-    errors = (errorRows ?? []) as ImportRowErrorRow[];
   }
 
   try {

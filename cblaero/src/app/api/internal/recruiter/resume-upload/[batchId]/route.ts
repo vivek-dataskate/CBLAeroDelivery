@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAccess, validateActiveSession } from '@/modules/auth';
 import { recordImportBatchAccessEvent } from '@/modules/audit';
-import { getSupabaseAdminClient } from '@/modules/persistence';
-import { extractSessionToken, getInMemoryResumeBatch, isInMemoryMode, toErrorCode } from '../shared';
+import { getImportBatchById } from '@/features/candidate-management/infrastructure/import-batch-repository';
+import { listSubmissionsByBatch } from '@/features/candidate-management/infrastructure/submission-repository';
+import { extractSessionToken, toErrorCode } from '../shared';
 
 export async function GET(
   request: NextRequest,
@@ -39,76 +40,20 @@ export async function GET(
 
   const tenantId = requestedTenantId ?? session.tenantId;
 
-  if (isInMemoryMode()) {
-    const batch = getInMemoryResumeBatch(batchId, tenantId);
-    if (!batch) {
-      return NextResponse.json(
-        { error: { code: 'not_found', message: 'Batch not found.' } },
-        { status: 404 }
-      );
-    }
-
-    const complete = batch.files.filter((f) => f.status === 'complete').length;
-    const failed = batch.files.filter((f) => f.status === 'failed').length;
-
-    try {
-      await recordImportBatchAccessEvent({
-        traceId,
-        actorId: session.actorId,
-        tenantId,
-        batchId,
-        action: 'resume_upload_access',
-      });
-    } catch {
-      // Audit is best-effort — do not block status reads
-    }
-
-    return NextResponse.json({
-      data: {
-        batchId: batch.id,
-        status: batch.status,
-        totalFiles: batch.files.length,
-        processed: complete + failed,
-        complete,
-        failed,
-        imported: batch.imported,
-        skipped: batch.skipped,
-        errors: batch.errors,
-        files: batch.files.map((f) => ({
-          filename: f.filename,
-          status: f.status,
-          error: f.error ?? undefined,
-        })),
-      },
-      meta: {},
-    });
-  }
-
-  const db = getSupabaseAdminClient();
-  const { data: batch, error: batchErr } = await db
-    .from('import_batch')
-    .select('id, status, total_rows, imported, skipped, errors, started_at, completed_at')
-    .eq('id', batchId)
-    .eq('tenant_id', tenantId)
-    .single();
-
-  if (batchErr || !batch) {
+  const batch = await getImportBatchById(batchId, tenantId);
+  if (!batch) {
     return NextResponse.json(
       { error: { code: 'not_found', message: 'Batch not found.' } },
       { status: 404 }
     );
   }
 
-  const { data: submissions } = await db
-    .from('candidate_submissions')
-    .select('id, extracted_data, attachments')
-    .eq('import_batch_id', batchId)
-    .eq('tenant_id', tenantId);
+  const submissions = await listSubmissionsByBatch(batchId, tenantId);
 
-  const files = (submissions ?? []).map((s: { id: string; extracted_data: unknown; attachments: unknown }) => {
-    const attachments = Array.isArray(s.attachments) ? s.attachments : [];
+  const files = submissions.map((s) => {
+    const attachments = s.attachments;
     const filename = attachments[0]?.filename ?? 'unknown';
-    const hasExtraction = s.extracted_data !== null;
+    const hasExtraction = s.extractedData !== null;
     return {
       filename,
       status: hasExtraction ? 'complete' : 'failed',
@@ -128,14 +73,17 @@ export async function GET(
     // Audit is best-effort — do not block status reads
   }
 
+  const complete = files.filter((f) => f.status === 'complete').length;
+  const failed = files.filter((f) => f.status === 'failed').length;
+
   return NextResponse.json({
     data: {
       batchId: batch.id,
       status: batch.status,
-      totalFiles: batch.total_rows,
+      totalFiles: batch.totalRows,
       processed: files.length,
-      complete: files.filter((f: { status: string }) => f.status === 'complete').length,
-      failed: files.filter((f: { status: string }) => f.status === 'failed').length,
+      complete,
+      failed,
       imported: batch.imported,
       skipped: batch.skipped,
       errors: batch.errors,
