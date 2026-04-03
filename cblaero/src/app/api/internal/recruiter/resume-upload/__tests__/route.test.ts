@@ -16,6 +16,7 @@ vi.mock('@anthropic-ai/sdk', () => ({
     messages: {
       create: vi.fn().mockResolvedValue({
         content: [{ type: 'text', text: JSON.stringify({ isSubmission: true, firstName: 'Jane', lastName: 'Smith', email: 'jane@test.com', skills: ['A&P'] }) }],
+        usage: { input_tokens: 50, output_tokens: 20 },
       }),
     },
   })),

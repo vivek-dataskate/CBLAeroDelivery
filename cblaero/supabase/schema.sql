@@ -826,3 +826,52 @@ create index if not exists idx_fingerprints_tenant_type_created
 
 grant select, insert, update, delete on cblaero_app.content_fingerprints
   to anon, authenticated, service_role;
+
+-- Prompt Registry — append-only, versioned prompts for AI inference service (Story 1.9)
+create table if not exists cblaero_app.prompt_registry (
+  id bigint generated always as identity primary key,
+  name text not null,
+  version text not null,
+  prompt_text text not null,
+  model text not null,
+  created_at timestamptz not null default now(),
+  created_by text,
+  notes text,
+  unique (name, version)
+);
+
+create index if not exists idx_prompt_registry_name_created
+  on cblaero_app.prompt_registry (name, created_at desc);
+
+grant select on cblaero_app.prompt_registry
+  to anon, authenticated;
+
+grant select, insert on cblaero_app.prompt_registry
+  to service_role;
+
+-- LLM Usage Log — per-call token counts and cost tracking (Story 1.9)
+create table if not exists cblaero_app.llm_usage_log (
+  id bigint generated always as identity primary key,
+  model text not null,
+  prompt_name text,
+  prompt_version text,
+  module text not null,
+  action text not null,
+  input_tokens integer not null,
+  output_tokens integer not null,
+  duration_ms integer not null,
+  estimated_cost_usd numeric(10, 6) not null default 0,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_llm_usage_log_created
+  on cblaero_app.llm_usage_log (created_at desc);
+
+create index if not exists idx_llm_usage_log_model_created
+  on cblaero_app.llm_usage_log (model, created_at desc);
+
+grant select on cblaero_app.llm_usage_log
+  to authenticated;
+
+grant select, insert on cblaero_app.llm_usage_log
+  to service_role;
