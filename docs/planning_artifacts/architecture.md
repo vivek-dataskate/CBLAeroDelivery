@@ -1086,6 +1086,17 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 | `updatePromptStatus(name, version, status)` | `src/modules/ai/prompt-registry.ts` | Update prompt status to active/staged/deprecated. Used for staged rollout lifecycle. |
 | `listPromptVersions(name)` | `src/modules/ai/prompt-registry.ts` | List all versions of a prompt (including deprecated) sorted by created_at desc. |
 
+### CSV Parsing & Field Inference
+| Capability | Location | When to Use |
+|-----------|----------|-------------|
+| `parseCsv(text)` | `src/modules/csv/index.ts` | Parse CSV text into headers + rows. Handles quoted fields, embedded newlines, BOM, CRLF/CR/LF. Used by recruiter CSV upload route and wizard. |
+| `splitCsvRows(text)` | `src/modules/csv/index.ts` | Split CSV text into logical rows respecting quoted fields with embedded newlines. Called by `parseCsv`. |
+| `parseCsvLine(line)` | `src/modules/csv/index.ts` | Parse a single CSV row into cells. Handles RFC 4180 double-quote escaping. Called by `parseCsv`. |
+| `inferFieldForHeader(header)` | `src/modules/csv/index.ts` | Auto-map a CSV header to a canonical candidate field via `FIELD_ALIASES`. Returns `"(ignore)"` if no match. |
+| `normalizeHeaderKey(value)` | `src/modules/csv/index.ts` | Normalize header to lowercase snake_case for alias lookup and extra_attributes keys. |
+| `FIELD_ALIASES` | `src/modules/csv/index.ts` | Lookup table mapping 40+ common header variations to canonical candidate fields. |
+| `CANONICAL_FIELDS` | `src/modules/csv/index.ts` | Set of all valid canonical field names including `"(ignore)"`. |
+
 ### Candidate Data Pipeline
 | Capability | Location | When to Use |
 |-----------|----------|-------------|
@@ -1119,6 +1130,8 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 | `findCandidateIdsByEmails(emails, tenantId)` | `src/features/candidate-management/infrastructure/candidate-repository.ts` | Batch email→candidateId lookup for submission linking. |
 | `countCandidatesBySource(source)` | `src/features/candidate-management/infrastructure/candidate-repository.ts` | Count candidates by source. Used for Ceipal sync resume page. |
 | `getLastCandidateUpdateBySource(source)` | `src/features/candidate-management/infrastructure/candidate-repository.ts` | Get latest updated_at for source. Used for Ceipal daily sync since date. |
+| `recordFingerprintBatch(items)` | `src/features/candidate-management/infrastructure/fingerprint-repository.ts` | Batch-upsert content fingerprints in a single DB call. Use for CSV/resume uploads instead of per-row `recordFingerprint`. |
+| `resolveRequestTenantId(session, request)` | `src/app/api/internal/recruiter/csv-upload/shared.ts` | Safely resolve tenant ID from `x-active-client-id` header, validating against session's clientIds allowlist. Use in route handlers instead of reading the header directly. |
 | `computeFileHash(content)` | `src/features/candidate-management/infrastructure/fingerprint-repository.ts` | SHA-256 hex digest of file bytes. Used before LLM extraction for PDF/resume dedup. |
 | `computeRowHash(email, first, last, phone)` | `src/features/candidate-management/infrastructure/fingerprint-repository.ts` | SHA-256 of normalized candidate identity fields. Used for CSV row dedup. |
 | `computeIdentityHash(email, first, last, phone)` | `src/features/candidate-management/infrastructure/fingerprint-repository.ts` | SHA-256 with email-preferred fallback to name+phone. Used for candidate identity dedup. |

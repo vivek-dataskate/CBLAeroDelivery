@@ -514,6 +514,7 @@ Before writing a new helper, check if one already exists:
 | Prompt deprecation | `deprecatePrompt()`, `updatePromptStatus()` | `@/modules/ai/prompt-registry` |
 | Prompt version listing | `listPromptVersions()` | `@/modules/ai/prompt-registry` |
 | LLM extraction | `extractCandidateFromDocument()` | `@/features/candidate-management/application/candidate-extraction` |
+| CSV parsing & field inference | `parseCsv()`, `splitCsvRows()`, `inferFieldForHeader()`, `FIELD_ALIASES` | `@/modules/csv` |
 | Batch import processing | `process_import_chunk` RPC | `supabase/schema.sql` |
 | Import batch CRUD | `createImportBatch()`, `getImportBatchById()`, `updateImportBatch()`, `listImportBatchesByTenant()`, `getLatestMigrationBatch()` | `@/features/candidate-management/infrastructure/import-batch-repository` |
 | Import chunk RPC wrapper | `processImportChunk()` | `@/features/candidate-management/infrastructure/import-batch-repository` |
@@ -521,6 +522,7 @@ Before writing a new helper, check if one already exists:
 | Submission evidence CRUD | `insertSubmission()`, `findSubmissionByMessageId()`, `listSubmissionsByBatch()` | `@/features/candidate-management/infrastructure/submission-repository` |
 | Submission failure count | `countFailedSubmissions()` | `@/features/candidate-management/infrastructure/submission-repository` |
 | Resume storage upload | `uploadResumeToStorage()` | `@/features/candidate-management/infrastructure/submission-repository` |
+| Fingerprint batch recording | `recordFingerprintBatch()` | `@/features/candidate-management/infrastructure/fingerprint-repository` |
 | Candidate email lookup | `findCandidateIdsByEmails()` | `@/features/candidate-management/infrastructure/candidate-repository` |
 | Candidate source stats | `countCandidatesBySource()`, `getLastCandidateUpdateBySource()` | `@/features/candidate-management/infrastructure/candidate-repository` |
 | Import batch audit | `recordImportBatchAccessEvent()`, `listImportBatchAccessEvents()` | `@/modules/audit` |

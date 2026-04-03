@@ -12,12 +12,6 @@ async function requireUploadSession() {
   const session = await validateActiveSession(sessionToken);
 
   if (!session) {
-    await authorizeAccess({
-      session: null,
-      action: "recruiter:csv-upload",
-      path: "/dashboard/recruiter/upload",
-      method: "GET",
-    });
     redirect("/api/auth/login?next=%2Fdashboard%2Frecruiter%2Fupload");
   }
 

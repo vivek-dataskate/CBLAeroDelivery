@@ -74,6 +74,11 @@ export default function BatchProgressCard({ batchId }: BatchProgressCardProps) {
         const payload = await response.json();
         if (!response.ok) {
           setError(payload?.error?.message ?? "Failed to load batch status.");
+          // Stop polling on auth errors — retrying won't help
+          if ((response.status === 401 || response.status === 403) && pollId) {
+            clearInterval(pollId);
+            pollId = null;
+          }
           return;
         }
 
@@ -139,7 +144,7 @@ export default function BatchProgressCard({ batchId }: BatchProgressCardProps) {
               New: <span className="font-medium text-emerald-600">{data.imported.toLocaleString()}</span>
             </p>
             <p>
-              Updated: <span className="font-medium text-slate-700">{data.skipped.toLocaleString()}</span>
+              Skipped: <span className="font-medium text-slate-700">{data.skipped.toLocaleString()}</span>
             </p>
             <p>
               Errors: <span className="font-medium text-amber-600">{data.errors.toLocaleString()}</span>

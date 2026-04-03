@@ -221,6 +221,50 @@ export async function recordFingerprint(params: RecordFingerprintParams): Promis
   }
 }
 
+export async function recordFingerprintBatch(
+  items: RecordFingerprintParams[],
+): Promise<void> {
+  if (items.length === 0) return;
+
+  if (shouldUseInMemoryPersistenceForTests()) {
+    for (const params of items) {
+      const key = storeKey(params.tenantId, params.type, params.hash);
+      const id = nextId++;
+      fingerprintStore.set(key, {
+        id,
+        tenant_id: params.tenantId,
+        fingerprint_type: params.type,
+        fingerprint_hash: params.hash,
+        source: params.source,
+        status: params.status ?? "processed",
+        candidate_id: params.candidateId ?? null,
+        metadata: params.metadata ?? {},
+        created_at: new Date().toISOString(),
+      });
+    }
+    return;
+  }
+
+  const client = getSupabaseAdminClient();
+  const rows = items.map((p) => ({
+    tenant_id: p.tenantId,
+    fingerprint_type: p.type,
+    fingerprint_hash: p.hash,
+    source: p.source,
+    status: p.status ?? "processed",
+    candidate_id: p.candidateId ?? null,
+    metadata: p.metadata ?? {},
+  }));
+
+  const { error } = await client
+    .from("content_fingerprints")
+    .upsert(rows, { onConflict: "tenant_id,fingerprint_type,fingerprint_hash" });
+
+  if (error) {
+    throw new Error(`[Fingerprint] Batch record failed: ${error.message}`);
+  }
+}
+
 export async function loadRecentFingerprints(
   tenantId: string,
   type: FingerprintType,
