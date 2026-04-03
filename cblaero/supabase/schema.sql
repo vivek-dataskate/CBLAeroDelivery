@@ -802,3 +802,27 @@ create index if not exists idx_saved_searches_digest
 
 grant select, insert, update, delete on cblaero_app.saved_searches
   to anon, authenticated, service_role;
+
+-- Story 1.11: Content fingerprint gate for dedup before expensive processing
+create table if not exists cblaero_app.content_fingerprints (
+  id bigint generated always as identity primary key,
+  tenant_id text not null,
+  fingerprint_type text not null check (fingerprint_type in (
+    'file_sha256', 'email_message_id', 'csv_row_hash', 'ats_external_id', 'candidate_identity'
+  )),
+  fingerprint_hash text not null,
+  source text not null check (source in ('email', 'ats', 'csv', 'ceipal', 'resume_upload', 'onedrive')),
+  status text not null default 'processed' check (status in ('processed', 'failed')),
+  candidate_id uuid references cblaero_app.candidates(id) on delete set null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists uq_fingerprint_tenant_type_hash
+  on cblaero_app.content_fingerprints (tenant_id, fingerprint_type, fingerprint_hash);
+
+create index if not exists idx_fingerprints_tenant_type_created
+  on cblaero_app.content_fingerprints (tenant_id, fingerprint_type, created_at desc);
+
+grant select, insert, update, delete on cblaero_app.content_fingerprints
+  to anon, authenticated, service_role;

@@ -15,6 +15,16 @@ vi.mock('@/modules/email/nlp-extract-and-upload', () => ({
   uploadAttachmentToStorage: vi.fn().mockResolvedValue({ filename: 'test.pdf', url: 'https://example.com/test.pdf', size: 100 }),
 }));
 
+const submissionMocks = vi.hoisted(() => ({
+  findSubmissionByMessageId: vi.fn().mockResolvedValue(null),
+  insertSubmission: vi.fn().mockResolvedValue('sub-uuid'),
+}));
+
+vi.mock('@/features/candidate-management/infrastructure/submission-repository', () => ({
+  findSubmissionByMessageId: submissionMocks.findSubmissionByMessageId,
+  insertSubmission: submissionMocks.insertSubmission,
+}));
+
 import {
   recordSyncFailure,
   listRecentSyncErrors,
@@ -181,6 +191,8 @@ describe('upsertCandidateFromEmailFull', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     clearSyncErrorsForTest();
+    submissionMocks.findSubmissionByMessageId.mockResolvedValue(null);
+    submissionMocks.insertSubmission.mockResolvedValue('sub-uuid');
   });
 
   it('skips persist when Supabase is not configured', async () => {
@@ -201,14 +213,6 @@ describe('upsertCandidateFromEmailFull', () => {
         single: vi.fn().mockResolvedValue({ data: { id: 'cand-uuid-1' }, error: null }),
       }),
     });
-    const mockSubInsert = vi.fn().mockResolvedValue({ error: null });
-    const mockSubSelect = vi.fn().mockReturnValue({
-      eq: vi.fn().mockReturnValue({
-        eq: vi.fn().mockReturnValue({
-          maybeSingle: vi.fn().mockResolvedValue({ data: null }), // no existing submission
-        }),
-      }),
-    });
     const mockCandidateSelect = vi.fn().mockReturnValue({
       eq: vi.fn().mockReturnValue({
         eq: vi.fn().mockReturnValue({
@@ -221,7 +225,6 @@ describe('upsertCandidateFromEmailFull', () => {
     mocks.getSupabaseAdminClient.mockReturnValue({
       from: vi.fn((table: string) => {
         if (table === 'candidates') return { select: mockCandidateSelect, insert: mockCandidateInsert };
-        if (table === 'candidate_submissions') return { select: mockSubSelect, insert: mockSubInsert };
         return { insert: vi.fn().mockResolvedValue({ error: null }) };
       }),
       storage: { from: vi.fn().mockReturnValue({ upload: vi.fn().mockResolvedValue({ error: null }), getPublicUrl: vi.fn().mockReturnValue({ data: { publicUrl: 'https://storage/test.pdf' } }) }) },
@@ -236,17 +239,14 @@ describe('upsertCandidateFromEmailFull', () => {
     });
 
     expect(mockCandidateInsert).toHaveBeenCalledTimes(1);
-    expect(mockSubInsert).toHaveBeenCalledTimes(1);
-    const subRow = mockSubInsert.mock.calls[0][0];
-    expect(subRow.email_subject).toBe('MHI | Tucson | A&P Tech | Jane');
-    expect(subRow.extraction_model).toBe('claude-haiku-4-5-20251001');
-    expect(subRow.candidate_id).toBe('cand-uuid-1');
+    expect(submissionMocks.insertSubmission).toHaveBeenCalledTimes(1);
+    const subParams = submissionMocks.insertSubmission.mock.calls[0][0];
+    expect(subParams.emailSubject).toBe('MHI | Tucson | A&P Tech | Jane');
+    expect(subParams.extractionModel).toBe('claude-haiku-4-5-20251001');
+    expect(subParams.candidateId).toBe('cand-uuid-1');
   });
 
   it('skips already-processed email by message ID', async () => {
-    const mockCandidateUpdate = vi.fn().mockReturnValue({
-      eq: vi.fn().mockResolvedValue({ error: null }),
-    });
     const mockCandidateSelect = vi.fn().mockReturnValue({
       eq: vi.fn().mockReturnValue({
         eq: vi.fn().mockReturnValue({
@@ -254,23 +254,17 @@ describe('upsertCandidateFromEmailFull', () => {
         }),
       }),
     });
-    const mockSubSelect = vi.fn().mockReturnValue({
-      eq: vi.fn().mockReturnValue({
-        eq: vi.fn().mockReturnValue({
-          maybeSingle: vi.fn().mockResolvedValue({ data: { id: 'sub-existing' } }), // already processed
-        }),
-      }),
-    });
-    const mockSubInsert = vi.fn();
 
     mocks.isSupabaseConfigured.mockReturnValue(true);
     mocks.getSupabaseAdminClient.mockReturnValue({
       from: vi.fn((table: string) => {
         if (table === 'candidates') return { select: mockCandidateSelect, update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }) };
-        if (table === 'candidate_submissions') return { select: mockSubSelect, insert: mockSubInsert };
         return {};
       }),
     });
+
+    // Mock submission dedup to return an existing submission
+    submissionMocks.findSubmissionByMessageId.mockResolvedValueOnce({ id: 'sub-existing' });
 
     await upsertCandidateFromEmailFull({
       id: 'msg-duplicate',
@@ -281,7 +275,7 @@ describe('upsertCandidateFromEmailFull', () => {
     });
 
     // Submission insert should NOT be called — dedup skipped it
-    expect(mockSubInsert).not.toHaveBeenCalled();
+    expect(submissionMocks.insertSubmission).not.toHaveBeenCalled();
   });
 
   it('updates existing candidate by email dedup', async () => {
@@ -295,19 +289,10 @@ describe('upsertCandidateFromEmailFull', () => {
         }),
       }),
     });
-    const mockSubSelect = vi.fn().mockReturnValue({
-      eq: vi.fn().mockReturnValue({
-        eq: vi.fn().mockReturnValue({
-          maybeSingle: vi.fn().mockResolvedValue({ data: null }),
-        }),
-      }),
-    });
-
     mocks.isSupabaseConfigured.mockReturnValue(true);
     mocks.getSupabaseAdminClient.mockReturnValue({
       from: vi.fn((table: string) => {
         if (table === 'candidates') return { select: mockCandidateSelect, update: mockUpdate };
-        if (table === 'candidate_submissions') return { select: mockSubSelect, insert: vi.fn().mockResolvedValue({ error: null }) };
         return { insert: vi.fn().mockResolvedValue({ error: null }) };
       }),
     });

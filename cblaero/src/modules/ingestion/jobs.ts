@@ -3,8 +3,14 @@ import { MicrosoftGraphEmailParser } from '../email';
 import { acquireGraphToken } from '../email/graph-auth';
 import { getSupabaseAdminClient, isSupabaseConfigured } from '../persistence';
 import { extractCandidateFromDocument } from '../../features/candidate-management/application/candidate-extraction';
-import { recordSyncFailure, upsertCandidateFromEmailFull, batchUpsertCandidatesFromATS } from './index';
+import { recordSyncFailure, upsertCandidateFromEmailFull, batchUpsertCandidatesFromATS, DEFAULT_TENANT_ID } from './index';
 import { fetchWithRetry } from './fetch-with-retry';
+import {
+  computeFileHash,
+  isAlreadyProcessed,
+  loadRecentFingerprints,
+  recordFingerprint,
+} from '../../features/candidate-management/infrastructure/fingerprint-repository';
 
 export interface SchedulerJob {
   name: string;
@@ -22,36 +28,21 @@ export class EmailIngestionJob implements SchedulerJob {
 
   async run() {
     try {
-      // Load already-processed message IDs to skip LLM calls on re-runs
-      const processedIds = await this.loadProcessedMessageIds();
+      // Fingerprint gate: load processed message IDs from centralized fingerprint table
+      const processedIds = await loadRecentFingerprints(DEFAULT_TENANT_ID, 'email_message_id');
       const records = await this.parser.parseInbox(this.inboxAddresses, processedIds);
       console.log(`[EmailIngestionJob] ${records.length} new emails to process (${processedIds.size} already processed)`);
       for (const record of records) {
         try {
           await upsertCandidateFromEmailFull(record);
+          await recordFingerprint({ tenantId: DEFAULT_TENANT_ID, type: 'email_message_id', hash: record.id, source: 'email' });
         } catch (err) {
+          recordFingerprint({ tenantId: DEFAULT_TENANT_ID, type: 'email_message_id', hash: record.id, source: 'email', status: 'failed' }).catch(() => {});
           recordSyncFailure('email', record.id, err);
         }
       }
     } catch (err) {
       recordSyncFailure('email', 'polling', err);
-    }
-  }
-
-  private async loadProcessedMessageIds(): Promise<Set<string>> {
-    if (!isSupabaseConfigured()) return new Set();
-    try {
-      const db = getSupabaseAdminClient();
-      // Only load recent IDs — inbox fetch is $top=50 so older IDs won't match
-      const { data } = await db
-        .from('candidate_submissions')
-        .select('email_message_id')
-        .not('email_message_id', 'is', null)
-        .order('created_at', { ascending: false })
-        .limit(500);
-      return new Set((data ?? []).map((r: { email_message_id: string }) => r.email_message_id));
-    } catch {
-      return new Set();
     }
   }
 }
@@ -85,7 +76,34 @@ export class CeipalIngestionJob implements SchedulerJob {
       if (applicants.length === 0) return;
 
       const candidates = applicants.map(mapCeipalApplicantToCandidate);
-      const { inserted, failed } = await batchUpsertCandidatesFromATS(candidates);
+
+      // Fingerprint gate: filter out already-processed applicants
+      const knownFingerprints = await loadRecentFingerprints(DEFAULT_TENANT_ID, 'ats_external_id');
+      const newCandidates = candidates.filter((c) => {
+        const extId = `ceipal:${(c as Record<string, unknown>).ceipalId ?? ''}`;
+        if (knownFingerprints.has(extId)) {
+          console.log(JSON.stringify({ event: 'fingerprint_hit', type: 'ats_external_id', source: 'ceipal', tenantId: DEFAULT_TENANT_ID, hash: extId.slice(0, 12) }));
+          return false;
+        }
+        return true;
+      });
+
+      if (newCandidates.length === 0) {
+        console.log(`[CeipalIngestionJob] All ${candidates.length} applicants already fingerprinted — skipping`);
+        return;
+      }
+
+      console.log(`[CeipalIngestionJob] ${newCandidates.length} new of ${candidates.length} total (${candidates.length - newCandidates.length} skipped via fingerprint)`);
+      const { inserted, failed } = await batchUpsertCandidatesFromATS(newCandidates);
+
+      // Only record fingerprints if zero failures — prevents marking failed candidates as processed
+      if (failed === 0) {
+        for (const c of newCandidates) {
+          const extId = `ceipal:${(c as Record<string, unknown>).ceipalId ?? ''}`;
+          await recordFingerprint({ tenantId: DEFAULT_TENANT_ID, type: 'ats_external_id', hash: extId, source: 'ceipal' });
+        }
+      }
+
       console.log(`[CeipalIngestionJob] ${inserted} upserted, ${failed} failed`);
     } catch (err) {
       recordSyncFailure('ceipal', 'polling', err);
@@ -159,6 +177,16 @@ export class OneDriveResumePollerJob implements SchedulerJob {
       try {
         const buffer = await this.downloadFile(file.downloadUrl);
 
+        // Fingerprint gate: skip LLM extraction if this exact file was already processed
+        const fileHash = computeFileHash(buffer);
+        if (await isAlreadyProcessed(DEFAULT_TENANT_ID, 'file_sha256', fileHash)) {
+          console.log(JSON.stringify({ event: 'fingerprint_hit', type: 'file_sha256', source: 'onedrive', tenantId: DEFAULT_TENANT_ID, hash: fileHash.slice(0, 12) }));
+          // Safe to delete from OneDrive — the original processing already stored to Supabase Storage
+          // (fingerprint was only recorded with status='processed' after successful storage+extraction)
+          await this.deleteFromOneDrive(token, file.id, file.name);
+          continue;
+        }
+
         // Store PDF in Supabase Storage (source of truth) before extraction
         let storageUrl = '';
         if (db && batchId) {
@@ -187,6 +215,7 @@ export class OneDriveResumePollerJob implements SchedulerJob {
         if (result.error || !result.extraction) {
           console.warn(`[OneDrivePoller] Extraction failed for ${file.name}: ${result.error}`);
           failed++;
+          await recordFingerprint({ tenantId: DEFAULT_TENANT_ID, type: 'file_sha256', hash: fileHash, source: 'onedrive', status: 'failed' });
           recordSyncFailure('onedrive', file.name, result.error ?? 'Extraction returned no data');
           // Only delete from OneDrive if PDF was safely backed up to Supabase Storage
           if (storageUrl) {
@@ -246,6 +275,7 @@ export class OneDriveResumePollerJob implements SchedulerJob {
         }
 
         imported++;
+        await recordFingerprint({ tenantId: DEFAULT_TENANT_ID, type: 'file_sha256', hash: fileHash, source: 'onedrive' });
         console.log(`[OneDrivePoller] Processed ${file.name} → ${result.extraction.firstName} ${result.extraction.lastName}`);
 
         // Only delete from OneDrive if PDF was safely backed up to Supabase Storage

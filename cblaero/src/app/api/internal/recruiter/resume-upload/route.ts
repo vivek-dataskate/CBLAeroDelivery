@@ -1,19 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAccess, validateActiveSession } from '@/modules/auth';
 import { recordImportBatchAccessEvent } from '@/modules/audit';
-import { getSupabaseAdminClient } from '@/modules/persistence';
 import { extractCandidateFromDocument } from '@/features/candidate-management/application/candidate-extraction';
+import { createImportBatch } from '@/features/candidate-management/infrastructure/import-batch-repository';
+import { insertSubmission, uploadResumeToStorage } from '@/features/candidate-management/infrastructure/submission-repository';
 import {
-  createInMemoryResumeBatch,
+  computeFileHash,
+  isAlreadyProcessed,
+  recordFingerprint,
+} from '@/features/candidate-management/infrastructure/fingerprint-repository';
+import {
   extractSessionToken,
-  getInMemoryResumeBatch,
-  isInMemoryMode,
   toErrorCode,
   type ResumeFileResult,
 } from './shared';
 
 const BATCH_SIZE = 50;
-const ATTACHMENT_BUCKET = 'candidate-attachments';
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per file
 
 function isPdfFile(file: File): boolean {
@@ -114,30 +116,20 @@ export async function POST(request: NextRequest) {
   }
 
   let batchId: string;
-  if (isInMemoryMode()) {
-    const batch = createInMemoryResumeBatch(tenantId);
+  try {
+    const batch = await createImportBatch({
+      tenantId,
+      source: 'resume_upload',
+      status: 'processing',
+      totalRows: files.length,
+      createdByActorId: session.actorId,
+    });
     batchId = batch.id;
-  } else {
-    const db = getSupabaseAdminClient();
-    const { data: batchRow, error: batchError } = await db
-      .from('import_batch')
-      .insert({
-        tenant_id: tenantId,
-        source: 'resume_upload',
-        status: 'processing',
-        total_rows: files.length,
-        created_by_actor_id: session.actorId,
-      })
-      .select('id')
-      .single();
-
-    if (batchError || !batchRow) {
-      return NextResponse.json(
-        { error: { code: 'database_error', message: 'Failed to create import batch.' } },
-        { status: 500 }
-      );
-    }
-    batchId = String(batchRow.id);
+  } catch {
+    return NextResponse.json(
+      { error: { code: 'database_error', message: 'Failed to create import batch.' } },
+      { status: 500 }
+    );
   }
 
   const fileResults: ResumeFileResult[] = [];
@@ -152,28 +144,21 @@ export async function POST(request: NextRequest) {
           const arrayBuffer = await file.arrayBuffer();
           const buffer = Buffer.from(arrayBuffer);
 
-          let storageUrl = '';
-          let storageWarning: string | undefined;
-          if (!isInMemoryMode()) {
-            const db = getSupabaseAdminClient();
-            const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-            const storagePath = `resume-uploads/${tenantId}/${batchId}/${submissionId}/${safeName}`;
-
-            const { error: uploadError } = await db.storage
-              .from(ATTACHMENT_BUCKET)
-              .upload(storagePath, buffer, {
-                contentType: 'application/pdf',
-                upsert: true,
-              });
-
-            if (uploadError) {
-              console.error(`[ResumeUpload] Storage upload failed for ${file.name}:`, uploadError.message);
-              storageWarning = 'PDF storage failed — the original file may not be retrievable.';
-            } else {
-              const { data: urlData } = db.storage.from(ATTACHMENT_BUCKET).getPublicUrl(storagePath);
-              storageUrl = urlData.publicUrl;
-            }
+          // Fingerprint gate: skip LLM extraction if this exact file was already processed
+          const fileHash = computeFileHash(buffer);
+          if (await isAlreadyProcessed(tenantId, 'file_sha256', fileHash)) {
+            console.log(JSON.stringify({ event: 'fingerprint_hit', type: 'file_sha256', source: 'resume_upload', tenantId, hash: fileHash.slice(0, 12) }));
+            return {
+              filename: file.name,
+              status: 'skipped',
+              error: 'Duplicate file — already processed',
+              submissionId,
+            };
           }
+
+          const storage = await uploadResumeToStorage(buffer, file.name, tenantId, batchId, submissionId);
+          const storageUrl = storage.url;
+          const storageWarning = storage.warning;
 
           const result = await extractCandidateFromDocument(buffer, 'pdf', {
             source: 'resume_upload',
@@ -182,18 +167,17 @@ export async function POST(request: NextRequest) {
           });
 
           if (result.error || !result.extraction) {
-            if (!isInMemoryMode()) {
-              const db = getSupabaseAdminClient();
-              await db.from('candidate_submissions').insert({
-                id: submissionId,
-                tenant_id: tenantId,
-                source: 'resume_upload',
-                import_batch_id: batchId,
-                extracted_data: null,
-                extraction_model: 'claude-haiku-4-5-20251001',
-                attachments: [{ filename: file.name, url: storageUrl, size: buffer.length }],
-              });
-            }
+            await insertSubmission({
+              id: submissionId,
+              tenantId,
+              source: 'resume_upload',
+              importBatchId: batchId,
+              extractedData: null,
+              extractionModel: 'claude-haiku-4-5-20251001',
+              attachments: [{ filename: file.name, url: storageUrl, size: buffer.length }],
+            });
+
+            await recordFingerprint({ tenantId, type: 'file_sha256', hash: fileHash, source: 'resume_upload', status: 'failed' });
 
             return {
               filename: file.name,
@@ -205,18 +189,17 @@ export async function POST(request: NextRequest) {
             };
           }
 
-          if (!isInMemoryMode()) {
-            const db = getSupabaseAdminClient();
-            await db.from('candidate_submissions').insert({
-              id: submissionId,
-              tenant_id: tenantId,
-              source: 'resume_upload',
-              import_batch_id: batchId,
-              extracted_data: result.extraction,
-              extraction_model: 'claude-haiku-4-5-20251001',
-              attachments: [{ filename: file.name, url: storageUrl, size: buffer.length }],
-            });
-          }
+          await insertSubmission({
+            id: submissionId,
+            tenantId,
+            source: 'resume_upload',
+            importBatchId: batchId,
+            extractedData: result.extraction as unknown as Record<string, unknown>,
+            extractionModel: 'claude-haiku-4-5-20251001',
+            attachments: [{ filename: file.name, url: storageUrl, size: buffer.length }],
+          });
+
+          await recordFingerprint({ tenantId, type: 'file_sha256', hash: fileHash, source: 'resume_upload' });
 
           return {
             filename: file.name,
@@ -228,6 +211,10 @@ export async function POST(request: NextRequest) {
           };
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
+          // Record failed fingerprint if hash was computed (allows retry on next upload)
+          if (typeof fileHash === 'string') {
+            recordFingerprint({ tenantId, type: 'file_sha256', hash: fileHash, source: 'resume_upload', status: 'failed' }).catch(() => {});
+          }
           return {
             filename: file.name,
             status: 'failed',
@@ -239,13 +226,6 @@ export async function POST(request: NextRequest) {
     );
 
     fileResults.push(...chunkResults);
-  }
-
-  if (isInMemoryMode()) {
-    const batch = getInMemoryResumeBatch(batchId, tenantId);
-    if (batch) {
-      batch.files = fileResults;
-    }
   }
 
   await recordImportBatchAccessEvent({

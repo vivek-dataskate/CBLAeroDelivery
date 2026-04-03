@@ -1,5 +1,9 @@
 import { getSupabaseAdminClient, isSupabaseConfigured } from '../persistence';
 import { uploadAttachmentToStorage } from '../email/nlp-extract-and-upload';
+import {
+  findSubmissionByMessageId,
+  insertSubmission,
+} from '@/features/candidate-management/infrastructure/submission-repository';
 
 export type IngestionSource = "csv" | "ats" | "email" | "ceipal" | "resume_upload";
 
@@ -89,7 +93,7 @@ export function clearSyncErrorsForTest(): void {
 }
 
 // Default tenant for single-tenant MVP
-const DEFAULT_TENANT_ID = 'cbl-aero';
+export const DEFAULT_TENANT_ID = 'cbl-aero';
 
 // --- Candidate upsert (real Supabase persistence) ---
 
@@ -253,12 +257,7 @@ export async function upsertCandidateFromEmailFull(record: {
   }
 
   // 2. Skip if this email was already processed (dedup by message ID)
-  const { data: existingSub } = await db
-    .from('candidate_submissions')
-    .select('id')
-    .eq('email_message_id', record.id)
-    .eq('tenant_id', DEFAULT_TENANT_ID)
-    .maybeSingle();
+  const existingSub = await findSubmissionByMessageId(record.id, DEFAULT_TENANT_ID);
   if (existingSub) {
     console.log(`[Ingestion] Skipping already-processed email: ${record.subject}`);
     return;
@@ -266,20 +265,7 @@ export async function upsertCandidateFromEmailFull(record: {
 
   // 3. Build submission record
   const submissionId = crypto.randomUUID();
-  const submissionRow = {
-    id: submissionId,
-    candidate_id: candidateId,
-    tenant_id: DEFAULT_TENANT_ID,
-    source,
-    email_message_id: record.id,
-    email_subject: record.subject,
-    email_body: record.body,
-    email_from: typeof record.candidate.submitterEmail === 'string' ? record.candidate.submitterEmail : null,
-    email_received_at: record.receivedAt,
-    extracted_data: record.candidate,
-    attachments: [] as Array<{ filename: string; url?: string; size?: number }>,
-    extraction_model: record.candidate.extractionMethod === 'llm' ? 'claude-haiku-4-5-20251001' : 'regex-fallback',
-  };
+  const extractionModel = record.candidate.extractionMethod === 'llm' ? 'claude-haiku-4-5-20251001' : 'regex-fallback';
 
   // 4. Upload attachments to Supabase Storage
   const attachmentMeta: Array<{ filename: string; url: string; size: number }> = [];
@@ -296,15 +282,27 @@ export async function upsertCandidateFromEmailFull(record: {
       attachmentMeta.push({ filename: att.filename, url: '', size: att.content.length });
     }
   }
-  submissionRow.attachments = attachmentMeta;
 
-  // 5. Save submission evidence with attachment URLs
-  const { error: subError } = await db.from('candidate_submissions').insert(submissionRow);
-  if (subError) {
-    console.error(`[Ingestion] Submission evidence insert failed: ${subError.message}`);
-  } else {
+  // 5. Save submission evidence with attachment URLs via repository
+  try {
+    await insertSubmission({
+      id: submissionId,
+      tenantId: DEFAULT_TENANT_ID,
+      candidateId,
+      source,
+      emailMessageId: record.id,
+      emailSubject: record.subject,
+      emailBody: record.body,
+      emailFrom: typeof record.candidate.submitterEmail === 'string' ? record.candidate.submitterEmail : null,
+      emailReceivedAt: record.receivedAt,
+      extractedData: record.candidate,
+      extractionModel,
+      attachments: attachmentMeta,
+    });
     const attCount = attachmentMeta.filter((a) => a.url).length;
     console.log(`[Ingestion] Saved submission evidence for ${record.subject} (${attCount} attachments uploaded)`);
+  } catch (subError) {
+    console.error(`[Ingestion] Submission evidence insert failed: ${subError instanceof Error ? subError.message : subError}`);
   }
 }
 

@@ -513,3 +513,86 @@ export async function getCandidateById(
 
   return toDetail(data as CandidateDetailRow);
 }
+
+export async function findCandidateIdsByEmails(
+  emails: string[],
+  tenantId: string,
+): Promise<Map<string, string>> {
+  if (emails.length === 0) return new Map();
+
+  if (shouldUseInMemoryPersistenceForTests()) {
+    const result = new Map<string, string>();
+    for (const c of candidateStore.values()) {
+      if (c.tenantId === tenantId && c.email && emails.includes(c.email)) {
+        result.set(c.email, c.id);
+      }
+    }
+    return result;
+  }
+
+  const client = getSupabaseAdminClient();
+  const { data, error } = await client
+    .from("candidates")
+    .select("id, email")
+    .in("email", emails)
+    .eq("tenant_id", tenantId);
+
+  if (error) {
+    throw new Error(`Failed to find candidates by emails: ${error.message}`);
+  }
+
+  const result = new Map<string, string>();
+  for (const row of data ?? []) {
+    if (row.email) result.set(row.email, row.id);
+  }
+  return result;
+}
+
+export async function countCandidatesBySource(source: string): Promise<number> {
+  if (shouldUseInMemoryPersistenceForTests()) {
+    let count = 0;
+    for (const c of candidateStore.values()) {
+      if (c.source === source) count++;
+    }
+    return count;
+  }
+
+  const client = getSupabaseAdminClient();
+  const { count, error } = await client
+    .from("candidates")
+    .select("id", { count: "exact", head: true })
+    .eq("source", source);
+
+  if (error) {
+    throw new Error(`Failed to count candidates by source: ${error.message}`);
+  }
+
+  return count ?? 0;
+}
+
+export async function getLastCandidateUpdateBySource(source: string): Promise<Date | undefined> {
+  if (shouldUseInMemoryPersistenceForTests()) {
+    let latest: string | undefined;
+    for (const c of candidateStore.values()) {
+      if (c.source === source) {
+        if (!latest || c.updatedAt > latest) latest = c.updatedAt;
+      }
+    }
+    return latest ? new Date(latest) : undefined;
+  }
+
+  const client = getSupabaseAdminClient();
+  const { data, error } = await client
+    .from("candidates")
+    .select("updated_at")
+    .eq("source", source)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to get last update by source: ${error.message}`);
+  }
+
+  return data?.updated_at ? new Date(data.updated_at) : undefined;
+}

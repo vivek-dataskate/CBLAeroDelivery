@@ -9,6 +9,9 @@ import { GET } from '../route';
 import { POST as CONFIRM } from '../confirm/route';
 import { clearResumeUploadStoreForTest } from '../../shared';
 import { _setPdfParseForTest } from '@/features/candidate-management/application/candidate-extraction';
+import { clearImportBatchStoreForTest } from '@/features/candidate-management/infrastructure/import-batch-repository';
+import { clearSubmissionStoreForTest } from '@/features/candidate-management/infrastructure/submission-repository';
+import { clearFingerprintsForTest } from '@/features/candidate-management/infrastructure/fingerprint-repository';
 
 vi.mock('@anthropic-ai/sdk', () => ({
   default: vi.fn().mockImplementation(() => ({
@@ -44,6 +47,9 @@ async function uploadResume(token: string) {
 describe('GET /api/internal/recruiter/resume-upload/[batchId]', () => {
   beforeEach(() => {
     clearResumeUploadStoreForTest();
+    clearImportBatchStoreForTest();
+    clearSubmissionStoreForTest();
+    clearFingerprintsForTest();
     clearAuthorizationDenyEventsForTest();
     clearImportBatchAccessEventsForTest();
     _setPdfParseForTest(mockPdfParse);
@@ -88,6 +94,9 @@ describe('GET /api/internal/recruiter/resume-upload/[batchId]', () => {
 describe('POST /api/internal/recruiter/resume-upload/[batchId]/confirm', () => {
   beforeEach(() => {
     clearResumeUploadStoreForTest();
+    clearImportBatchStoreForTest();
+    clearSubmissionStoreForTest();
+    clearFingerprintsForTest();
     clearAuthorizationDenyEventsForTest();
     clearImportBatchAccessEventsForTest();
     _setPdfParseForTest(mockPdfParse);
