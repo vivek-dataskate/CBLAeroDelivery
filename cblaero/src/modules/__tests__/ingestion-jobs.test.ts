@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   recordFingerprint: vi.fn().mockResolvedValue(undefined),
   loadRecentFingerprints: vi.fn().mockResolvedValue(new Set()),
   computeFileHash: vi.fn().mockReturnValue('mock-hash'),
+  getLastCandidateUpdateBySource: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@/modules/ats', () => ({
@@ -46,6 +47,10 @@ vi.mock('@/features/candidate-management/infrastructure/fingerprint-repository',
   recordFingerprint: mocks.recordFingerprint,
   loadRecentFingerprints: mocks.loadRecentFingerprints,
   computeFileHash: mocks.computeFileHash,
+}));
+
+vi.mock('@/features/candidate-management/infrastructure/candidate-repository', () => ({
+  getLastCandidateUpdateBySource: mocks.getLastCandidateUpdateBySource,
 }));
 
 import { CeipalIngestionJob, EmailIngestionJob, registerIngestionJobs } from '@/modules/ingestion/jobs';
@@ -100,22 +105,27 @@ describe('CeipalIngestionJob', () => {
     expect(mocks.upsertCandidateFromATS).not.toHaveBeenCalled();
   });
 
-  it('passes lastRunAt for incremental sync on second run', async () => {
+  it('uses DB-backed since date for incremental sync when no explicit since param', async () => {
+    const dbDate = new Date('2026-04-01T00:00:00Z');
+    mocks.getLastCandidateUpdateBySource.mockResolvedValue(dbDate);
     mocks.fetchCeipalApplicants.mockResolvedValue([]);
-    mocks.batchUpsertCandidatesFromATS.mockResolvedValue({ inserted: 0, failed: 0 });
 
     const job = new CeipalIngestionJob();
-    await job.run();
+    await job.run(); // No startPage param → should query DB for since
 
-    // First run — no since date
-    const firstCallArgs = mocks.fetchCeipalApplicants.mock.calls[0][0];
-    expect(firstCallArgs.since).toBeUndefined();
+    const callArgs = mocks.fetchCeipalApplicants.mock.calls[0][0];
+    expect(callArgs.since).toBe(dbDate);
+  });
 
-    await job.run();
+  it('does not use DB-backed since when startPage is explicitly provided (initial-load mode)', async () => {
+    mocks.getLastCandidateUpdateBySource.mockResolvedValue(new Date());
+    mocks.fetchCeipalApplicants.mockResolvedValue([]);
 
-    // Second run — should have a since date from lastRunAt
-    const secondCallArgs = mocks.fetchCeipalApplicants.mock.calls[1][0];
-    expect(secondCallArgs.since).toBeInstanceOf(Date);
+    const job = new CeipalIngestionJob();
+    await job.run({ startPage: 100, maxPages: 2 });
+
+    const callArgs = mocks.fetchCeipalApplicants.mock.calls[0][0];
+    expect(callArgs.since).toBeUndefined();
   });
 
   it('skips empty applicant lists without calling batch upsert', async () => {

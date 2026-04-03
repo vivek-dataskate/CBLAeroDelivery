@@ -11,6 +11,9 @@ import {
   loadRecentFingerprints,
   recordFingerprint,
 } from '../../features/candidate-management/infrastructure/fingerprint-repository';
+import {
+  getLastCandidateUpdateBySource,
+} from '../../features/candidate-management/infrastructure/candidate-repository';
 
 export interface SchedulerJob {
   name: string;
@@ -53,14 +56,23 @@ export class EmailIngestionJob implements SchedulerJob {
  */
 export class CeipalIngestionJob implements SchedulerJob {
   name = 'CeipalIngestionJob';
-  private lastRunAt: Date | undefined;
 
   async run(params?: { startPage?: number; maxPages?: number; since?: Date }) {
     try {
       const startPage = params?.startPage ?? 1;
       const maxPages = params?.maxPages ?? 50;
-      // Explicit since param takes priority, otherwise use automatic lastRunAt tracking
-      const since = params?.since ?? this.lastRunAt;
+
+      // Explicit since param takes priority; fall back to DB-backed last update timestamp.
+      // This ensures daily-sync works even without an explicit since param, and avoids
+      // the stale instance-level lastRunAt problem on serverless cold starts.
+      let since = params?.since;
+      if (!since && !params?.startPage) {
+        try {
+          since = await getLastCandidateUpdateBySource('ceipal');
+        } catch {
+          // DB unavailable — proceed without since (full fetch)
+        }
+      }
 
       const applicants = await fetchCeipalApplicants({
         startPage,
@@ -69,9 +81,6 @@ export class CeipalIngestionJob implements SchedulerJob {
       });
 
       console.log(`[CeipalIngestionJob] Fetched ${applicants.length} applicants (page ${startPage}, maxPages ${maxPages}${since ? `, since ${since.toISOString()}` : ''})`);
-
-      // Record run time before processing so next run picks up from here
-      this.lastRunAt = new Date();
 
       if (applicants.length === 0) return;
 
