@@ -6,6 +6,7 @@ import {
   clearAuthorizationDenyEventsForTest,
   clearImportBatchAccessEventsForTest,
 } from "@/modules/audit";
+import { clearFingerprintsForTest } from "@/features/candidate-management/infrastructure/fingerprint-repository";
 
 import { GET as GET_ERROR_REPORT } from "../[batchId]/error-report/route";
 import {
@@ -59,6 +60,7 @@ async function buildMultipartUploadRequest(input: {
 describe("POST /api/internal/recruiter/csv-upload", () => {
   beforeEach(async () => {
     clearCsvUploadStoreForTest();
+    clearFingerprintsForTest();
     await clearAuthorizationDenyEventsForTest();
     await clearImportBatchAccessEventsForTest();
   });

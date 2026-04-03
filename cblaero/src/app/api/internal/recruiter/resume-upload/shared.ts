@@ -2,7 +2,7 @@ export { toErrorCode, extractSessionToken } from '@/modules/auth';
 import { shouldUseInMemoryPersistenceForTests } from '@/modules/persistence';
 import type { CandidateExtraction } from '@/features/candidate-management/application/candidate-extraction';
 
-export type FileStatus = 'queued' | 'processing' | 'complete' | 'failed';
+export type FileStatus = 'queued' | 'processing' | 'complete' | 'failed' | 'skipped';
 
 export interface ResumeFileResult {
   filename: string;
