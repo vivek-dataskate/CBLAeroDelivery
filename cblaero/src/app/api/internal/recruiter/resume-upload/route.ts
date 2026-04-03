@@ -140,12 +140,13 @@ export async function POST(request: NextRequest) {
     const chunkResults = await Promise.all(
       chunk.map(async (file): Promise<ResumeFileResult> => {
         const submissionId = crypto.randomUUID();
+        let fileHash: string | undefined;
         try {
           const arrayBuffer = await file.arrayBuffer();
           const buffer = Buffer.from(arrayBuffer);
 
           // Fingerprint gate: skip LLM extraction if this exact file was already processed
-          const fileHash = computeFileHash(buffer);
+          fileHash = computeFileHash(buffer);
           if (await isAlreadyProcessed(tenantId, 'file_sha256', fileHash)) {
             console.log(JSON.stringify({ event: 'fingerprint_hit', type: 'file_sha256', source: 'resume_upload', tenantId, hash: fileHash.slice(0, 12) }));
             return {
