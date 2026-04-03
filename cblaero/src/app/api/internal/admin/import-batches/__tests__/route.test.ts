@@ -9,12 +9,51 @@ import {
 } from "@/modules/audit";
 import { clearAdminGovernanceStoreForTest } from "@/modules/admin";
 
-import { GET, seedImportBatchForTest, clearImportBatchesForTest } from "../route";
+import { GET } from "../route";
 import {
   GET as GETDetail,
-  seedImportBatchDetailForTest,
+  seedImportBatchDetailErrorsForTest,
   clearImportBatchDetailForTest,
 } from "../[batchId]/route";
+import {
+  seedImportBatchForTest as seedBatchRepo,
+  clearImportBatchStoreForTest,
+} from "@/features/candidate-management/infrastructure/import-batch-repository";
+
+// Adapter: tests use snake_case batch data, repository expects camelCase ImportBatch
+function seedImportBatchForTest(row: {
+  id: string;
+  tenant_id: string;
+  source: string;
+  status: string;
+  total_rows: number;
+  imported: number;
+  skipped: number;
+  errors: number;
+  error_threshold_pct: number;
+  created_by_actor_id: string | null;
+  started_at: string;
+  completed_at: string | null;
+}) {
+  seedBatchRepo({
+    id: row.id,
+    tenantId: row.tenant_id,
+    source: row.source,
+    status: row.status,
+    totalRows: row.total_rows,
+    imported: row.imported,
+    skipped: row.skipped,
+    errors: row.errors,
+    errorThresholdPct: row.error_threshold_pct,
+    createdByActorId: row.created_by_actor_id,
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
+  });
+}
+
+function clearImportBatchesForTest() {
+  clearImportBatchStoreForTest();
+}
 
 function buildRequest(url: string, init?: ConstructorParameters<typeof NextRequest>[1]): NextRequest {
   return new NextRequest(url, init);
@@ -260,7 +299,7 @@ describe("GET /api/internal/admin/import-batches/[batchId]", () => {
   });
 
   it("returns 404 when batch belongs to different tenant", async () => {
-    seedImportBatchDetailForTest({ ...SAMPLE_BATCH, tenant_id: "tenant-other" });
+    seedImportBatchForTest({ ...SAMPLE_BATCH, tenant_id: "tenant-other" });
 
     const issued = await issueSessionToken({
       actorId: "actor-admin-1",
@@ -285,14 +324,16 @@ describe("GET /api/internal/admin/import-batches/[batchId]", () => {
     const errorRows = [
       {
         id: 1,
-        batch_id: "batch-uuid-001",
-        row_number: 42,
-        error_code: "missing_identity",
-        error_detail: "Row must have at least one of: email, phone",
-        occurred_at: "2026-03-30T10:05:00.000Z",
+        batchId: "batch-uuid-001",
+        rowNumber: 42,
+        errorCode: "missing_identity",
+        errorDetail: "Row must have at least one of: email, phone",
+        occurredAt: "2026-03-30T10:05:00.000Z",
+        rawData: {},
       },
     ];
-    seedImportBatchDetailForTest(SAMPLE_BATCH, errorRows);
+    seedImportBatchForTest(SAMPLE_BATCH);
+    seedImportBatchDetailErrorsForTest(errorRows);
 
     const issued = await issueSessionToken({
       actorId: "actor-admin-1",

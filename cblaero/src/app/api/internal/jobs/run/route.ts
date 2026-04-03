@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { CeipalIngestionJob, EmailIngestionJob, OneDriveResumePollerJob } from '@/modules/ingestion/jobs';
-import { getSupabaseAdminClient, isSupabaseConfigured } from '@/modules/persistence';
+import { isSupabaseConfigured } from '@/modules/persistence';
+import {
+  countCandidatesBySource,
+  getLastCandidateUpdateBySource,
+} from '@/features/candidate-management/infrastructure/candidate-repository';
 
 const JOBS_SECRET = process.env.CBL_JOBS_SECRET;
 
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get('authorization');
-  if (JOBS_SECRET && authHeader !== `Bearer ${JOBS_SECRET}`) {
+  if (!JOBS_SECRET) {
+    console.error('[JobsRoute] CBL_JOBS_SECRET not configured — rejecting all requests');
+    return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 });
+  }
+  if (authHeader !== `Bearer ${JOBS_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -75,12 +83,8 @@ async function runCeipalSync(mode: 'initial-load' | 'daily-sync', pages: number 
 async function getResumePage(): Promise<number> {
   if (!isSupabaseConfigured()) return 1;
   try {
-    const db = getSupabaseAdminClient();
-    const { count } = await db
-      .from('candidates')
-      .select('id', { count: 'exact', head: true })
-      .eq('source', 'ceipal');
-    return Math.floor((count ?? 0) / 50) + 1;
+    const count = await countCandidatesBySource('ceipal');
+    return Math.floor(count / 50) + 1;
   } catch {
     return 1;
   }
@@ -89,15 +93,7 @@ async function getResumePage(): Promise<number> {
 async function getLastModifiedDate(): Promise<Date | undefined> {
   if (!isSupabaseConfigured()) return undefined;
   try {
-    const db = getSupabaseAdminClient();
-    const { data } = await db
-      .from('candidates')
-      .select('updated_at')
-      .eq('source', 'ceipal')
-      .order('updated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    return data?.updated_at ? new Date(data.updated_at) : undefined;
+    return await getLastCandidateUpdateBySource('ceipal');
   } catch {
     return undefined;
   }
