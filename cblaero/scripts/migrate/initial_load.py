@@ -31,6 +31,8 @@ import json
 import os
 import sys
 import time
+import traceback
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
@@ -52,6 +54,25 @@ CHUNK_SIZE = int(os.environ.get("MIGRATION_CHUNK_SIZE", "1000"))
 ERROR_THRESHOLD_PCT = float(os.environ.get("MIGRATION_ERROR_THRESHOLD_PCT", "5"))
 ACTOR_ID = os.environ.get("MIGRATION_ACTOR_ID", "")
 
+MODULE = "InitialLoadMigration"
+TRACE_ID = str(uuid.uuid4())
+
+
+# ---------------------------------------------------------------------------
+# Structured logging helper (§17 / §23 compliant)
+# ---------------------------------------------------------------------------
+
+def _log(level: str, action: str, **kwargs: Any) -> None:
+    entry = {
+        "level": level,
+        "module": MODULE,
+        "action": action,
+        "traceId": TRACE_ID,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        **kwargs,
+    }
+    print(json.dumps(entry), flush=True)
+
 
 def _validate_config() -> None:
     missing = [
@@ -65,19 +86,11 @@ def _validate_config() -> None:
         if not val
     ]
     if missing:
-        print(
-            json.dumps(
-                {"event": "config_error", "missing_vars": missing}
-            ),
-            flush=True,
-        )
+        _log("error", "config_error", missing_vars=missing)
         sys.exit(1)
 
     if not os.path.isfile(SOURCE_FILE):
-        print(
-            json.dumps({"event": "config_error", "error": f"Source file not found: {SOURCE_FILE}"}),
-            flush=True,
-        )
+        _log("error", "config_error", error=f"Source file not found: {SOURCE_FILE}")
         sys.exit(1)
 
 
@@ -165,31 +178,38 @@ def _parse_row(row: dict[str, str], row_number: int, batch_id: str) -> tuple[dic
 # ---------------------------------------------------------------------------
 
 def _create_import_batch(client: Client, total_rows: int) -> str:
-    result = (
-        client.schema(SCHEMA)
-        .from_("import_batch")
-        .insert(
-            {
-                "tenant_id": TENANT_ID,
-                "source": "migration",
-                "status": "running",
-                "total_rows": total_rows,
-                "imported": 0,
-                "skipped": 0,
-                "errors": 0,
-                "error_threshold_pct": int(ERROR_THRESHOLD_PCT),
-                "created_by_actor_id": ACTOR_ID or None,
-                "started_at": datetime.now(timezone.utc).isoformat(),
-            }
+    try:
+        result = (
+            client.schema(SCHEMA)
+            .from_("import_batch")
+            .insert(
+                {
+                    "tenant_id": TENANT_ID,
+                    "source": "migration",
+                    "status": "running",
+                    "total_rows": total_rows,
+                    "imported": 0,
+                    "skipped": 0,
+                    "errors": 0,
+                    "error_threshold_pct": int(ERROR_THRESHOLD_PCT),
+                    "created_by_actor_id": ACTOR_ID or None,
+                    "started_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+            .select("id")
+            .execute()
         )
-        .select("id")
-        .execute()
-    )
-    return result.data[0]["id"]
+        if not result.data or not result.data[0].get("id"):
+            _log("error", "create_import_batch", error="No batch ID returned from insert")
+            sys.exit(1)
+        return result.data[0]["id"]
+    except Exception as exc:
+        _log("error", "create_import_batch", error=str(exc), stack=traceback.format_exc())
+        sys.exit(1)
 
 
 def _complete_batch(client: Client, batch_id: str, imported: int, skipped: int, errors: int) -> None:
-    client.schema(SCHEMA).from_("import_batch").update(
+    result = client.schema(SCHEMA).from_("import_batch").update(
         {
             "status": "complete",
             "imported": imported,
@@ -198,10 +218,14 @@ def _complete_batch(client: Client, batch_id: str, imported: int, skipped: int, 
             "completed_at": datetime.now(timezone.utc).isoformat(),
         }
     ).eq("id", batch_id).execute()
+    if hasattr(result, "error") and result.error:
+        _log("error", "complete_batch", batchId=batch_id, error=str(result.error))
+        sys.exit(1)
+    _log("info", "complete_batch", batchId=batch_id)
 
 
 def _pause_batch(client: Client, batch_id: str, imported: int, skipped: int, errors: int) -> None:
-    client.schema(SCHEMA).from_("import_batch").update(
+    result = client.schema(SCHEMA).from_("import_batch").update(
         {
             "status": "paused_on_error_threshold",
             "imported": imported,
@@ -209,6 +233,8 @@ def _pause_batch(client: Client, batch_id: str, imported: int, skipped: int, err
             "errors": errors,
         }
     ).eq("id", batch_id).execute()
+    if hasattr(result, "error") and result.error:
+        _log("error", "pause_batch", batchId=batch_id, error=str(result.error))
 
 
 # ---------------------------------------------------------------------------
@@ -282,17 +308,8 @@ def _process_chunk(
         chunk_errors = int((row or {}).get("errors", 0))
         return chunk_imported, chunk_errors
     except Exception as exc:  # noqa: BLE001
-        print(
-            json.dumps(
-                {
-                    "event": "chunk_rpc_error",
-                    "batch_id": batch_id,
-                    "chunk": chunk_num,
-                    "error": str(exc),
-                }
-            ),
-            flush=True,
-        )
+        _log("error", "chunk_rpc_error", batchId=batch_id, chunk=chunk_num,
+             error=str(exc), stack=traceback.format_exc())
         raise
 
 
@@ -312,27 +329,15 @@ def run_migration() -> None:
 
     start_time = time.monotonic()
 
-    print(json.dumps({"event": "counting_rows", "source_file": SOURCE_FILE}), flush=True)
+    _log("info", "counting_rows", sourceFile=SOURCE_FILE)
     total_rows = _count_csv_rows(SOURCE_FILE)
-    print(json.dumps({"event": "row_count", "total_rows": total_rows}), flush=True)
+    _log("info", "row_count", totalRows=total_rows)
 
     batch_id = _create_import_batch(client, total_rows)
-    print(
-        json.dumps({"event": "batch_created", "batch_id": batch_id, "total_rows": total_rows}),
-        flush=True,
-    )
-    print(
-        json.dumps(
-            {
-                "event": "transaction_mode_notice",
-                "batch_id": batch_id,
-                "mode": "supabase_rpc_single_call",
-                "atomic_per_chunk": True,
-                "note": "Each chunk is processed in a single SQL RPC transaction.",
-            }
-        ),
-        flush=True,
-    )
+    _log("info", "batch_created", batchId=batch_id, totalRows=total_rows)
+    _log("info", "transaction_mode_notice", batchId=batch_id,
+         mode="supabase_rpc_single_call", atomicPerChunk=True,
+         note="Each chunk is processed in a single SQL RPC transaction.")
 
     total_imported = 0
     # total_skipped is always 0: the upsert strategy is ON CONFLICT DO UPDATE (not ignore),
@@ -372,40 +377,19 @@ def run_migration() -> None:
             total_errors += chunk_errors
             elapsed = round(time.monotonic() - chunk_start, 2)
 
-            print(
-                json.dumps(
-                    {
-                        "event": "chunk_complete",
-                        "batch_id": batch_id,
-                        "chunk": chunk_num,
-                        "imported": chunk_imported,
-                        "skipped": 0,
-                        "errors": chunk_errors,
-                        "elapsed_s": elapsed,
-                        "total_imported": total_imported,
-                        "total_errors": total_errors,
-                    }
-                ),
-                flush=True,
-            )
+            _log("info", "chunk_complete", batchId=batch_id, chunk=chunk_num,
+                 imported=chunk_imported, skipped=0, errors=chunk_errors,
+                 durationMs=int(elapsed * 1000),
+                 totalImported=total_imported, totalErrors=total_errors)
 
             # Error threshold check — pause if chunk error rate exceeds threshold
             chunk_error_rate = (chunk_errors / len(chunk)) if chunk else 0
             if _chunk_error_rate_exceeded(chunk_errors, len(chunk)):
                 _pause_batch(client, batch_id, total_imported, total_skipped, total_errors)
-                print(
-                    json.dumps(
-                        {
-                            "event": "paused_on_error_threshold",
-                            "batch_id": batch_id,
-                            "chunk": chunk_num,
-                            "chunk_error_rate_pct": round(chunk_error_rate * 100, 2),
-                            "threshold_pct": ERROR_THRESHOLD_PCT,
-                            "action": "Run rollback_batch.py to purge partial batch or fix source data and retry",
-                        }
-                    ),
-                    flush=True,
-                )
+                _log("warn", "paused_on_error_threshold", batchId=batch_id, chunk=chunk_num,
+                     chunkErrorRatePct=round(chunk_error_rate * 100, 2),
+                     thresholdPct=ERROR_THRESHOLD_PCT,
+                     nextStep="Run rollback_batch.py to purge partial batch or fix source data and retry")
                 sys.exit(1)
 
             chunk = []
@@ -431,57 +415,26 @@ def run_migration() -> None:
             total_errors += chunk_errors
             elapsed = round(time.monotonic() - chunk_start, 2)
 
-            print(
-                json.dumps(
-                    {
-                        "event": "chunk_complete",
-                        "batch_id": batch_id,
-                        "chunk": chunk_num,
-                        "imported": chunk_imported,
-                        "skipped": 0,
-                        "errors": chunk_errors,
-                        "elapsed_s": elapsed,
-                    }
-                ),
-                flush=True,
-            )
+            _log("info", "chunk_complete", batchId=batch_id, chunk=chunk_num,
+                 imported=chunk_imported, skipped=0, errors=chunk_errors,
+                 durationMs=int(elapsed * 1000))
 
             chunk_error_rate = (chunk_errors / len(chunk)) if chunk else 0
             if _chunk_error_rate_exceeded(chunk_errors, len(chunk)):
                 _pause_batch(client, batch_id, total_imported, total_skipped, total_errors)
-                print(
-                    json.dumps(
-                        {
-                            "event": "paused_on_error_threshold",
-                            "batch_id": batch_id,
-                            "chunk": chunk_num,
-                            "chunk_error_rate_pct": round(chunk_error_rate * 100, 2),
-                            "threshold_pct": ERROR_THRESHOLD_PCT,
-                        }
-                    ),
-                    flush=True,
-                )
+                _log("warn", "paused_on_error_threshold", batchId=batch_id, chunk=chunk_num,
+                     chunkErrorRatePct=round(chunk_error_rate * 100, 2),
+                     thresholdPct=ERROR_THRESHOLD_PCT)
                 sys.exit(1)
 
     _complete_batch(client, batch_id, total_imported, total_skipped, total_errors)
     total_elapsed = round(time.monotonic() - start_time, 2)
 
-    print(
-        json.dumps(
-            {
-                "event": "migration_complete",
-                "batch_id": batch_id,
-                "total_imported": total_imported,
-                "total_skipped": total_skipped,
-                "total_errors": total_errors,
-                "total_rows": total_rows,
-                "chunks": chunk_num,
-                "elapsed_s": total_elapsed,
-                "next_step": "Run async deduplication worker over this batch (Story 2.5)",
-            }
-        ),
-        flush=True,
-    )
+    _log("info", "migration_complete", batchId=batch_id,
+         totalImported=total_imported, totalSkipped=total_skipped,
+         totalErrors=total_errors, totalRows=total_rows,
+         rpcCalls=chunk_num, durationMs=int(total_elapsed * 1000),
+         nextStep="Run async deduplication worker over this batch (Story 2.5)")
 
 
 if __name__ == "__main__":

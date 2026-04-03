@@ -154,7 +154,7 @@ export default async function AdminDashboardPage({
 
         <SyncErrorStatusCard errors={syncErrors} />
         <AiCostDashboard />
-        <MigrationStatusCard tenantId={activeClientId} actorId={session.actorId} />
+        <MigrationStatusCard tenantId={activeClientId} actorId={session.actorId} traceId={crypto.randomUUID()} />
 
         <AdminGovernanceConsole
           tenantId={activeClientId}
