@@ -503,6 +503,11 @@ Before writing a new helper, check if one already exists:
 | Candidate row mapping | `mapToCandidateRow()` | `@/modules/ingestion` |
 | Sync error recording | `recordSyncFailure()` | `@/modules/ingestion` |
 | Graph token | `acquireGraphToken()` | `@/modules/email/graph-auth` |
+| Shared Anthropic client | `getSharedAnthropicClient()` | `@/modules/ai/client` |
+| LLM call wrapper | `callLlm()` | `@/modules/ai/inference` |
+| Prompt loading | `loadPrompt()` | `@/modules/ai/prompt-registry` |
+| Fallback prompt registration | `registerFallbackPrompt()` | `@/modules/ai/prompt-registry` |
+| LLM usage persistence | `recordLlmUsage()` | `@/modules/ai/usage-log` |
 | LLM extraction | `extractCandidateFromDocument()` | `@/features/candidate-management/application/candidate-extraction` |
 | Batch import processing | `process_import_chunk` RPC | `supabase/schema.sql` |
 | Import batch CRUD | `createImportBatch()`, `getImportBatchById()`, `updateImportBatch()`, `listImportBatchesByTenant()` | `@/features/candidate-management/infrastructure/import-batch-repository` |
@@ -538,6 +543,8 @@ Every table must have a dedicated repository or module with named functions for 
 | `admin_managed_users` | `admin/index.ts` | OK (module owns table) |
 | `admin_invitations` | `admin/index.ts` | OK (module owns table) |
 | `audit_*` tables | `audit/index.ts` | OK (module owns tables) |
+| `prompt_registry` | `ai/prompt-registry.ts` | Exists |
+| `llm_usage_log` | `ai/usage-log.ts` | Exists |
 
 ### Shared type definitions
 If a type is used across modules, define it in `contracts/` not inline. If a mapping function is needed by multiple callers, export it from the module's public API.
@@ -665,8 +672,8 @@ if (fillRate < 0.3) {
 
 The architecture defines a `prompt_registry` table for append-only prompt versioning. All extraction prompts should be stored there so changes are trackable, comparable, and rollbackable.
 
-### Current state (needs migration)
-The extraction prompt in `candidate-extraction.ts` is hardcoded as `EXTRACTION_PROMPT`. This should be migrated to the prompt registry when a story touches the extraction service.
+### Current state (implemented — Story 1.9)
+The extraction prompt is loaded via `loadPrompt('candidate-extraction')` from `modules/ai/prompt-registry.ts`. The `prompt_registry` table is live in Supabase with version `1.0.0` seeded. The hardcoded `EXTRACTION_PROMPT` constant remains as the inline fallback when DB is unavailable (tests, no Supabase config).
 
 ### Rules for prompt changes
 1. **Never modify a prompt in-place** — create a new version in the registry

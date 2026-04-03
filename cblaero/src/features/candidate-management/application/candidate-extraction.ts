@@ -1,4 +1,10 @@
-import Anthropic from '@anthropic-ai/sdk';
+import {
+  getSharedAnthropicClient,
+  clearClientForTest,
+  callLlm,
+  loadPrompt,
+  registerFallbackPrompt,
+} from '@/modules/ai';
 
 /**
  * Unified candidate extraction service.
@@ -136,20 +142,18 @@ Rules:
 - Return ONLY the JSON object, no markdown fencing, no backticks, no explanation
 - Use EXACTLY these field names — do not rename or nest them`;
 
-// ---- LLM Client ----
+// Register inline fallback so prompt-registry works without DB
+registerFallbackPrompt({
+  name: 'candidate-extraction',
+  version: '1.0.0',
+  prompt_text: EXTRACTION_PROMPT,
+  model: 'claude-haiku-4-5-20251001',
+});
 
-let anthropicClient: Anthropic | null = null;
-
-function getAnthropicClient(): Anthropic | null {
-  if (!process.env.ANTHROPIC_API_KEY) return null;
-  if (!anthropicClient) {
-    anthropicClient = new Anthropic();
-  }
-  return anthropicClient;
-}
+// ---- Re-export client reset for test compatibility ----
 
 export function _resetClientForTest(): void {
-  anthropicClient = null;
+  clearClientForTest();
 }
 
 // ---- Content Pre-processors ----
@@ -228,9 +232,9 @@ export async function extractCandidateFromDocument(
         return { extraction: null, error: `Unsupported content type: ${contentType}` };
     }
 
-    const client = getAnthropicClient();
+    const client = getSharedAnthropicClient();
     if (client) {
-      return await extractWithLLM(client, plainText, metadata.source, contentType);
+      return await extractWithLLM(plainText, metadata.source, contentType);
     }
 
     if (contentType === 'email_body') {
@@ -270,24 +274,30 @@ function sanitizeLlmResponse(parsed: Record<string, unknown>): Record<string, un
 }
 
 async function extractWithLLM(
-  client: Anthropic,
   plainText: string,
   source: string,
   contentType: ContentType
 ): Promise<ExtractionResult> {
-  const message = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 2048,
-    messages: [{ role: 'user', content: plainText }],
-    system: EXTRACTION_PROMPT,
+  // Load prompt from registry (DB or fallback)
+  const promptRecord = await loadPrompt('candidate-extraction');
+  const systemPrompt = promptRecord?.prompt_text ?? EXTRACTION_PROMPT;
+  const model = promptRecord?.model ?? 'claude-haiku-4-5-20251001';
+
+  const result = await callLlm(model, systemPrompt, plainText, {
+    module: 'candidate-extraction',
+    action: 'extract',
+    promptName: 'candidate-extraction',
+    promptVersion: promptRecord?.version ?? '1.0.0',
   });
 
-  let responseText = message.content
-    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-    .map((block) => block.text)
-    .join('');
+  if (!result) {
+    return { extraction: null, error: 'LLM call returned null — client unavailable' };
+  }
 
-  responseText = responseText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+  let responseText = result.text
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```\s*$/, '')
+    .trim();
 
   try {
     const parsed = JSON.parse(responseText);
@@ -303,6 +313,24 @@ async function extractWithLLM(
 
     // Whitelist known CandidateExtraction keys to prevent LLM injection of internal fields
     const sanitized = sanitizeLlmResponse(parsed);
+
+    // Log fill rate for extraction quality monitoring (dev-standards §21)
+    const totalFields = ALLOWED_EXTRACTION_KEYS.size - 1; // exclude isSubmission
+    const fieldsPopulated = Object.keys(sanitized).filter(
+      (k) => k !== 'isSubmission' && sanitized[k] != null && sanitized[k] !== ''
+    ).length;
+    const fillRate = Math.round((fieldsPopulated / totalFields) * 100);
+    console.log(
+      JSON.stringify({
+        level: 'info',
+        module: 'candidate-extraction',
+        action: 'extraction_complete',
+        fillRate,
+        fieldsPopulated,
+        totalFields,
+        promptVersion: promptRecord?.version ?? '1.0.0',
+      })
+    );
 
     return {
       extraction: {
