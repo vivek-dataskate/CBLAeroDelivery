@@ -236,9 +236,9 @@ describe("withAuth middleware wrapper", () => {
       rememberDevice: false,
     });
 
-    let capturedParams: Record<string, string> | null = null;
+    let capturedParams: { candidateId: string } | null = null;
     const handler = withAuth<{ candidateId: string }>(async (ctx) => {
-      capturedParams = ctx.params as unknown as Record<string, string>;
+      capturedParams = ctx.params;
       return NextResponse.json({ data: { ok: true } });
     }, { action: "candidate:read" });
 
