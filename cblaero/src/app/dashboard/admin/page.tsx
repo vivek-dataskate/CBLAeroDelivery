@@ -13,6 +13,7 @@ import { listAdminActionEvents, listStepUpAttemptEvents } from "@/modules/audit"
 import { listRecentSyncErrors } from "@/modules/ingestion";
 
 import AdminGovernanceConsole from "./AdminGovernanceConsole";
+import AiCostDashboard from "./AiCostDashboard";
 import MigrationStatusCard from "./MigrationStatusCard";
 import SyncErrorStatusCard from "./SyncErrorStatusCard";
 
@@ -152,6 +153,7 @@ export default async function AdminDashboardPage({
         </div>
 
         <SyncErrorStatusCard errors={syncErrors} />
+        <AiCostDashboard />
         <MigrationStatusCard tenantId={activeClientId} actorId={session.actorId} />
 
         <AdminGovernanceConsole

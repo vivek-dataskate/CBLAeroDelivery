@@ -828,25 +828,47 @@ grant select, insert, update, delete on cblaero_app.content_fingerprints
   to anon, authenticated, service_role;
 
 -- Prompt Registry — append-only, versioned prompts for AI inference service (Story 1.9)
+-- status column added in Story 1.9a for lifecycle management (active/staged/deprecated)
 create table if not exists cblaero_app.prompt_registry (
   id bigint generated always as identity primary key,
   name text not null,
   version text not null,
   prompt_text text not null,
   model text not null,
+  status text not null default 'active' check (status in ('active', 'staged', 'deprecated')),
   created_at timestamptz not null default now(),
   created_by text,
   notes text,
   unique (name, version)
 );
 
+-- Story 1.9a: add status column if table already exists (idempotent migration)
+alter table cblaero_app.prompt_registry
+  add column if not exists status text not null default 'active';
+
+-- Story 1.9a: add CHECK constraint on status (idempotent — drops if exists first)
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.check_constraints
+    where constraint_name = 'prompt_registry_status_check'
+  ) then
+    alter table cblaero_app.prompt_registry
+      add constraint prompt_registry_status_check
+      check (status in ('active', 'staged', 'deprecated'));
+  end if;
+end $$;
+
 create index if not exists idx_prompt_registry_name_created
   on cblaero_app.prompt_registry (name, created_at desc);
+
+create index if not exists idx_prompt_registry_name_status
+  on cblaero_app.prompt_registry (name, status);
 
 grant select on cblaero_app.prompt_registry
   to anon, authenticated;
 
-grant select, insert on cblaero_app.prompt_registry
+grant select, insert, update on cblaero_app.prompt_registry
   to service_role;
 
 -- LLM Usage Log — per-call token counts and cost tracking (Story 1.9)

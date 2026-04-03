@@ -498,6 +498,7 @@ Before writing a new helper, check if one already exists:
 
 | Need | Use This | Location |
 |------|----------|----------|
+| API route auth wrapper | `withAuth()` | `@/modules/auth/with-auth` |
 | HTTP with retry | `fetchWithRetry()` | `@/modules/ingestion/fetch-with-retry` |
 | Supabase admin client | `getSupabaseAdminClient()` | `@/modules/persistence` |
 | Candidate row mapping | `mapToCandidateRow()` | `@/modules/ingestion` |
@@ -508,6 +509,10 @@ Before writing a new helper, check if one already exists:
 | Prompt loading | `loadPrompt()` | `@/modules/ai/prompt-registry` |
 | Fallback prompt registration | `registerFallbackPrompt()` | `@/modules/ai/prompt-registry` |
 | LLM usage persistence | `recordLlmUsage()` | `@/modules/ai/usage-log` |
+| LLM usage aggregation | `getAggregatedUsage()` | `@/modules/ai/usage-repository` |
+| AI budget threshold check | `checkBudgetThreshold()` | `@/modules/ai/budget-alert` |
+| Prompt deprecation | `deprecatePrompt()`, `updatePromptStatus()` | `@/modules/ai/prompt-registry` |
+| Prompt version listing | `listPromptVersions()` | `@/modules/ai/prompt-registry` |
 | LLM extraction | `extractCandidateFromDocument()` | `@/features/candidate-management/application/candidate-extraction` |
 | Batch import processing | `process_import_chunk` RPC | `supabase/schema.sql` |
 | Import batch CRUD | `createImportBatch()`, `getImportBatchById()`, `updateImportBatch()`, `listImportBatchesByTenant()` | `@/features/candidate-management/infrastructure/import-batch-repository` |
