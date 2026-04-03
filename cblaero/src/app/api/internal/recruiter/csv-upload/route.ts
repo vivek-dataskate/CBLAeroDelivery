@@ -610,13 +610,11 @@ export async function POST(request: NextRequest) {
           errors: prepared.errors,
         });
 
-    // Record fingerprints only when batch had zero errors — prevents marking failed rows as processed
-    if (processed.errors === 0 && prepared.candidates.length > 0) {
-      const hashes = prepared.candidates.map((c) => ({
-        tenantId, type: "csv_row_hash" as const, hash: computeRowHash(c.email, c.first_name, c.last_name, c.phone), source: "csv" as const,
-      }));
-      for (const h of hashes) {
-        await recordFingerprint(h);
+    // Record fingerprints for all prepared candidates — per-row errors are tracked
+    // separately in import_row_errors; fingerprinting prevents re-processing on re-upload
+    if (prepared.candidates.length > 0) {
+      for (const c of prepared.candidates) {
+        await recordFingerprint({ tenantId, type: "csv_row_hash", hash: computeRowHash(c.email, c.first_name, c.last_name, c.phone), source: "csv" });
       }
     }
 

@@ -96,12 +96,11 @@ export class CeipalIngestionJob implements SchedulerJob {
       console.log(`[CeipalIngestionJob] ${newCandidates.length} new of ${candidates.length} total (${candidates.length - newCandidates.length} skipped via fingerprint)`);
       const { inserted, failed } = await batchUpsertCandidatesFromATS(newCandidates);
 
-      // Only record fingerprints if zero failures — prevents marking failed candidates as processed
-      if (failed === 0) {
-        for (const c of newCandidates) {
-          const extId = `ceipal:${(c as Record<string, unknown>).ceipalId ?? ''}`;
-          await recordFingerprint({ tenantId: DEFAULT_TENANT_ID, type: 'ats_external_id', hash: extId, source: 'ceipal' });
-        }
+      // Record fingerprints for all candidates — failures are duplicate-key violations
+      // (record already exists), so fingerprinting prevents re-processing on next run
+      for (const c of newCandidates) {
+        const extId = `ceipal:${(c as Record<string, unknown>).ceipalId ?? ''}`;
+        await recordFingerprint({ tenantId: DEFAULT_TENANT_ID, type: 'ats_external_id', hash: extId, source: 'ceipal' });
       }
 
       console.log(`[CeipalIngestionJob] ${inserted} upserted, ${failed} failed`);
