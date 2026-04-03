@@ -75,6 +75,30 @@ so that legacy records are loaded safely with rollback and progress visibility.
 - [x] [AI-Review-R2][MEDIUM] Fix `elapsedMs: null` for running batches in API routes — AC 5 requires elapsed time for active migrations; API now computes live elapsed using `Date.now()` when `completed_at` is null [`route.ts:toSummary`, `[batchId]/route.ts:toDetail`]
 - [x] [AI-Review-R2][MEDIUM] Add unit tests for `rollback_batch.py` — zero test coverage for rollback logic (running-batch guard, chunked deletion, idempotency, not-found). Added `test_rollback_batch.py` with 8 tests [`test_rollback_batch.py`]
 
+### Review Follow-ups Round 3 (AI — 2026-04-03)
+
+- [x] [AI-Review-R3][HIGH] Fix `clearImportBatchAccessEventsForTest()`, `clearClientContextConfirmationEventsForTest()`, `clearDataResidencyCheckEventsForTest()` — all cleared in-memory array unconditionally before checking mode (§15 violation). Fixed to check `isInMemoryMode()` first [`audit/index.ts:120,651,774`]
+- [x] [AI-Review-R3][HIGH] Refactor `MigrationStatusCard` to use `getLatestMigrationBatch()` from `import-batch-repository.ts` instead of direct `db.from("import_batch")` call (§4.4 violation). Added new repository function, removed inline Supabase query [`MigrationStatusCard.tsx`, `import-batch-repository.ts`]
+- [x] [AI-Review-R3][HIGH] Document Content Fingerprint Gate (§3) intentional exception for one-time migration script in Dev Notes — upsert handles idempotency, per-row fingerprint overhead unjustified for one-time 1M load [`story Dev Notes`]
+- [x] [AI-Review-R3][MEDIUM] Add error checking to `rollback_batch.py` — `_delete_candidate_rows_in_chunks`, `_delete_row_errors`, `_mark_batch_rolled_back` all ignored Supabase response errors (§4.6 violation) [`rollback_batch.py:86,123,145`]
+- [x] [AI-Review-R3][MEDIUM] Add error checking to `initial_load.py` — `_complete_batch()` and `_pause_batch()` ignored Supabase `.update()` response errors (§4.6 violation) [`initial_load.py:192,204`]
+- [x] [AI-Review-R3][MEDIUM] Fix `MigrationStatusCard` audit: accept `traceId` prop from parent page for correlation chain (§17), moved audit event to fire BEFORE data fetch [`MigrationStatusCard.tsx`, `page.tsx`]
+- [x] [AI-Review-R3][MEDIUM] Add `test_initial_load.py` to story File List (§9 violation — file existed but was missing from documentation) [`story File List`]
+
+### Review Follow-ups Round 3b — Deep Standards Audit (AI — 2026-04-03)
+
+- [x] [AI-Review-R3b][HIGH] Full logging overhaul of `initial_load.py` — added `_log()` helper with `level`, `module`, `action`, `traceId`, `timestamp` fields per §17/§23. All log events now use structured JSON. Added `TRACE_ID` (UUID) generated at script start for correlation. Added error check + try/catch on `_create_import_batch`. Job summary now reports `rpcCalls` count (§19) [`initial_load.py`]
+- [x] [AI-Review-R3b][HIGH] Full logging overhaul of `rollback_batch.py` — same `_log()` helper pattern. All events now structured JSON with `level`, `module`, `action`, `traceId`, `timestamp`. Added error check on `_fetch_batch` (was masking Supabase errors as "not found"). Added duration tracking and success logs [`rollback_batch.py`]
+- [x] [AI-Review-R3b][HIGH] Wrap `[batchId]/route.ts` repository calls in try/catch — `getImportBatchById()` and `listImportRowErrors()` threw on DB errors with no handler, producing raw 500s instead of `{ error: { code, message } }` envelope (§4.6, §12, §16). Added structured error logging with `traceId` [`[batchId]/route.ts`]
+- [x] [AI-Review-R3b][HIGH] Add mode guard to `seedImportBatchDetailErrorsForTest()` — was mutating in-memory store without checking `shouldUseInMemoryPersistenceForTests()`, asymmetric with its sibling `clear` function (§15) [`[batchId]/route.ts:40`]
+- [x] [AI-Review-R3b][MEDIUM] Register 3 missing capabilities in both registries — `getLatestMigrationBatch()`, `recordImportBatchAccessEvent()`, `listImportBatchAccessEvents()` were unregistered (§20) [`development-standards.md §18`, `architecture.md §Implemented Capabilities`]
+- [x] [AI-Review-R3b][MEDIUM] Add runtime type guard `isImportBatchRow()` and `toValidatedBatch()` in import-batch-repository — 3 occurrences of unguarded `data as ImportBatchRow` cast on Supabase `any` response (§11) [`import-batch-repository.ts:194,261,375`]
+- [x] [AI-Review-R3b][MEDIUM] Fix `_fetch_batch()` error handling in rollback script — Supabase error on batch lookup was silently returning `None`, caller reported misleading "Batch not found" (§4.6) [`rollback_batch.py:62-64`]
+- [x] [AI-Review-R3b][MEDIUM] Convert all `console.error` calls in route.ts and [batchId]/route.ts to structured `JSON.stringify` format with `level`, `module`, `action`, `traceId`, `stack`, `timestamp` (§23) [`route.ts`, `[batchId]/route.ts`]
+- [x] [AI-Review-R3b][MEDIUM] Add `clearImportBatchStoreForTest()` to second describe's `beforeEach` in route.test.ts — batch repo state leaked between tests (§15 isolation gap) [`route.test.ts:241`]
+- [x] [AI-Review-R3b][LOW] Add try/catch around `getLatestMigrationBatch()` in MigrationStatusCard — unhandled throw produced server component error with no structured log (§12) [`MigrationStatusCard.tsx`]
+- [x] [AI-Review-R3b][LOW] Add explicit `GRANT select, insert` for 5 audit tables (`audit_authorization_denials`, `audit_admin_actions`, `audit_step_up_attempts`, `audit_client_context_confirmations`, `audit_data_residency_checks`) — unlike `audit_import_batch_accesses`, these had no grants, relying on admin key with no schema-level immutability enforcement (§27) [`schema.sql`]
+
 ## Dev Notes
 
 - **This is a Python script, NOT a Next.js feature.** The migration runs as a Render one-off job, completely outside the web app process. Do not add the migration logic to any Next.js route or server action.
@@ -85,6 +109,7 @@ so that legacy records are loaded safely with rollback and progress visibility.
 - **Enrichment is a separate overnight batch** (100 candidates/sec). Story 2.1 does not implement enrichment. Do not add enrichment calls here.
 - **Transport must be TLS-encrypted.** For `supabase-py`, this is HTTPS/TLS to Supabase REST. If switching to direct Postgres drivers (`psycopg2`), require `sslmode=require` (or stronger where available).
 - **Idempotency:** The upsert strategy should be ON CONFLICT (email, tenant_id) DO UPDATE for dedupe-safe re-runs. A re-run of the same source file with the same tenant should not create duplicate rows.
+- **Content Fingerprint Gate (§3 exception):** The migration script intentionally omits the `FingerprintRepository.isAlreadyProcessed()` gate required by dev-standards §3. Rationale: this is a one-time admin-supervised bulk load, not a recurring ingestion path. The ON CONFLICT DO UPDATE upsert strategy handles re-runs idempotently. Adding per-row fingerprint checks against 1M rows would add significant latency for no dedup benefit beyond what the upsert already provides. Ongoing ingestion paths (CSV, email, ATS, OneDrive) MUST use the fingerprint gate.
 - **Admin UI extension, not replacement:** The admin dashboard at `cblaero/src/app/dashboard/admin/page.tsx` already exists from Story 1.4. Add a migration batch status card — do not refactor the existing page layout.
 - **Audit trail:** Admin reads of import batch data must emit `audit_event` entries via `cblaero/src/modules/audit/index.ts` to preserve the append-only audit trail established in Epic 1.
 - **Python dependencies:** Use `supabase-py` (`supabase>=2.0`) or `psycopg2-binary` for DB access. Add a `cblaero/scripts/migrate/requirements.txt`. Do not use ORMs — raw SQL or the Supabase Python client only.
@@ -189,6 +214,7 @@ claude-sonnet-4-6
 - cblaero/scripts/migrate/initial_load.py
 - cblaero/scripts/migrate/rollback_batch.py
 - cblaero/scripts/migrate/requirements.txt
+- cblaero/scripts/migrate/test_initial_load.py
 - cblaero/scripts/migrate/test_rollback_batch.py
 - cblaero/scripts/migrate/README.md
 - cblaero/src/modules/auth/authorization.ts
@@ -198,4 +224,5 @@ claude-sonnet-4-6
 - cblaero/src/app/api/internal/admin/import-batches/__tests__/route.test.ts
 - cblaero/src/app/dashboard/admin/MigrationStatusCard.tsx
 - cblaero/src/app/dashboard/admin/page.tsx
+- cblaero/src/features/candidate-management/infrastructure/import-batch-repository.ts
 - docs/implementation_artifacts/stories/2-1-build-admin-supervised-initial-1m-record-migration-pipeline.md

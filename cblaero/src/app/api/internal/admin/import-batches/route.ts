@@ -16,12 +16,16 @@ export const GET = withAuth(async ({ session, request, traceId }) => {
       action: "list_import_batches",
     });
   } catch (error) {
-    console.error("[admin/import-batches] failed to persist audit event; continuing response", {
+    console.error(JSON.stringify({
+      level: "error",
+      module: "admin/import-batches",
+      action: "audit_event_persist",
       traceId,
       actorId: session.actorId,
       tenantId: session.tenantId,
-      error,
-    });
+      error: error instanceof Error ? error.message : String(error),
+      timestamp: new Date().toISOString(),
+    }));
   }
 
   const pageStr = request.nextUrl.searchParams.get("page") ?? "1";
@@ -54,7 +58,16 @@ export const GET = withAuth(async ({ session, request, traceId }) => {
       meta: { page, pageSize, total: result.total },
     });
   } catch (err) {
-    console.error("[admin/import-batches] Failed to load batches:", err instanceof Error ? err.message : err);
+    console.error(JSON.stringify({
+      level: "error",
+      module: "admin/import-batches",
+      action: "list_import_batches",
+      traceId,
+      tenantId: session.tenantId,
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+      timestamp: new Date().toISOString(),
+    }));
     return NextResponse.json(
       { error: { code: "database_error", message: "Failed to load import batches." } },
       { status: 500 },

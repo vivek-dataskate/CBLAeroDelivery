@@ -695,6 +695,22 @@ $$;
 
 grant usage on schema cblaero_app to anon, authenticated, service_role;
 
+-- Audit tables: append-only (§27) — INSERT + SELECT only, no UPDATE/DELETE
+grant select, insert on cblaero_app.audit_authorization_denials
+  to authenticated, service_role;
+
+grant select, insert on cblaero_app.audit_admin_actions
+  to authenticated, service_role;
+
+grant select, insert on cblaero_app.audit_step_up_attempts
+  to authenticated, service_role;
+
+grant select, insert on cblaero_app.audit_client_context_confirmations
+  to authenticated, service_role;
+
+grant select, insert on cblaero_app.audit_data_residency_checks
+  to authenticated, service_role;
+
 grant select, insert on cblaero_app.audit_import_batch_accesses
   to authenticated, service_role;
 

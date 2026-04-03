@@ -75,6 +75,12 @@ type ImportBatchRow = {
 // Row mapping
 // -----------------------------------------------------------------------
 
+function isImportBatchRow(row: unknown): row is ImportBatchRow {
+  if (!row || typeof row !== "object") return false;
+  const r = row as Record<string, unknown>;
+  return typeof r.id === "string" && typeof r.tenant_id === "string" && typeof r.status === "string";
+}
+
 function toBatch(row: ImportBatchRow): ImportBatch {
   return {
     id: row.id,
@@ -90,6 +96,13 @@ function toBatch(row: ImportBatchRow): ImportBatch {
     startedAt: row.started_at,
     completedAt: row.completed_at,
   };
+}
+
+function toValidatedBatch(data: unknown): ImportBatch {
+  if (!isImportBatchRow(data)) {
+    throw new Error("Unexpected import_batch row shape from Supabase");
+  }
+  return toBatch(data);
 }
 
 // -----------------------------------------------------------------------
@@ -191,7 +204,7 @@ export async function getImportBatchById(
   }
 
   if (!data) return null;
-  return toBatch(data as ImportBatchRow);
+  return toValidatedBatch(data);
 }
 
 export async function updateImportBatch(
@@ -258,7 +271,7 @@ export async function listImportBatchesByTenant(
   }
 
   return {
-    items: (data ?? []).map((row) => toBatch(row as ImportBatchRow)),
+    items: (data ?? []).map((row) => toValidatedBatch(row)),
     total: count ?? 0,
   };
 }
@@ -345,6 +358,34 @@ export async function processImportChunk(params: {
     skipped: Number(result.skipped),
     errors: Number(result.errors),
   };
+}
+
+export async function getLatestMigrationBatch(
+  tenantId: string,
+): Promise<ImportBatch | null> {
+  if (shouldUseInMemoryPersistenceForTests()) {
+    const migrationBatches = [...batchStore.values()]
+      .filter((b) => b.tenant_id === tenantId && b.source === "migration")
+      .sort((a, b) => b.started_at.localeCompare(a.started_at));
+    return migrationBatches.length > 0 ? toBatch(migrationBatches[0]) : null;
+  }
+
+  const client = getSupabaseAdminClient();
+  const { data, error } = await client
+    .from("import_batch")
+    .select("*")
+    .eq("tenant_id", tenantId)
+    .eq("source", "migration")
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to fetch latest migration batch: ${error.message}`);
+  }
+
+  if (!data) return null;
+  return toValidatedBatch(data);
 }
 
 export async function deleteImportBatchCandidates(batchId: string): Promise<void> {
