@@ -102,8 +102,12 @@ async function getResumePage(): Promise<number> {
       // fingerprint count unavailable — use candidate count only
     }
 
+    // Use the higher of the two counts. ceil ensures we skip PAST the last
+    // loaded page rather than landing on it (which causes overlap when some
+    // records on that page were fingerprint-skipped or identity-missing failures
+    // that didn't increase either count).
     const totalSeen = Math.max(candidateCount, fpCount);
-    return Math.floor(totalSeen / 50) + 1;
+    return Math.ceil(totalSeen / 50) + 1;
   } catch {
     return 1;
   }
