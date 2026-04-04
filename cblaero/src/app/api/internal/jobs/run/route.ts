@@ -71,8 +71,15 @@ async function runCeipalSync(mode: 'initial-load' | 'daily-sync', pages: number 
 
   if (mode === 'initial-load') {
     const startPage = await getResumePage();
-    console.log(`[CeipalSync] Initial load — pages ${startPage} to ${startPage + pages - 1}`);
+    const endPage = startPage + pages - 1;
+    console.log(`[CeipalSync] Initial load — pages ${startPage} to ${endPage}`);
     await job.run({ startPage, maxPages: pages });
+
+    // Always advance the high-water mark by the full page count requested,
+    // regardless of how many records were actually upserted vs skipped/failed.
+    // This prevents the resume page from getting stuck when the fingerprint
+    // gate or identity validation filters out records without increasing counts.
+    await saveResumePage(endPage + 1);
   } else {
     const since = await getLastModifiedDate();
     console.log(`[CeipalSync] Daily sync — since ${since?.toISOString() ?? 'all time'}`);
@@ -80,36 +87,48 @@ async function runCeipalSync(mode: 'initial-load' | 'daily-sync', pages: number 
   }
 }
 
+const RESUME_PAGE_KEY = 'ceipal_initial_load_resume_page';
+
 async function getResumePage(): Promise<number> {
   if (!isSupabaseConfigured()) return 1;
   try {
-    const candidateCount = await countCandidatesBySource('ceipal');
+    // Check for explicit high-water mark first (stored after each run)
+    const db = getSupabaseAdminClient();
+    const { data } = await db
+      .from('sync_errors')
+      .select('message')
+      .eq('source', RESUME_PAGE_KEY)
+      .eq('record_id', 'resume_page')
+      .order('occurred_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-    // The total Ceipal records seen = candidates + records that were fetched but
-    // didn't produce new candidates (identity-missing failures, upsert-updates).
-    // Fingerprints track every record the job encounters. Since each new candidate
-    // also gets a fingerprint, totalSeen = max(candidateCount, fingerprintCount).
-    let fpCount = 0;
-    try {
-      const db = getSupabaseAdminClient();
-      const { count, error } = await db
-        .from('content_fingerprints')
-        .select('id', { count: 'exact', head: true })
-        .eq('fingerprint_type', 'ats_external_id')
-        .eq('tenant_id', 'cbl-aero');
-      if (!error && count !== null) fpCount = count;
-    } catch {
-      // fingerprint count unavailable — use candidate count only
+    if (data?.message) {
+      const stored = parseInt(data.message, 10);
+      if (!isNaN(stored) && stored > 1) return stored;
     }
 
-    // Use the higher of the two counts. ceil ensures we skip PAST the last
-    // loaded page rather than landing on it (which causes overlap when some
-    // records on that page were fingerprint-skipped or identity-missing failures
-    // that didn't increase either count).
-    const totalSeen = Math.max(candidateCount, fpCount);
-    return Math.ceil(totalSeen / 50) + 1;
+    // Fallback: derive from candidate count (first run or missing marker)
+    const count = await countCandidatesBySource('ceipal');
+    return Math.ceil(count / 50) + 1;
   } catch {
     return 1;
+  }
+}
+
+async function saveResumePage(nextPage: number): Promise<void> {
+  if (!isSupabaseConfigured()) return;
+  try {
+    // Store the next page as a simple marker row in sync_errors.
+    // This is a lightweight hack — avoids adding a new table for one value.
+    const db = getSupabaseAdminClient();
+    await db.from('sync_errors').insert({
+      source: RESUME_PAGE_KEY,
+      record_id: 'resume_page',
+      message: String(nextPage),
+    });
+  } catch {
+    // Non-fatal — next run will derive from counts
   }
 }
 
