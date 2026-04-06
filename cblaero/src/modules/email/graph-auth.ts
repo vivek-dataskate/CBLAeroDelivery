@@ -14,7 +14,7 @@ type TokenCache = {
 // Module-level cache: resets on serverless cold starts (acceptable — re-auth is cheap)
 let tokenCache: TokenCache | null = null;
 
-export function getGraphConfig() {
+function getGraphConfig() {
   const tenantId = process.env.CBL_SSO_ALLOWED_TENANT_ID;
   const clientId = process.env.CBL_SSO_CLIENT_ID;
   const clientSecret = process.env.CBL_SSO_CLIENT_SECRET;
@@ -51,8 +51,13 @@ export async function acquireGraphToken(): Promise<string> {
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Graph token acquisition failed (${response.status}): ${text}`);
+    // Parse only safe fields — do NOT log raw body (may contain tenant/client IDs)
+    let errorCode = 'unknown';
+    try {
+      const errData = await response.json() as { error?: string; error_description?: string };
+      errorCode = errData.error ?? `status_${response.status}`;
+    } catch { /* response not JSON */ }
+    throw new Error(`[Graph] Token acquisition failed (${response.status}): ${errorCode}`);
   }
 
   const data = await response.json() as { access_token: string; expires_in: number };

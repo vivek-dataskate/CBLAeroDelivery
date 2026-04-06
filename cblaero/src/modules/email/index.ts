@@ -44,15 +44,18 @@ export class MicrosoftGraphEmailParser implements EmailParser {
         // Skip already-processed messages — avoids wasting LLM calls
         if (processedIds?.has(msg.id)) continue;
 
-        const attachments = msg.hasAttachments
-          ? await this.fetchAttachments(token, address, msg.id)
-          : [];
+        // LLM classification FIRST — cheaper than fetching multi-MB attachment binaries
         const candidate = await extractCandidateFromEmail(msg.body.content, msg.subject ?? '');
-        // Skip non-submission emails (internal chatter, FYIs, etc.)
-        if (candidate.isSubmission === false) {
+        // Skip non-submission emails (treat undefined isSubmission as non-submission too)
+        if (!candidate.isSubmission) {
           console.log(`[EmailParser] Skipping non-submission: ${msg.subject ?? '(no subject)'}`);
           continue;
         }
+
+        // Only fetch attachments for confirmed submissions
+        const attachments = msg.hasAttachments
+          ? await this.fetchAttachments(token, address, msg.id)
+          : [];
         allEmails.push({
           id: msg.id,
           candidate: candidate as unknown as Record<string, unknown> & { firstName: string; lastName: string; email: string },
@@ -89,6 +92,10 @@ export class MicrosoftGraphEmailParser implements EmailParser {
       allMessages.push(...(data.value ?? []));
       url = data['@odata.nextLink'] ?? null;
       page++;
+    }
+
+    if (url) {
+      console.warn(`[EmailParser] MAX_PAGES (${MAX_PAGES}) reached for ${mailbox} — some messages may not have been processed`);
     }
 
     return allMessages;
