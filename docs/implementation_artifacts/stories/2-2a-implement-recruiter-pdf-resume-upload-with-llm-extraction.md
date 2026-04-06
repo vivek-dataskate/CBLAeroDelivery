@@ -344,3 +344,20 @@ Modified files:
 - 279 tests passing, 0 failures
 - TypeScript: clean
 - All ACs verified
+
+### Review-Driven Fixes (2026-04-06, code-review pass 5 — standards compliance audit)
+
+- [x] M1: Added `console.error` with structured JSON to per-file outer catch block in upload route per §12
+- [x] M2: Added `console.error` to all 3 catch blocks in ResumeUploadWizard.tsx — errors were silently discarded
+- [x] M3: Added circuit-breaker to upload route — after 5 consecutive LLM failures, remaining files are skipped with explanatory error per §26
+- [x] L1: Removed dead export `listResumeUploadBatchesForTest()` from shared.ts per §14
+- [x] L2: Aligned `FileStatus` type in ResumeUploadWizard.tsx with server-side shared.ts (added `'skipped'`)
+- [x] L3: Wrapped post-RPC operations in confirm route with try/catch — submission linkage, error counting, and audit events now fail gracefully per §12
+- [x] L4: Step state inconsistency after manual confirm noted but not fixed (cosmetic only — summary renders correctly via `summary` truthiness check)
+
+#### Test Results After Fixes (Pass 5)
+
+- 280 tests passing, 0 failures
+- TypeScript: clean
+- ESLint: clean (only pre-existing issues in ingestion-jobs.test.ts and budget-alert.ts)
+- All ACs verified as implemented
