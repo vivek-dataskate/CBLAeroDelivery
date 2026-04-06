@@ -58,10 +58,8 @@ export class MicrosoftGraphEmailParser implements EmailParser {
           continue;
         }
 
-        // Only fetch attachments for confirmed submissions
-        const attachments = msg.hasAttachments
-          ? await this.fetchAttachments(token, address, msg.id)
-          : [];
+        // Always attempt attachment fetch — hasAttachments can be false on forwarded/CC'd emails
+        const attachments = await this.fetchAttachments(token, address, msg.id);
         allEmails.push({
           id: msg.id,
           mailbox: address,
@@ -138,11 +136,14 @@ export class MicrosoftGraphEmailParser implements EmailParser {
     }
 
     const data = await response.json() as { value: GraphAttachment[] };
-    return (data.value ?? [])
-      .filter((a) => a['@odata.type'] === '#microsoft.graph.fileAttachment')
-      .map((a) => ({
-        filename: a.name,
-        content: Buffer.from(a.contentBytes, 'base64'),
-      }));
+    const allAtts = data.value ?? [];
+    const fileAtts = allAtts.filter((a) => a['@odata.type'] === '#microsoft.graph.fileAttachment' && a.contentBytes);
+    if (allAtts.length > 0) {
+      console.log(`[EmailParser] Message ${messageId}: ${allAtts.length} attachments total, ${fileAtts.length} file attachments (types: ${allAtts.map(a => a['@odata.type']).join(', ')})`);
+    }
+    return fileAtts.map((a) => ({
+      filename: a.name,
+      content: Buffer.from(a.contentBytes, 'base64'),
+    }));
   }
 }
