@@ -124,7 +124,7 @@ export class MicrosoftGraphEmailParser implements EmailParser {
     messageId: string
   ): Promise<Array<{ filename: string; content: Buffer }>> {
     // No $select — requesting contentBytes fails with 400 when itemAttachments are present
-    const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}/messages/${messageId}/attachments`;
+    const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}/messages/${encodeURIComponent(messageId)}/attachments`;
 
     const response = await fetchWithRetry(url, {
       headers: { Authorization: `Bearer ${token}` },
