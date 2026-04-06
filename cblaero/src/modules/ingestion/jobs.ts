@@ -204,67 +204,91 @@ export class OneDriveResumePollerJob implements SchedulerJob {
 
     let imported = 0;
     let failed = 0;
+    const PARALLEL_CHUNK = 10;
 
-    for (const file of files) {
-      try {
-        const buffer = await this.downloadFile(file.downloadUrl);
+    for (let start = 0; start < files.length; start += PARALLEL_CHUNK) {
+      const chunk = files.slice(start, start + PARALLEL_CHUNK);
 
-        // Fingerprint gate: skip LLM extraction if this exact file was already processed
-        const fileHash = computeFileHash(buffer);
-        if (await isAlreadyProcessed(DEFAULT_TENANT_ID, 'file_sha256', fileHash)) {
-          console.log(JSON.stringify({ event: 'fingerprint_hit', type: 'file_sha256', source: 'onedrive', tenantId: DEFAULT_TENANT_ID, hash: fileHash.slice(0, 12) }));
-          // Safe to delete from OneDrive — the original processing already stored to Supabase Storage
-          // (fingerprint was only recorded with status='processed' after successful storage+extraction)
-          await this.deleteFromOneDrive(token, file.id, file.name);
-          continue;
-        }
+      const chunkResults = await Promise.all(
+        chunk.map(async (file) => {
+          try {
+            const buffer = await this.downloadFile(file.downloadUrl);
 
-        // Store PDF in Supabase Storage (source of truth) before extraction
-        let storageUrl = '';
-        if (db && batchId) {
-          const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-          const fileSubmissionId = crypto.randomUUID().slice(0, 8);
-          const storagePath = `resume-uploads/cbl-aero/${batchId}/${fileSubmissionId}/${safeName}`;
-          const { error: uploadErr } = await db.storage
-            .from(OneDriveResumePollerJob.ATTACHMENT_BUCKET)
-            .upload(storagePath, buffer, { contentType: 'application/pdf', upsert: true });
+            // Fingerprint gate: skip LLM extraction if this exact file was already processed
+            const fileHash = computeFileHash(buffer);
+            if (await isAlreadyProcessed(DEFAULT_TENANT_ID, 'file_sha256', fileHash)) {
+              console.log(JSON.stringify({ event: 'fingerprint_hit', type: 'file_sha256', source: 'onedrive', tenantId: DEFAULT_TENANT_ID, hash: fileHash.slice(0, 12) }));
+              await this.deleteFromOneDrive(token, file.id, file.name);
+              return { status: 'skipped' as const, file };
+            }
 
-          if (uploadErr) {
-            console.warn(`[OneDrivePoller] Storage upload failed for ${file.name}:`, uploadErr.message);
-          } else {
-            const { data: urlData } = db.storage
-              .from(OneDriveResumePollerJob.ATTACHMENT_BUCKET)
-              .getPublicUrl(storagePath);
-            storageUrl = urlData.publicUrl;
+            // Store PDF in Supabase Storage (source of truth) before extraction
+            let storageUrl = '';
+            if (db && batchId) {
+              const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+              const fileSubmissionId = crypto.randomUUID().slice(0, 8);
+              const storagePath = `resume-uploads/cbl-aero/${batchId}/${fileSubmissionId}/${safeName}`;
+              const { error: uploadErr } = await db.storage
+                .from(OneDriveResumePollerJob.ATTACHMENT_BUCKET)
+                .upload(storagePath, buffer, { contentType: 'application/pdf', upsert: true });
+
+              if (uploadErr) {
+                console.warn(`[OneDrivePoller] Storage upload failed for ${file.name}:`, uploadErr.message);
+              } else {
+                const { data: urlData } = db.storage
+                  .from(OneDriveResumePollerJob.ATTACHMENT_BUCKET)
+                  .getPublicUrl(storagePath);
+                storageUrl = urlData.publicUrl;
+              }
+            }
+
+            const result = await extractCandidateFromDocument(buffer, 'pdf', {
+              source: 'resume_upload',
+              tenantId: 'cbl-aero',
+              batchId: batchId ?? undefined,
+            });
+
+            if (result.error || !result.extraction) {
+              console.warn(`[OneDrivePoller] Extraction failed for ${file.name}: ${result.error}`);
+              await recordFingerprint({ tenantId: DEFAULT_TENANT_ID, type: 'file_sha256', hash: fileHash, source: 'onedrive', status: 'failed' });
+              recordSyncFailure('onedrive', file.name, result.error ?? 'Extraction returned no data');
+              if (storageUrl) {
+                await this.deleteFromOneDrive(token, file.id, file.name);
+              } else {
+                console.warn(`[OneDrivePoller] Keeping ${file.name} in OneDrive — storage backup failed`);
+              }
+              return { status: 'failed' as const, file };
+            }
+
+            const ext = result.extraction;
+            await recordFingerprint({ tenantId: DEFAULT_TENANT_ID, type: 'file_sha256', hash: fileHash, source: 'onedrive' });
+            console.log(`[OneDrivePoller] Processed ${file.name} → ${ext.firstName} ${ext.lastName}`);
+
+            if (storageUrl) {
+              await this.deleteFromOneDrive(token, file.id, file.name);
+            } else {
+              console.warn(`[OneDrivePoller] Keeping ${file.name} in OneDrive — no storage backup`);
+            }
+
+            return { status: 'ok' as const, file, extraction: ext };
+          } catch (err) {
+            recordSyncFailure('onedrive', file.name, err);
+            return { status: 'failed' as const, file };
           }
-        }
+        })
+      );
 
-        const result = await extractCandidateFromDocument(buffer, 'pdf', {
-          source: 'resume_upload',
-          tenantId: 'cbl-aero',
-          batchId: batchId ?? undefined,
-        });
+      // Batch-persist successful extractions via single RPC call per chunk
+      const successes = chunkResults.filter((r) => r.status === 'ok' && r.extraction);
+      const chunkFailed = chunkResults.filter((r) => r.status === 'failed').length;
+      failed += chunkFailed;
 
-        if (result.error || !result.extraction) {
-          console.warn(`[OneDrivePoller] Extraction failed for ${file.name}: ${result.error}`);
-          failed++;
-          await recordFingerprint({ tenantId: DEFAULT_TENANT_ID, type: 'file_sha256', hash: fileHash, source: 'onedrive', status: 'failed' });
-          recordSyncFailure('onedrive', file.name, result.error ?? 'Extraction returned no data');
-          // Only delete from OneDrive if PDF was safely backed up to Supabase Storage
-          if (storageUrl) {
-            await this.deleteFromOneDrive(token, file.id, file.name);
-          } else {
-            console.warn(`[OneDrivePoller] Keeping ${file.name} in OneDrive — storage backup failed`);
-          }
-          continue;
-        }
-
-        if (db && batchId) {
-          const ext = result.extraction;
+      if (db && batchId && successes.length > 0) {
+        const candidateRows = successes.map((r, i) => {
+          const ext = r.extraction!;
           const email = typeof ext.email === 'string' ? ext.email.trim().toLowerCase() : null;
-
-          const candidateRow = {
-            row_number: imported + failed + 1,
+          return {
+            row_number: imported + i + 1,
             raw_data: ext,
             tenant_id: 'cbl-aero',
             email,
@@ -290,37 +314,28 @@ export class OneDriveResumePollerJob implements SchedulerJob {
             source_batch_id: batchId,
             extra_attributes: {},
           };
+        });
 
-          const { error: rpcError } = await db.rpc('process_import_chunk', {
-            p_batch_id: batchId,
-            p_candidates: [candidateRow],
-            p_error_rows: [],
-            p_total_imported: imported,
-            p_total_skipped: 0,
-            p_total_errors: failed,
-          });
+        const { error: rpcError } = await db.rpc('process_import_chunk', {
+          p_batch_id: batchId,
+          p_candidates: candidateRows,
+          p_error_rows: [],
+          p_total_imported: imported,
+          p_total_skipped: 0,
+          p_total_errors: failed,
+        });
 
-          if (rpcError) {
-            console.error(`[OneDrivePoller] RPC failed for ${file.name}:`, rpcError.message);
-            failed++;
-            continue;
-          }
-        }
-
-        imported++;
-        await recordFingerprint({ tenantId: DEFAULT_TENANT_ID, type: 'file_sha256', hash: fileHash, source: 'onedrive' });
-        console.log(`[OneDrivePoller] Processed ${file.name} → ${result.extraction.firstName} ${result.extraction.lastName}`);
-
-        // Only delete from OneDrive if PDF was safely backed up to Supabase Storage
-        if (storageUrl) {
-          await this.deleteFromOneDrive(token, file.id, file.name);
+        if (rpcError) {
+          console.error(`[OneDrivePoller] RPC failed for chunk:`, rpcError.message);
+          failed += successes.length;
         } else {
-          console.warn(`[OneDrivePoller] Keeping ${file.name} in OneDrive — no storage backup`);
+          imported += successes.length;
         }
-      } catch (err) {
-        failed++;
-        recordSyncFailure('onedrive', file.name, err);
+      } else {
+        imported += successes.length;
       }
+
+      console.log(`[OneDrivePoller] Chunk ${Math.floor(start / PARALLEL_CHUNK) + 1}: ${successes.length} ok, ${chunkFailed} failed`);
     }
 
     if (db && batchId) {
@@ -336,37 +351,60 @@ export class OneDriveResumePollerJob implements SchedulerJob {
    }
   }
 
+  /** Max files to process per cron invocation — keeps each run under Render's 5-min timeout */
+  private static MAX_FILES_PER_RUN = 200;
+  /** Graph API page size */
+  private static PAGE_SIZE = 200;
+
   private async listPdfFiles(token: string): Promise<Array<{ id: string; name: string; size: number; downloadUrl: string }>> {
     const user = encodeURIComponent(this.driveUser);
-    const path = this.folderPath;
-    const url = `https://graph.microsoft.com/v1.0/users/${user}/drive/root:/${path}:/children?$top=200`;
+    const folderPath = this.folderPath;
+    let url: string | null = `https://graph.microsoft.com/v1.0/users/${user}/drive/root:/${folderPath}:/children?$top=${OneDriveResumePollerJob.PAGE_SIZE}&$select=id,name,size,file`;
 
-    const response = await fetchWithRetry(url, { headers: { Authorization: `Bearer ${token}` } });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`OneDrive folder listing failed (${response.status}): ${text}`);
-    }
-
-    const data = await response.json() as {
-      value: Array<{
-        id: string;
-        name: string;
-        size: number;
-        file?: { mimeType: string };
-        '@microsoft.graph.downloadUrl'?: string;
-      }>;
+    type GraphItem = {
+      id: string;
+      name: string;
+      size: number;
+      file?: { mimeType: string };
+      '@microsoft.graph.downloadUrl'?: string;
     };
 
-    return (data.value ?? [])
-      .filter((item) => item.file && item.name.toLowerCase().endsWith('.pdf'))
-      .map((item) => ({
-        id: item.id,
-        name: item.name,
-        size: item.size,
-        downloadUrl: item['@microsoft.graph.downloadUrl'] ?? '',
-      }))
-      .filter((item) => item.downloadUrl);
+    const allPdfs: Array<{ id: string; name: string; size: number; downloadUrl: string }> = [];
+
+    while (url && allPdfs.length < OneDriveResumePollerJob.MAX_FILES_PER_RUN) {
+      const response = await fetchWithRetry(url, { headers: { Authorization: `Bearer ${token}` } });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`OneDrive folder listing failed (${response.status}): ${text}`);
+      }
+
+      const data = await response.json() as {
+        value: GraphItem[];
+        '@odata.nextLink'?: string;
+      };
+
+      const pagePdfs = (data.value ?? [])
+        .filter((item) => item.file && item.name.toLowerCase().endsWith('.pdf'))
+        .map((item) => ({
+          id: item.id,
+          name: item.name,
+          size: item.size,
+          downloadUrl: item['@microsoft.graph.downloadUrl'] ?? '',
+        }))
+        .filter((item) => item.downloadUrl);
+
+      allPdfs.push(...pagePdfs);
+      url = data['@odata.nextLink'] ?? null;
+    }
+
+    // Cap at MAX_FILES_PER_RUN — remaining files picked up on the next hourly run
+    if (allPdfs.length > OneDriveResumePollerJob.MAX_FILES_PER_RUN) {
+      console.log(`[OneDrivePoller] ${allPdfs.length} PDFs found, capping to ${OneDriveResumePollerJob.MAX_FILES_PER_RUN} for this run`);
+      return allPdfs.slice(0, OneDriveResumePollerJob.MAX_FILES_PER_RUN);
+    }
+
+    return allPdfs;
   }
 
   private async downloadFile(downloadUrl: string): Promise<Buffer> {
