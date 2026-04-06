@@ -32,17 +32,24 @@ export class EmailIngestionJob implements SchedulerJob {
 
   async run() {
     try {
-      // Fingerprint gate: load ALL processed message IDs (3650 days — emails persist in inbox far beyond 30 days)
+      // Fingerprint gate: safety net for any emails that slip past the isRead filter
       const processedIds = await loadRecentFingerprints(DEFAULT_TENANT_ID, 'email_message_id', 3650);
       const records = await this.parser.parseInbox(this.inboxAddresses, processedIds);
-      console.log(`[EmailIngestionJob] ${records.length} new emails to process (${processedIds.size} already processed)`);
+      console.log(`[EmailIngestionJob] ${records.length} new submissions to process`);
+
+      // Get token for marking as read after successful persistence
+      const token = await acquireGraphToken();
+
       for (const record of records) {
         try {
           await upsertCandidateFromEmailFull(record);
           await recordFingerprint({ tenantId: DEFAULT_TENANT_ID, type: 'email_message_id', hash: record.id, source: 'email' });
+          // Mark as read AFTER successful persist — ensures we don't lose emails on failure
+          await this.parser.markAsRead(token, record.mailbox, record.id);
         } catch (err) {
           recordFingerprint({ tenantId: DEFAULT_TENANT_ID, type: 'email_message_id', hash: record.id, source: 'email', status: 'failed' }).catch(() => {});
           recordSyncFailure('email', record.id, err);
+          // Do NOT mark as read on failure — email stays unread for retry on next run
         }
       }
     } catch (err) {
