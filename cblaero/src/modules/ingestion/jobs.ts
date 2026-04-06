@@ -34,27 +34,22 @@ export class EmailIngestionJob implements SchedulerJob {
     try {
       // Fingerprint gate: safety net for any emails that slip past the isRead filter
       const processedIds = await loadRecentFingerprints(DEFAULT_TENANT_ID, 'email_message_id', 3650);
-      const records = await this.parser.parseInbox(this.inboxAddresses, processedIds);
-      console.log(`[EmailIngestionJob] ${records.length} new submissions to process`);
 
-      // Get token for marking as read after successful persistence
-      const token = await acquireGraphToken();
-
-      for (const record of records) {
-        try {
+      // Stream-process: each email is parsed → persisted → marked read one at a time.
+      // This avoids OOM from holding 500 emails+attachments in memory.
+      const { processed, skipped, failed } = await this.parser.processInbox(
+        this.inboxAddresses,
+        processedIds,
+        async (record) => {
           const result = await upsertCandidateFromEmailFull(record);
           await recordFingerprint({ tenantId: DEFAULT_TENANT_ID, type: 'email_message_id', hash: record.id, source: 'email' });
-          // Mark as read on success OR dedup skip — either way, this email is handled
-          await this.parser.markAsRead(token, record.mailbox, record.id);
           if (result === 'dedup_skip') {
-            console.log(`[EmailIngestionJob] Dedup skip for ${record.subject} — marked as read`);
+            console.log(`[EmailIngestionJob] Dedup skip for ${record.subject}`);
           }
-        } catch (err) {
-          recordFingerprint({ tenantId: DEFAULT_TENANT_ID, type: 'email_message_id', hash: record.id, source: 'email', status: 'failed' }).catch(() => {});
-          recordSyncFailure('email', record.id, err);
-          // Do NOT mark as read on failure — email stays unread for retry on next run
-        }
-      }
+        },
+      );
+
+      console.log(`[EmailIngestionJob] Complete: ${processed} processed, ${skipped} skipped, ${failed} failed`);
     } catch (err) {
       recordSyncFailure('email', 'polling', err);
     }
