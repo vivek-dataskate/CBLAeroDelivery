@@ -59,32 +59,37 @@ async function acquireCeipalToken(): Promise<string> {
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Ceipal auth failed (${response.status}): ${text}`);
+    // Do NOT log response body — may echo back credentials
+    throw new Error(`[Ceipal] Auth failed (${response.status}) — check Ceipal admin panel for details`);
   }
 
   const text = await response.text();
 
   // Response may be XML or JSON — try both
   let token: string | undefined;
+  let expiresIn = 3600; // default 1 hour
   const xmlMatch = text.match(/<access_token>([^<]+)<\/access_token>/);
   if (xmlMatch) {
     token = xmlMatch[1];
   } else {
     try {
-      const data = JSON.parse(text) as { token?: string; access_token?: string };
+      const data = JSON.parse(text) as { token?: string; access_token?: string; expires_in?: number };
       token = data.token ?? data.access_token;
-    } catch {
-      // not JSON either
+      if (typeof data.expires_in === 'number' && data.expires_in > 0) {
+        expiresIn = data.expires_in;
+      }
+    } catch (parseErr) {
+      console.warn('[Ceipal] JSON parse failed for auth response:', parseErr instanceof Error ? parseErr.message : parseErr);
     }
   }
 
   if (!token) {
-    throw new Error(`Ceipal auth response missing token: ${text.slice(0, 200)}`);
+    // Truncate and redact — auth response may contain echoed credentials
+    throw new Error(`[Ceipal] Auth response missing token (response length: ${text.length})`);
   }
 
-  // Default 1 hour expiry
-  tokenCache = { token, expiresAt: Date.now() + 3600_000 };
+  tokenCache = { token, expiresAt: Date.now() + expiresIn * 1000 };
+  console.log(`[Ceipal] Token acquired, expires in ${expiresIn}s`);
 
   return token;
 }
@@ -192,6 +197,10 @@ export async function fetchCeipalApplicants(options?: {
     page++;
   }
 
+  if (page > endPage) {
+    console.warn(`[Ceipal] maxPages (${maxPages}) reached at page ${page} — results may be truncated. Consider increasing maxPages or using startPage for resumption.`);
+  }
+
   return all;
 }
 
@@ -199,9 +208,15 @@ export async function fetchCeipalApplicants(options?: {
  * Map a Ceipal applicant to the ingestion candidate shape.
  */
 export function mapCeipalApplicantToCandidate(a: CeipalApplicant): Record<string, unknown> {
+  /** Trim whitespace, return undefined for empty */
   const clean = (v?: string | number | null) => {
     if (v == null) return undefined;
     const s = String(v).trim();
+    return s || undefined;
+  };
+  /** Clean + strip "NA" sentinel — use only for status/flag fields, not names */
+  const cleanNA = (v?: string | number | null) => {
+    const s = clean(v);
     return s && s !== 'NA' ? s : undefined;
   };
 
@@ -221,11 +236,11 @@ export function mapCeipalApplicantToCandidate(a: CeipalApplicant): Record<string
     postalCode: clean(a.zip_code),
     jobTitle: clean(a.job_title),
     skills: a.skills ? a.skills.split(',').map((s) => s.trim()).filter(Boolean) : [],
-    workAuthorization: clean(a.work_authorization),
-    clearance: clean(a.clearance),
+    workAuthorization: cleanNA(a.work_authorization),
+    clearance: cleanNA(a.clearance),
     yearsOfExperience: a.experience != null ? String(a.experience) : undefined,
     currentRate: clean(a.expected_pay),
-    veteranStatus: clean(a.veteran_status),
+    veteranStatus: cleanNA(a.veteran_status),
     ceipalId: clean(a.applicant_id),
     createdByActorId: clean(a.created_by),
     source: 'ceipal',
@@ -233,9 +248,9 @@ export function mapCeipalApplicantToCandidate(a: CeipalApplicant): Record<string
     additionalFields: {
       ...(clean(a.linkedin_profile_url) ? { linkedinUrl: clean(a.linkedin_profile_url) } : {}),
       ...(clean(a.resume_path) ? { resumeUrl: clean(a.resume_path) } : {}),
-      ...(clean(a.applicant_status) ? { applicantStatus: clean(a.applicant_status) } : {}),
+      ...(cleanNA(a.applicant_status) ? { applicantStatus: cleanNA(a.applicant_status) } : {}),
       ...(clean(a.source) ? { originalSource: clean(a.source) } : {}),
-      ...(clean(a.relocation) ? { relocation: clean(a.relocation) } : {}),
+      ...(cleanNA(a.relocation) ? { relocation: cleanNA(a.relocation) } : {}),
       ...(clean(a.referred_by) ? { referredBy: clean(a.referred_by) } : {}),
       ...(clean(a.primary_skills) ? { primarySkills: clean(a.primary_skills) } : {}),
       ...(clean(a.technology) ? { technology: clean(a.technology) } : {}),
