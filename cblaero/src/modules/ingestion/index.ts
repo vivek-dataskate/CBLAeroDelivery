@@ -200,7 +200,7 @@ export async function upsertCandidateFromEmailFull(record: {
   attachments?: Array<{ filename: string; content?: Buffer }>;
   candidate: Record<string, unknown>;
   receivedAt: string;
-}): Promise<void> {
+}): Promise<'processed' | 'dedup_skip' | void> {
   if (!isSupabaseConfigured()) {
     console.log('[Ingestion] Supabase not configured — skipping email persist:', record.subject);
     return;
@@ -214,7 +214,7 @@ export async function upsertCandidateFromEmailFull(record: {
   const existingSub = await findSubmissionByMessageId(record.id, DEFAULT_TENANT_ID);
   if (existingSub) {
     console.log(`[Ingestion] Skipping already-processed email: ${record.subject}`);
-    return;
+    return 'dedup_skip';
   }
 
   // 2. Upsert the candidate record — atomic, no check-before-write race
