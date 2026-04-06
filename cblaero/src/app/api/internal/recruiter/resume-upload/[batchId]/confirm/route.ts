@@ -142,31 +142,41 @@ export const POST = withAuth<{ batchId: string }>(async ({ session, request, par
     }
 
     // Link submissions to persisted candidates by email
-    const emailsToLink = submissionEmails.filter((s) => s.email).map((s) => s.email!);
-    if (emailsToLink.length > 0) {
-      const emailToId = await findCandidateIdsByEmails(emailsToLink, tenantId);
+    try {
+      const emailsToLink = submissionEmails.filter((s) => s.email).map((s) => s.email!);
+      if (emailsToLink.length > 0) {
+        const emailToId = await findCandidateIdsByEmails(emailsToLink, tenantId);
 
-      if (emailToId.size > 0) {
-        const byCandidateId = new Map<string, string[]>();
-        for (const s of submissionEmails) {
-          if (s.email && emailToId.has(s.email)) {
-            const candidateId = emailToId.get(s.email)!;
-            const arr = byCandidateId.get(candidateId) ?? [];
-            arr.push(s.submissionId);
-            byCandidateId.set(candidateId, arr);
+        if (emailToId.size > 0) {
+          const byCandidateId = new Map<string, string[]>();
+          for (const s of submissionEmails) {
+            if (s.email && emailToId.has(s.email)) {
+              const candidateId = emailToId.get(s.email)!;
+              const arr = byCandidateId.get(candidateId) ?? [];
+              arr.push(s.submissionId);
+              byCandidateId.set(candidateId, arr);
+            }
           }
+          await updateSubmissionCandidateIds(
+            [...byCandidateId.entries()].map(([candidateId, submissionIds]) => ({
+              candidateId,
+              submissionIds,
+            })),
+          );
         }
-        await updateSubmissionCandidateIds(
-          [...byCandidateId.entries()].map(([candidateId, submissionIds]) => ({
-            candidateId,
-            submissionIds,
-          })),
-        );
       }
+    } catch (err) {
+      console.error(JSON.stringify({ level: 'error', module: 'recruiter/resume-upload/confirm', action: 'submission_linkage_failed', traceId, batchId, error: err instanceof Error ? err.message : String(err) }));
+      // Non-fatal: candidates are persisted, linkage can be retried
     }
   }
 
-  const errors = await countFailedSubmissions(batchId, tenantId);
+  let errors = 0;
+  try {
+    errors = await countFailedSubmissions(batchId, tenantId);
+  } catch (err) {
+    console.error(JSON.stringify({ level: 'error', module: 'recruiter/resume-upload/confirm', action: 'count_failures_failed', traceId, batchId, error: err instanceof Error ? err.message : String(err) }));
+  }
 
   await updateImportBatch(batchId, {
     status: 'complete',
@@ -176,13 +186,17 @@ export const POST = withAuth<{ batchId: string }>(async ({ session, request, par
     completedAt: new Date().toISOString(),
   });
 
-  await recordImportBatchAccessEvent({
-    traceId,
-    actorId: session.actorId,
-    tenantId,
-    batchId,
-    action: 'resume_confirm_access',
-  });
+  try {
+    await recordImportBatchAccessEvent({
+      traceId,
+      actorId: session.actorId,
+      tenantId,
+      batchId,
+      action: 'resume_confirm_access',
+    });
+  } catch (err) {
+    console.error(JSON.stringify({ level: 'error', module: 'recruiter/resume-upload/confirm', action: 'audit_event_failed', traceId, batchId, error: err instanceof Error ? err.message : String(err) }));
+  }
 
   return NextResponse.json({
     data: { batchId, status: 'complete', imported, skipped, errors },

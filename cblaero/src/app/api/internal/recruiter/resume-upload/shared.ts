@@ -73,10 +73,6 @@ export function clearResumeUploadStoreForTest(): void {
   inMemoryBatches.splice(0);
 }
 
-export function listResumeUploadBatchesForTest(): ResumeBatch[] {
-  return [...inMemoryBatches];
-}
-
 export function isInMemoryMode(): boolean {
   return shouldUseInMemoryPersistenceForTests();
 }
