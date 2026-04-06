@@ -141,14 +141,20 @@ export class MicrosoftGraphEmailParser implements EmailParser {
 
   async markAsRead(token: string, mailbox: string, messageId: string): Promise<void> {
     const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}/messages/${messageId}`;
-    const response = await fetchWithRetry(url, {
-      method: 'PATCH',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isRead: true }),
-    });
-    if (!response.ok) {
-      const errText = await response.text().catch(() => '');
-      console.warn(`[EmailParser] Failed to mark as read (${response.status}): ${errText.slice(0, 200)}`);
+    try {
+      const response = await fetchWithRetry(url, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isRead: true }),
+      });
+      if (!response.ok) {
+        const errText = await response.text().catch(() => '');
+        console.warn(`[EmailParser] markAsRead FAILED (${response.status}): ${errText.slice(0, 300)}`);
+      } else {
+        console.log(`[EmailParser] markAsRead OK (${response.status}) for ${messageId.slice(-10)}`);
+      }
+    } catch (err) {
+      console.error(`[EmailParser] markAsRead THREW for ${messageId.slice(-10)}:`, err instanceof Error ? err.message : err);
     }
   }
 
