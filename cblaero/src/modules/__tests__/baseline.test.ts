@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { resolveAuthContext, type AuthSession } from "../auth";
 import { resolveTenantContext } from "../tenants";
 import { createAuditEnvelope } from "../audit";
-import { createIngestionEnvelope } from "../ingestion";
+// createIngestionEnvelope removed — dead code cleaned up
 import { applyBaselineContextHeaders } from "../../proxy";
 
 describe("baseline boundary modules", () => {
@@ -25,9 +25,7 @@ describe("baseline boundary modules", () => {
       tenantId: null,
     });
 
-    const envelope = createIngestionEnvelope("csv");
-    expect(envelope.source).toBe("csv");
-    expect(envelope.receivedAtIso).toBeTruthy();
+    // createIngestionEnvelope test removed (dead code cleaned up)
   });
 });
 

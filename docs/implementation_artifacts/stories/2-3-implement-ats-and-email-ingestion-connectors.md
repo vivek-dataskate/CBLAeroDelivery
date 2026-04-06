@@ -91,6 +91,45 @@ so that candidate records are continuously synchronized from external sources.
 - [x] [AI-Review][LOW] `additionalFields` in ceipal.ts stored untrimmed raw values — `clean()` checked trimmed but stored original. **Fixed: all values now use `clean()` result.**
 - [x] [AI-Review][LOW] Duplicate `// 3.` step comments in `upsertCandidateFromEmailFull`. **Fixed: renumbered steps 3→5 sequentially.**
 
+#### Round 7 (Comprehensive dev-standards + architecture review — Sonnet agents)
+- [x] [AI-Review][CRITICAL] Empty-string fingerprint: `ceipalId ?? ''` produced `"ceipal:"` for all missing IDs — all no-ID applicants silently deduped as one. **Fixed: guard `ceipalId` before fingerprint construction; skip fingerprint for absent IDs.**
+- [x] [AI-Review][CRITICAL] `upsertCandidateFromATS` used check-before-write (SELECT→INSERT/UPDATE) — race condition under concurrent runs. **Fixed: replaced with `.upsert(onConflict: 'tenant_id,email')`.**
+- [x] [AI-Review][CRITICAL] `upsertCandidateFromEmailFull` — candidate upserted BEFORE submission dedup check; every duplicate email re-poll dirtied candidate record. **Fixed: moved `findSubmissionByMessageId` to top of function, before any DB writes.**
+- [x] [AI-Review][CRITICAL] `upsertCandidateFromEmailFull` — 4 sequential DB round-trips per email; replaced check-before-write with `.upsert()` + fetch id pattern.
+- [x] [AI-Review][CRITICAL] Email fingerprint gate used 30-day `loadRecentFingerprints` Set — emails older than 30 days re-LLM-extracted every poll. **Fixed: extended to 3650 days (10 years).**
+- [x] [AI-Review][CRITICAL] `listRecentSyncErrors` silently swallowed Supabase query errors — admin UI showed false "no errors". **Fixed: destructure and log `error`.**
+- [x] [AI-Review][CRITICAL] In-memory fallback fired whenever DB returned 0 rows, not just when unconfigured. **Fixed: return `data` (even if empty) when Supabase query succeeds.**
+- [x] [AI-Review][HIGH] N sequential `recordFingerprint` DB calls in CeipalIngestionJob (2,500 per run). **Fixed: use `recordFingerprintBatch()` in one call.**
+- [x] [AI-Review][HIGH] Ceipal token expiry hardcoded to 1 hour, ignoring server-side `expires_in`. **Fixed: parse `expires_in` from auth response.**
+- [x] [AI-Review][HIGH] Auth error response body logged verbatim in ceipal.ts and graph-auth.ts — may leak credentials/tenant IDs. **Fixed: sanitized error messages, no raw body logging.**
+- [x] [AI-Review][HIGH] `ATSConnector`/`ATSRecord` dead interfaces with zero consumers. **Fixed: removed.**
+- [x] [AI-Review][HIGH] `AttachmentMeta` interface dead export with no consumers. **Fixed: removed.**
+- [x] [AI-Review][HIGH] `OneDriveResumePollerJob.run()` had no top-level try/catch — unhandled rejections on token failure. **Fixed: wrapped in try/catch with `recordSyncFailure`.**
+- [x] [AI-Review][HIGH] Bare `catch` in attachment upload swallowed error object entirely. **Fixed: capture and log `err.message`.**
+- [x] [AI-Review][HIGH] `SavedSearchDigestJob` never checked Graph `sendMail` response status. **Fixed: check `response.ok`, throw on failure.**
+- [x] [AI-Review][HIGH] `listRecentSyncErrors()` not wrapped in try/catch in admin page.tsx — DB failure crashed entire page. **Fixed: wrapped in try/catch.**
+- [x] [AI-Review][MEDIUM] Date-only `since` filter in Ceipal causes boundary overlap — added truncation warning log when maxPages hit.
+- [x] [AI-Review][MEDIUM] `"NA"` normalization too broad — erased valid names. **Fixed: scoped `cleanNA()` to status/flag fields only; `clean()` for names.**
+- [x] [AI-Review][MEDIUM] No `[Ceipal]` prefixed logs in token acquisition. **Fixed: added success/failure logging with `[Ceipal]` prefix.**
+- [x] [AI-Review][MEDIUM] Bare `catch {}` in JSON parse of auth response. **Fixed: log parse error at `console.warn`.**
+- [x] [AI-Review][MEDIUM] Fingerprint recording errors conflated with upsert errors. **Fixed: separate try/catch for `recordFingerprintBatch` with distinct error log.**
+- [x] [AI-Review][MEDIUM] Attachments fetched BEFORE LLM classification — wasted bandwidth. **Fixed: moved LLM call before `fetchAttachments`.**
+- [x] [AI-Review][MEDIUM] `getGraphConfig()` exported but internal-only. **Fixed: un-exported.**
+- [x] [AI-Review][MEDIUM] `fetchMessages` silently stopped at 10 pages with no warning. **Fixed: added truncation warning log.**
+- [x] [AI-Review][MEDIUM] Inconsistent module name `[NLP Parser]` vs `[EmailParser]`. **Fixed: changed to `[EmailParser]`.**
+- [x] [AI-Review][MEDIUM] `extractionModel` hardcoded instead of reading from ExtractionResult. **Fixed: read from `record.candidate.extractionModel` with fallback.**
+- [x] [AI-Review][MEDIUM] `isSubmission === false` failed for `undefined` — non-submissions treated as submissions. **Fixed: changed to `!candidate.isSubmission`.**
+- [x] [AI-Review][MEDIUM] Submission insert failure caught but `recordSyncFailure` NOT called — evidence permanently lost. **Fixed: added `recordSyncFailure` call.**
+- [x] [AI-Review][MEDIUM] OneDrive storage path missing `submissionId` — filename collisions could overwrite resumes. **Fixed: added unique `fileSubmissionId` to path.**
+- [x] [AI-Review][MEDIUM] `since` incremental filter skipped when default `startPage: 1` provided. **Fixed: only skip when `startPage > 1`.**
+- [x] [AI-Review][MEDIUM] `GlobalScheduler` no-op stub exported. **Fixed: removed (deferred to Story 2.7).**
+- [x] [AI-Review][MEDIUM] Dead code: `IngestionEnvelope`, `createIngestionEnvelope` — zero non-test consumers. **Fixed: removed, tests updated.**
+- [x] [AI-Review][LOW] `crypto.randomUUID()` called inline in JSX — unstable across render passes. **Fixed: generate once before JSX return.**
+- [x] [AI-Review][LOW] `timestamp.replace()` in SyncErrorStatusCard crashes if null. **Fixed: added optional chaining.**
+- [ ] [AI-Review][MEDIUM] Zero test coverage for email, Ceipal, and OneDrive ingestion jobs. Deferred to follow-up.
+- [ ] [AI-Review][LOW] `fetchWithRetry` ignores `Retry-After` header on 429 responses. Deferred to follow-up.
+- [ ] [AI-Review][LOW] HTML candidate data not escaped in SavedSearchDigestJob email. Deferred to follow-up.
+
 ## Dev Notes
 
 - Use event-driven ingestion pipeline for upserts

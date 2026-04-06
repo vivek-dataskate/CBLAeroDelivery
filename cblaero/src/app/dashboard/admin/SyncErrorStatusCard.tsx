@@ -17,7 +17,7 @@ export default function SyncErrorStatusCard({ errors }: Props) {
             <li key={err.id} className="py-2">
               <div className="text-slate-200 font-mono text-xs mb-1">[{err.source}] {err.recordId}</div>
               <div className="text-rose-200">{err.message}</div>
-              <div className="text-slate-500 text-xs">{err.timestamp.replace('T', ' ').slice(0, 19)} UTC</div>
+              <div className="text-slate-500 text-xs">{err.timestamp?.replace('T', ' ')?.slice(0, 19) ?? 'unknown'} UTC</div>
             </li>
           ))}
         </ul>

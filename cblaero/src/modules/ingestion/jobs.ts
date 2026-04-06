@@ -10,6 +10,7 @@ import {
   isAlreadyProcessed,
   loadRecentFingerprints,
   recordFingerprint,
+  recordFingerprintBatch,
 } from '../../features/candidate-management/infrastructure/fingerprint-repository';
 import {
   getLastCandidateUpdateBySource,
@@ -31,8 +32,8 @@ export class EmailIngestionJob implements SchedulerJob {
 
   async run() {
     try {
-      // Fingerprint gate: load processed message IDs from centralized fingerprint table
-      const processedIds = await loadRecentFingerprints(DEFAULT_TENANT_ID, 'email_message_id');
+      // Fingerprint gate: load ALL processed message IDs (3650 days — emails persist in inbox far beyond 30 days)
+      const processedIds = await loadRecentFingerprints(DEFAULT_TENANT_ID, 'email_message_id', 3650);
       const records = await this.parser.parseInbox(this.inboxAddresses, processedIds);
       console.log(`[EmailIngestionJob] ${records.length} new emails to process (${processedIds.size} already processed)`);
       for (const record of records) {
@@ -66,11 +67,12 @@ export class CeipalIngestionJob implements SchedulerJob {
       // This ensures daily-sync works even without an explicit since param, and avoids
       // the stale instance-level lastRunAt problem on serverless cold starts.
       let since = params?.since;
-      if (!since && !params?.startPage) {
+      // Only skip incremental filter when an explicit non-default startPage is provided (resume scenario)
+      if (!since && !(params?.startPage && params.startPage > 1)) {
         try {
           since = await getLastCandidateUpdateBySource('ceipal');
-        } catch {
-          // DB unavailable — proceed without since (full fetch)
+        } catch (err) {
+          console.warn('[CeipalIngestionJob] Could not load last sync timestamp, performing full fetch:', err instanceof Error ? err.message : err);
         }
       }
 
@@ -89,7 +91,9 @@ export class CeipalIngestionJob implements SchedulerJob {
       // Fingerprint gate: filter out already-processed applicants
       const knownFingerprints = await loadRecentFingerprints(DEFAULT_TENANT_ID, 'ats_external_id');
       const newCandidates = candidates.filter((c) => {
-        const extId = `ceipal:${(c as Record<string, unknown>).ceipalId ?? ''}`;
+        const ceipalId = (c as Record<string, unknown>).ceipalId;
+        if (!ceipalId) return true; // No stable ID — cannot fingerprint, fall through to upsert dedup
+        const extId = `ceipal:${ceipalId}`;
         if (knownFingerprints.has(extId)) {
           console.log(JSON.stringify({ event: 'fingerprint_hit', type: 'ats_external_id', source: 'ceipal', tenantId: DEFAULT_TENANT_ID, hash: extId.slice(0, 12) }));
           return false;
@@ -105,11 +109,23 @@ export class CeipalIngestionJob implements SchedulerJob {
       console.log(`[CeipalIngestionJob] ${newCandidates.length} new of ${candidates.length} total (${candidates.length - newCandidates.length} skipped via fingerprint)`);
       const { inserted, failed } = await batchUpsertCandidatesFromATS(newCandidates);
 
-      // Record fingerprints for all candidates — failures are duplicate-key violations
-      // (record already exists), so fingerprinting prevents re-processing on next run
-      for (const c of newCandidates) {
-        const extId = `ceipal:${(c as Record<string, unknown>).ceipalId ?? ''}`;
-        await recordFingerprint({ tenantId: DEFAULT_TENANT_ID, type: 'ats_external_id', hash: extId, source: 'ceipal' });
+      // Record fingerprints in batch — only for candidates with stable ceipalId
+      const fingerprintEntries = newCandidates
+        .filter((c) => (c as Record<string, unknown>).ceipalId)
+        .map((c) => ({
+          tenantId: DEFAULT_TENANT_ID,
+          type: 'ats_external_id' as const,
+          hash: `ceipal:${(c as Record<string, unknown>).ceipalId}`,
+          source: 'ceipal' as const,
+        }));
+      if (fingerprintEntries.length > 0) {
+        try {
+          await recordFingerprintBatch(fingerprintEntries);
+          console.log(`[CeipalIngestionJob] Recorded ${fingerprintEntries.length} fingerprints`);
+        } catch (fpErr) {
+          console.error('[CeipalIngestionJob] Fingerprint batch recording failed:', fpErr instanceof Error ? fpErr.message : fpErr);
+          recordSyncFailure('ceipal', 'fingerprint-batch', fpErr);
+        }
       }
 
       console.log(`[CeipalIngestionJob] ${inserted} upserted, ${failed} failed`);
@@ -147,6 +163,7 @@ export class OneDriveResumePollerJob implements SchedulerJob {
   }
 
   async run() {
+   try {
     const token = await acquireGraphToken();
     const files = await this.listPdfFiles(token);
 
@@ -199,7 +216,8 @@ export class OneDriveResumePollerJob implements SchedulerJob {
         let storageUrl = '';
         if (db && batchId) {
           const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-          const storagePath = `resume-uploads/cbl-aero/${batchId}/${safeName}`;
+          const fileSubmissionId = crypto.randomUUID().slice(0, 8);
+          const storagePath = `resume-uploads/cbl-aero/${batchId}/${fileSubmissionId}/${safeName}`;
           const { error: uploadErr } = await db.storage
             .from(OneDriveResumePollerJob.ATTACHMENT_BUCKET)
             .upload(storagePath, buffer, { contentType: 'application/pdf', upsert: true });
@@ -306,6 +324,9 @@ export class OneDriveResumePollerJob implements SchedulerJob {
     }
 
     console.log(`[OneDrivePoller] Complete: ${imported} imported, ${failed} failed out of ${files.length} files`);
+   } catch (err) {
+    recordSyncFailure('onedrive', 'polling', err);
+   }
   }
 
   private async listPdfFiles(token: string): Promise<Array<{ id: string; name: string; size: number; downloadUrl: string }>> {
@@ -442,7 +463,7 @@ export class SavedSearchDigestJob implements SchedulerJob {
           const senderAddress = process.env.CBL_DIGEST_SENDER ?? 'submissions-inbox@cblsolutions.com';
           const sendUrl = `https://graph.microsoft.com/v1.0/users/${senderAddress}/sendMail`;
 
-          await fetchRetry(sendUrl, {
+          const sendResponse = await fetchRetry(sendUrl, {
             method: 'POST',
             headers: {
               Authorization: `Bearer ${token}`,
@@ -456,6 +477,11 @@ export class SavedSearchDigestJob implements SchedulerJob {
               },
             }),
           });
+
+          if (!sendResponse.ok && sendResponse.status !== 202) {
+            const errText = await sendResponse.text().catch(() => '(no body)');
+            throw new Error(`Graph sendMail failed (${sendResponse.status}): ${errText}`);
+          }
 
           console.log(`[SavedSearchDigestJob] Sent digest for "${search.name}" to ${search.actorEmail}`);
           // Throttle between sends to avoid Graph API rate limits
@@ -478,10 +504,4 @@ export function registerIngestionJobs(scheduler: { register(job: SchedulerJob): 
   scheduler.register(new SavedSearchDigestJob());
 }
 
-// Example stub for a global scheduler
-export class GlobalScheduler {
-  register(job: SchedulerJob) {
-    // TODO: Integrate with real scheduling system (e.g., node-cron, BullMQ)
-    console.log(`Registered job: ${job.name}`);
-  }
-}
+// GlobalScheduler stub removed — deferred to Story 2.7. Use registerIngestionJobs() with a real scheduler.

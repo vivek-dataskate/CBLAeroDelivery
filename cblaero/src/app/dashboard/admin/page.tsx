@@ -95,7 +95,14 @@ export default async function AdminDashboardPage({
     .filter((event) => event.tenantId === activeClientId)
     .slice(-50)
     .reverse();
-  const syncErrors = await listRecentSyncErrors();
+  let syncErrors: Awaited<ReturnType<typeof listRecentSyncErrors>> = [];
+  try {
+    syncErrors = await listRecentSyncErrors();
+  } catch (err) {
+    console.error('[AdminDashboard] Failed to load sync errors:', err instanceof Error ? err.message : err);
+  }
+
+  const traceId = crypto.randomUUID();
 
   return (
     <div className="min-h-screen bg-slate-950 px-6 py-10 text-slate-100 md:px-10">
@@ -154,7 +161,7 @@ export default async function AdminDashboardPage({
 
         <SyncErrorStatusCard errors={syncErrors} />
         <AiCostDashboard />
-        <MigrationStatusCard tenantId={activeClientId} actorId={session.actorId} traceId={crypto.randomUUID()} />
+        <MigrationStatusCard tenantId={activeClientId} actorId={session.actorId} traceId={traceId} />
 
         <AdminGovernanceConsole
           tenantId={activeClientId}
