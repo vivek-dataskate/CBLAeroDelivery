@@ -13,10 +13,7 @@ import {
 // Re-export for backwards compatibility
 export type { CandidateExtraction };
 
-export interface AttachmentMeta {
-  filename: string;
-  url: string;
-}
+// AttachmentMeta removed — dead export (no consumers)
 
 export async function extractCandidateFromEmail(
   emailBody: string,
@@ -33,7 +30,7 @@ export async function extractCandidateFromEmail(
   }
 
   // On error, return empty non-submission record (matches previous behavior)
-  console.error('[NLP Parser] Extraction failed:', result.error);
+  console.error('[EmailParser] Extraction failed:', result.error);
   return {
     firstName: '',
     lastName: '',
