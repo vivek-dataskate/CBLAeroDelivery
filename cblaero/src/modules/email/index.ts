@@ -84,57 +84,70 @@ export class MicrosoftGraphEmailParser implements EmailParser {
   }
 
   /**
-   * Stream-process inbox: fetch messages, then for each email:
-   * LLM classify → fetch attachments → call handler (persist) → mark as read.
-   * Processes one at a time to avoid OOM and allow incremental DB writes.
+   * Stream-process inbox with concurrency: fetch message list, then process
+   * chunks of CONCURRENCY emails in parallel. Each email: LLM classify →
+   * fetch attachments → persist → move to Processed folder.
    */
   async processInbox(
     addresses: string[],
     processedIds: Set<string>,
     handler: (record: EmailCandidateRecord) => Promise<void>,
   ): Promise<{ processed: number; skipped: number; failed: number }> {
+    const CONCURRENCY = 10;
     const token = await acquireGraphToken();
     let processed = 0, skipped = 0, failed = 0;
 
     for (const address of addresses) {
       const messages = await this.fetchMessages(token, address);
-      console.log(`[EmailParser] ${messages.length} unread messages in ${address}`);
+      console.log(`[EmailParser] ${messages.length} unread messages in ${address} (concurrency: ${CONCURRENCY})`);
 
-      for (const msg of messages) {
-        try {
-          if (processedIds.has(msg.id)) {
+      // Process in chunks of CONCURRENCY
+      for (let i = 0; i < messages.length; i += CONCURRENCY) {
+        const chunk = messages.slice(i, i + CONCURRENCY);
+        const results = await Promise.allSettled(
+          chunk.map(async (msg) => {
+            if (processedIds.has(msg.id)) {
+              await this.moveToProcessed(token, address, msg.id);
+              return 'skipped' as const;
+            }
+
+            const candidate = await extractCandidateFromEmail(msg.body.content, msg.subject ?? '');
+            if (!candidate.isSubmission) {
+              console.log(`[EmailParser] Skipping non-submission: ${msg.subject ?? '(no subject)'}`);
+              await this.moveToProcessed(token, address, msg.id);
+              return 'skipped' as const;
+            }
+
+            const attachments = await this.fetchAttachments(token, address, msg.id);
+            const record: EmailCandidateRecord = {
+              id: msg.id,
+              mailbox: address,
+              candidate: candidate as unknown as Record<string, unknown> & { firstName: string; lastName: string; email: string },
+              receivedAt: msg.receivedDateTime,
+              subject: msg.subject ?? '',
+              body: msg.body.content,
+              attachments,
+            };
+
+            await handler(record);
             await this.moveToProcessed(token, address, msg.id);
-            skipped++;
-            continue;
+            return 'processed' as const;
+          }),
+        );
+
+        for (let j = 0; j < results.length; j++) {
+          const result = results[j];
+          if (result.status === 'fulfilled') {
+            if (result.value === 'skipped') skipped++;
+            else processed++;
+          } else {
+            failed++;
+            console.error(`[EmailParser] Failed to process ${chunk[j].subject ?? chunk[j].id}:`,
+              result.reason instanceof Error ? result.reason.message : result.reason);
           }
-
-          const candidate = await extractCandidateFromEmail(msg.body.content, msg.subject ?? '');
-          if (!candidate.isSubmission) {
-            console.log(`[EmailParser] Skipping non-submission: ${msg.subject ?? '(no subject)'}`);
-            await this.moveToProcessed(token, address, msg.id);
-            skipped++;
-            continue;
-          }
-
-          const attachments = await this.fetchAttachments(token, address, msg.id);
-          const record: EmailCandidateRecord = {
-            id: msg.id,
-            mailbox: address,
-            candidate: candidate as unknown as Record<string, unknown> & { firstName: string; lastName: string; email: string },
-            receivedAt: msg.receivedDateTime,
-            subject: msg.subject ?? '',
-            body: msg.body.content,
-            attachments,
-          };
-
-          await handler(record);
-          await this.moveToProcessed(token, address, msg.id);
-          processed++;
-        } catch (err) {
-          console.error(`[EmailParser] Failed to process ${msg.subject ?? msg.id}:`, err instanceof Error ? err.message : err);
-          failed++;
-          // Do NOT mark as read on failure — stays unread for retry
         }
+
+        console.log(`[EmailParser] Chunk ${Math.floor(i / CONCURRENCY) + 1}: ${processed} ok, ${skipped} skipped, ${failed} failed`);
       }
     }
 
