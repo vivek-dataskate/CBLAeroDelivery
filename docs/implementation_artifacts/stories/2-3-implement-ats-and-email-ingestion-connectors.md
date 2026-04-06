@@ -44,7 +44,7 @@ so that candidate records are continuously synchronized from external sources.
 
 #### Round 1
 - [x] [AI-Review][HIGH] AC3: `upsertCandidateFromATS` and `upsertCandidateFromEmailFull` are stubs — candidates are logged but not persisted. **Fixed: real Supabase persistence with email-based dedup, candidate_submissions evidence table, and attachment upload to Supabase Storage.**
-- [ ] [AI-Review][HIGH] AC2: `GlobalScheduler.register()` is a no-op stub. Integrate with real scheduler (BullMQ, node-cron) and call `registerIngestionJobs` at app startup. [cblaero/src/modules/ingestion/jobs.ts:55-62]
+- [x] [AI-Review][HIGH] AC2: `GlobalScheduler.register()` was a no-op stub. **Fixed: stub removed in Round 7. Scheduler deferred to Story 2.7. Interim: Render Cron Jobs trigger `/api/internal/jobs/run`.**
 - [x] [AI-Review][HIGH] AC1: `MicrosoftGraphEmailParser.parseInbox()` returns hardcoded mock data. Fixed: real Graph client credentials auth + live inbox fetch implemented. Uses CBL_SSO_ALLOWED_TENANT_ID, CBL_SSO_CLIENT_ID, CBL_SSO_CLIENT_SECRET. [cblaero/src/modules/email/graph-auth.ts, cblaero/src/modules/email/index.ts]
 - [x] [AI-Review][MEDIUM] `IngestionEnvelope` source attribution — source is now persisted in both `candidates.source` and `candidate_submissions.source` columns.
 - [x] [AI-Review][MEDIUM] `candidate: any` in ATSRecord bypasses the expanded candidate schema. Fixed: typed to `Record<string, unknown>`. [cblaero/src/modules/ats/index.ts:10]

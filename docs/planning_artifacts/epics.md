@@ -682,12 +682,15 @@ So that ATS syncs, inbox scans, refresh sweeps, and future digests do not rely o
 **When** validated updates are saved
 **Then** new versions apply only to subsequent scheduled runs
 
-**Implementation Notes (from Story 2.3):**
-- `registerIngestionJobs(scheduler)` in `cblaero/src/modules/ingestion/jobs.ts` registers two jobs that must be called at startup:
-  - `EmailIngestionJob` — polls `submissions-inbox@cblsolutions.com` via Microsoft Graph, LLM-parses new emails, upserts candidates + submissions with attachments. Recommended cadence: **15 minutes**. Dedup by `email_message_id` — safe to re-run.
-  - `CeipalIngestionJob` — polls Ceipal ATS v1 API with incremental `lastRunAt` tracking. Recommended cadence: **daily** (733K total records, 50 per page, maxPages=50 = 2,500 records per run). Dedup by candidate email. API key now active. Auth uses `email` field (not `username`). URLs configurable via `CEIPAL_AUTH_URL` and `CEIPAL_DATA_URL` env vars with defaults.
-- Both jobs implement the `SchedulerJob` interface (`name: string`, `run(): Promise<void>`)
-- `GlobalScheduler` class in same file is the stub to replace with the Postgres-backed `schedule_definitions`/`schedule_runs` implementation
+**Implementation Notes (from Story 2.3, updated after code review pass 7):**
+- `registerIngestionJobs(scheduler)` in `cblaero/src/modules/ingestion/jobs.ts` registers four jobs:
+  - `EmailIngestionJob` — stream-processes `submissions-inbox@cblsolutions.com` via Microsoft Graph (`$filter=isRead eq false`). LLM classifies each email, uploads all attachments to Supabase Storage, upserts candidates via `.upsert()`, marks as read via Graph PATCH. Failed emails stay unread for retry. Recommended cadence: **15 minutes**. Dedup by fingerprint (`email_message_id`) + submission dedup.
+  - `CeipalIngestionJob` — polls Ceipal ATS v1 API with DB-backed incremental `since` tracking (via `getLastCandidateUpdateBySource`). Recommended cadence: **daily** with `maxPages: 20` for incremental sync. Uses `recordFingerprintBatch()` for efficient bulk fingerprinting. Dedup by fingerprint (`ats_external_id`) — skips applicants without `ceipalId`.
+  - `OneDriveResumePollerJob` — polls configured OneDrive folder for PDFs, extracts via LLM, persists via `process_import_chunk` RPC. Deletes from OneDrive only after confirmed Supabase Storage backup.
+  - `SavedSearchDigestJob` — sends daily digest emails for saved searches via Graph sendMail.
+- All jobs implement `SchedulerJob` interface (`name: string`, `run(): Promise<void>`)
+- `GlobalScheduler` stub was **removed** in code review pass 7 — Story 2.7 must implement from scratch using the Postgres-backed `schedule_definitions`/`schedule_runs` design
+- **Interim:** Render Cron Jobs call `/api/internal/jobs/run` endpoint (email: every 15 min, Ceipal: daily). Cron jobs are temporary until Story 2.7.
 **And** prior runs remain auditable against the schedule and policy version in effect at execution time
 
 ## Epic 3: Outreach Orchestration and Candidate Engagement
