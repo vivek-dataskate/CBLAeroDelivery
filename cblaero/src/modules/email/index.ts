@@ -123,8 +123,8 @@ export class MicrosoftGraphEmailParser implements EmailParser {
     mailbox: string,
     messageId: string
   ): Promise<Array<{ filename: string; content: Buffer }>> {
-    const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}/messages/${encodeURIComponent(messageId)}/attachments` +
-      `?$select=id,name,contentBytes,@odata.type`;
+    // No $select — requesting contentBytes fails with 400 when itemAttachments are present
+    const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}/messages/${messageId}/attachments`;
 
     const response = await fetchWithRetry(url, {
       headers: { Authorization: `Bearer ${token}` },
