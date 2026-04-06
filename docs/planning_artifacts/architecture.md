@@ -215,9 +215,10 @@ extractCandidateFromDocument(
 **Path 3 — ATS connector and email inbox sync (automated, Tier 2):**
 
 - ATS connector: the global scheduler owns connector cadence and emits due `ats_sync.requested` jobs at scheduled intervals (minimum 15-minute interval per connector). The sync worker then polls the configured ATS API and upserts new or updated records through the standard deduplication pipeline with `source: ats_sync` attribution.
-- Email inbox parsing: the global scheduler emits due `inbox_parse.requested` jobs for designated recruiter inboxes. The parse worker then uses Microsoft Graph to read forwarded resumes and candidate reply threads, extracting candidate stubs that are queued for recruiter review before activation (not auto-activated).
+- Email inbox parsing: the global scheduler emits due `inbox_parse.requested` jobs for designated recruiter inboxes. The parse worker uses Microsoft Graph to fetch **unread** messages (`$filter=isRead eq false`) from the shared mailbox, processes each email one at a time (stream processing, not batch), runs LLM extraction, uploads all attachments to Supabase Storage, upserts the candidate, and marks the email as read via Graph PATCH. Failed emails stay unread for automatic retry on the next run. Non-submission emails (classified by LLM) are marked as read and skipped. Already-processed emails (dedup via fingerprint or submission check) are marked as read without re-processing.
 - Both paths write to `import_batch` with source attribution; sync errors alert the admin and never silently discard records.
 - Admin console shows per-connector: last sync timestamp, records synced/skipped/errored, and error rate trend.
+- **Interim scheduling (pre-Story 2.7):** Render Cron Jobs call `/api/internal/jobs/run` every 15 minutes for email sync and daily for Ceipal sync. This is a temporary workaround until the Postgres-backed global scheduler is implemented.
 
 ### Content Fingerprint Gate
 
@@ -875,19 +876,27 @@ sequenceDiagram
   participant W as Web App
   participant R as Recruiter
 
-  SCH->>PY: Trigger inbox scan for recruiter
-  PY->>G: Fetch unread messages in designated folder
-  G-->>PY: Email threads + attachments
-  loop Per message
-    PY->>PY: Extract candidate signals (name, phone, email, role mention)
-    PY->>DB: Create candidate stub (source: email_parse, state: pending_review)
-    PY->>DB: Store raw email reference (for audit trail)
-    PY->>G: Mark message as processed
+  SCH->>PY: Trigger inbox scan (cron or scheduler)
+  PY->>G: Fetch unread messages ($filter=isRead eq false)
+  G-->>PY: Unread email list (up to 500)
+  loop Per message (stream — one at a time)
+    PY->>PY: Check fingerprint gate (skip if already processed)
+    PY->>PY: LLM classify (submission vs non-submission)
+    alt Non-submission
+      PY->>G: Mark as read (PATCH isRead: true)
+    else Submission
+      PY->>G: Fetch all attachments (no type filter)
+      PY->>DB: Upsert candidate (.upsert onConflict tenant_id,email)
+      PY->>DB: Store submission evidence + upload attachments to Storage
+      PY->>DB: Record fingerprint (email_message_id)
+      PY->>G: Mark as read (PATCH isRead: true)
+    end
+    alt Processing failure
+      PY->>PY: Email stays unread for retry on next run
+      PY->>DB: Record sync error + failed fingerprint
+    end
   end
-  PY->>DB: Write import_batch summary for recruiter
-  W-->>R: "12 candidate stubs from email — review before activating"
-  R->>W: Review parsed stubs, confirm or discard each
-  W->>DB: Activate confirmed stubs (enter dedup + enrichment pipeline)
+  PY->>PY: Log summary (processed, skipped, failed)
 ```
 
 ### Sequence: Manual FAA Verification Workflow
@@ -1113,7 +1122,7 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 | `listCandidates(tenantId, params)` | `src/features/candidate-management/infrastructure/candidate-repository.ts` | Filtered, paginated candidate list with cursor-based pagination. Supports 15+ filters. |
 | `getCandidateById(tenantId, candidateId)` | `src/features/candidate-management/infrastructure/candidate-repository.ts` | Single candidate detail with all columns. |
 | `batchUpsertCandidatesFromATS(records)` | `src/modules/ingestion/index.ts` | Batch upsert with email dedup + fallback to individual inserts on conflict. |
-| `upsertCandidateFromEmailFull(record)` | `src/modules/ingestion/index.ts` | Single email submission: candidate upsert + submission evidence + attachment upload. |
+| `upsertCandidateFromEmailFull(record)` | `src/modules/ingestion/index.ts` | Single email submission: dedup check first, then `.upsert()` candidate + submission evidence + attachment upload. Returns `'dedup_skip'` if already processed. |
 | `recordSyncFailure(source, recordId, err)` | `src/modules/ingestion/index.ts` | Log sync errors to Supabase `sync_errors` table with in-memory fallback. |
 | `listRecentSyncErrors()` | `src/modules/ingestion/index.ts` | Fetch recent sync errors for admin dashboard. |
 | `createImportBatch(params)` | `src/features/candidate-management/infrastructure/import-batch-repository.ts` | Create new import batch (CSV, resume, email). Returns id + startedAt. Dual persistence. |
@@ -1137,15 +1146,16 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 | `computeIdentityHash(email, first, last, phone)` | `src/features/candidate-management/infrastructure/fingerprint-repository.ts` | SHA-256 with email-preferred fallback to name+phone. Used for candidate identity dedup. |
 | `isAlreadyProcessed(tenantId, type, hash)` | `src/features/candidate-management/infrastructure/fingerprint-repository.ts` | Check if content fingerprint exists with status=processed. Mandatory gate before expensive processing. |
 | `recordFingerprint(params)` | `src/features/candidate-management/infrastructure/fingerprint-repository.ts` | Upsert fingerprint after processing. Supports processed/failed status. |
-| `loadRecentFingerprints(tenantId, type, days?)` | `src/features/candidate-management/infrastructure/fingerprint-repository.ts` | Batch pre-load fingerprints into Set for CSV/ATS batch paths. Default 30-day window. |
+| `loadRecentFingerprints(tenantId, type, days?)` | `src/features/candidate-management/infrastructure/fingerprint-repository.ts` | Batch pre-load fingerprints into Set for CSV/ATS batch paths. Default 30-day window. Email sync uses 3650 days (emails persist in inbox). |
 
 ### Ingestion Jobs (Scheduler-Ready)
 | Capability | Location | When to Use |
 |-----------|----------|-------------|
 | `CeipalIngestionJob` | `src/modules/ingestion/jobs.ts` | Polls Ceipal API for applicants, batch upserts. Supports `startPage`, `maxPages`, `since` params. |
-| `EmailIngestionJob` | `src/modules/ingestion/jobs.ts` | Polls Graph inbox for submission emails, LLM extraction, persist. Skips already-processed messages. |
+| `EmailIngestionJob` | `src/modules/ingestion/jobs.ts` | Stream-processes Graph inbox: fetches unread emails, LLM classifies, persists submissions with attachments, marks as read. Uses `processInbox()` for one-at-a-time processing (no OOM). |
 | `OneDriveResumePollerJob` | `src/modules/ingestion/jobs.ts` | Polls OneDrive folder for PDFs, LLM extraction, persist via `process_import_chunk` RPC. Deletes source only after backup confirmed. |
-| `registerIngestionJobs(scheduler)` | `src/modules/ingestion/jobs.ts` | Registers all 3 jobs with any scheduler implementing `{ register(job: SchedulerJob): void }`. |
+| `SavedSearchDigestJob` | `src/modules/ingestion/jobs.ts` | Sends daily digest emails for saved searches via Graph sendMail. Checks response status. |
+| `registerIngestionJobs(scheduler)` | `src/modules/ingestion/jobs.ts` | Registers all 4 jobs (Ceipal, Email, OneDrive, SavedSearchDigest) with any scheduler implementing `{ register(job: SchedulerJob): void }`. |
 
 ### Auth & Admin
 | Capability | Location | When to Use |

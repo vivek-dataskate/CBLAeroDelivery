@@ -112,9 +112,19 @@ if (error) throw new Error(`Update failed: ${error.message}`);
 - Always check `.error` on both insert AND update Supabase calls
 - Use `recordSyncFailure()` for any ingestion error — never swallow
 
+### Email Ingestion — Stream Processing & Mark-as-Read
+- **Stream, don't batch:** Use `processInbox()` to handle emails one at a time (LLM → persist → mark read → release memory). Never hold 500 emails + attachment buffers in memory simultaneously.
+- **Mark as read after success:** After successful persist + fingerprint, PATCH the message `isRead: true` via Graph API. Non-submissions and dedup skips are also marked as read.
+- **Failed emails stay unread:** On processing failure, do NOT mark as read — the email is automatically retried on the next poll cycle.
+- **Fetch only unread:** Use `$filter=isRead eq false` on Graph inbox fetch to skip already-handled emails.
+- **Save all attachments:** Do not filter by `@odata.type` — save any attachment that has `contentBytes`. `itemAttachment` types without `contentBytes` are naturally skipped.
+- **Do not `encodeURIComponent` on Graph message IDs** — they are URL-safe base64 and encoding double-encodes `=` padding, causing 400 errors.
+- **Fingerprint window for email:** Use `loadRecentFingerprints(tenantId, 'email_message_id', 3650)` — emails persist in inbox far beyond the default 30-day window.
+
 ### Pagination Safety
 - Set reasonable `maxPages` defaults (50 pages = 5,000 records per run)
 - Never accumulate unbounded results in memory
+- Log a warning when `maxPages` limit is hit — indicates truncation
 - Use incremental sync (`since`/`lastRunAt`) when the API supports it
 
 ## 4. Database Access — RPC-First, Reusable, Minimal Calls
