@@ -140,14 +140,15 @@ export class MicrosoftGraphEmailParser implements EmailParser {
   }
 
   async markAsRead(token: string, mailbox: string, messageId: string): Promise<void> {
-    const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}/messages/${encodeURIComponent(messageId)}`;
+    const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}/messages/${messageId}`;
     const response = await fetchWithRetry(url, {
       method: 'PATCH',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ isRead: true }),
     });
     if (!response.ok) {
-      console.warn(`[EmailParser] Failed to mark message ${messageId} as read (${response.status})`);
+      const errText = await response.text().catch(() => '');
+      console.warn(`[EmailParser] Failed to mark as read (${response.status}): ${errText.slice(0, 200)}`);
     }
   }
 
@@ -188,7 +189,7 @@ export class MicrosoftGraphEmailParser implements EmailParser {
     messageId: string
   ): Promise<Array<{ filename: string; content: Buffer }>> {
     // No $select — requesting contentBytes fails with 400 when itemAttachments are present
-    const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}/messages/${encodeURIComponent(messageId)}/attachments`;
+    const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}/messages/${messageId}/attachments`;
 
     const response = await fetchWithRetry(url, {
       headers: { Authorization: `Bearer ${token}` },
