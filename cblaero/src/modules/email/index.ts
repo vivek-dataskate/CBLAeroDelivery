@@ -5,6 +5,12 @@ import { fetchWithRetry } from '../ingestion/fetch-with-retry';
 export interface EmailParser {
   name: string;
   parseInbox(addresses: string[], processedIds?: Set<string>): Promise<EmailCandidateRecord[]>;
+  /** Stream-process: fetch message list, call handler per email, avoid holding all in memory */
+  processInbox(
+    addresses: string[],
+    processedIds: Set<string>,
+    handler: (record: EmailCandidateRecord) => Promise<void>,
+  ): Promise<{ processed: number; skipped: number; failed: number }>;
 }
 
 export interface EmailCandidateRecord {
@@ -73,6 +79,64 @@ export class MicrosoftGraphEmailParser implements EmailParser {
     }
 
     return allEmails;
+  }
+
+  /**
+   * Stream-process inbox: fetch messages, then for each email:
+   * LLM classify → fetch attachments → call handler (persist) → mark as read.
+   * Processes one at a time to avoid OOM and allow incremental DB writes.
+   */
+  async processInbox(
+    addresses: string[],
+    processedIds: Set<string>,
+    handler: (record: EmailCandidateRecord) => Promise<void>,
+  ): Promise<{ processed: number; skipped: number; failed: number }> {
+    const token = await acquireGraphToken();
+    let processed = 0, skipped = 0, failed = 0;
+
+    for (const address of addresses) {
+      const messages = await this.fetchMessages(token, address);
+      console.log(`[EmailParser] ${messages.length} unread messages in ${address}`);
+
+      for (const msg of messages) {
+        try {
+          if (processedIds.has(msg.id)) {
+            await this.markAsRead(token, address, msg.id);
+            skipped++;
+            continue;
+          }
+
+          const candidate = await extractCandidateFromEmail(msg.body.content, msg.subject ?? '');
+          if (!candidate.isSubmission) {
+            console.log(`[EmailParser] Skipping non-submission: ${msg.subject ?? '(no subject)'}`);
+            await this.markAsRead(token, address, msg.id);
+            skipped++;
+            continue;
+          }
+
+          const attachments = await this.fetchAttachments(token, address, msg.id);
+          const record: EmailCandidateRecord = {
+            id: msg.id,
+            mailbox: address,
+            candidate: candidate as unknown as Record<string, unknown> & { firstName: string; lastName: string; email: string },
+            receivedAt: msg.receivedDateTime,
+            subject: msg.subject ?? '',
+            body: msg.body.content,
+            attachments,
+          };
+
+          await handler(record);
+          await this.markAsRead(token, address, msg.id);
+          processed++;
+        } catch (err) {
+          console.error(`[EmailParser] Failed to process ${msg.subject ?? msg.id}:`, err instanceof Error ? err.message : err);
+          failed++;
+          // Do NOT mark as read on failure — stays unread for retry
+        }
+      }
+    }
+
+    return { processed, skipped, failed };
   }
 
   async markAsRead(token: string, mailbox: string, messageId: string): Promise<void> {
