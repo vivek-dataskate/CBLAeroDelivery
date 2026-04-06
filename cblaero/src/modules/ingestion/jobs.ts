@@ -42,10 +42,13 @@ export class EmailIngestionJob implements SchedulerJob {
 
       for (const record of records) {
         try {
-          await upsertCandidateFromEmailFull(record);
+          const result = await upsertCandidateFromEmailFull(record);
           await recordFingerprint({ tenantId: DEFAULT_TENANT_ID, type: 'email_message_id', hash: record.id, source: 'email' });
-          // Mark as read AFTER successful persist — ensures we don't lose emails on failure
+          // Mark as read on success OR dedup skip — either way, this email is handled
           await this.parser.markAsRead(token, record.mailbox, record.id);
+          if (result === 'dedup_skip') {
+            console.log(`[EmailIngestionJob] Dedup skip for ${record.subject} — marked as read`);
+          }
         } catch (err) {
           recordFingerprint({ tenantId: DEFAULT_TENANT_ID, type: 'email_message_id', hash: record.id, source: 'email', status: 'failed' }).catch(() => {});
           recordSyncFailure('email', record.id, err);
