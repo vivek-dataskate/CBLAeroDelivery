@@ -40,6 +40,8 @@ type GraphAttachment = {
 
 export class MicrosoftGraphEmailParser implements EmailParser {
   name = 'MicrosoftGraph';
+  // Cache folder ID per mailbox to avoid repeated lookups
+  private processedFolderIds = new Map<string, string>();
 
   async parseInbox(addresses: string[], processedIds?: Set<string>): Promise<EmailCandidateRecord[]> {
     const token = await acquireGraphToken();
@@ -51,7 +53,7 @@ export class MicrosoftGraphEmailParser implements EmailParser {
         // Skip already-processed messages — fingerprint safety net
         if (processedIds?.has(msg.id)) {
           // Already processed but still unread (edge case) — mark read now
-          await this.markAsRead(token, address, msg.id);
+          await this.moveToProcessed(token, address, msg.id);
           continue;
         }
 
@@ -60,7 +62,7 @@ export class MicrosoftGraphEmailParser implements EmailParser {
         // Skip non-submission emails (treat undefined isSubmission as non-submission too)
         if (!candidate.isSubmission) {
           console.log(`[EmailParser] Skipping non-submission: ${msg.subject ?? '(no subject)'}`);
-          await this.markAsRead(token, address, msg.id);
+          await this.moveToProcessed(token, address, msg.id);
           continue;
         }
 
@@ -101,7 +103,7 @@ export class MicrosoftGraphEmailParser implements EmailParser {
       for (const msg of messages) {
         try {
           if (processedIds.has(msg.id)) {
-            await this.markAsRead(token, address, msg.id);
+            await this.moveToProcessed(token, address, msg.id);
             skipped++;
             continue;
           }
@@ -109,7 +111,7 @@ export class MicrosoftGraphEmailParser implements EmailParser {
           const candidate = await extractCandidateFromEmail(msg.body.content, msg.subject ?? '');
           if (!candidate.isSubmission) {
             console.log(`[EmailParser] Skipping non-submission: ${msg.subject ?? '(no subject)'}`);
-            await this.markAsRead(token, address, msg.id);
+            await this.moveToProcessed(token, address, msg.id);
             skipped++;
             continue;
           }
@@ -126,7 +128,7 @@ export class MicrosoftGraphEmailParser implements EmailParser {
           };
 
           await handler(record);
-          await this.markAsRead(token, address, msg.id);
+          await this.moveToProcessed(token, address, msg.id);
           processed++;
         } catch (err) {
           console.error(`[EmailParser] Failed to process ${msg.subject ?? msg.id}:`, err instanceof Error ? err.message : err);
@@ -139,23 +141,88 @@ export class MicrosoftGraphEmailParser implements EmailParser {
     return { processed, skipped, failed };
   }
 
-  async markAsRead(token: string, mailbox: string, messageId: string): Promise<void> {
-    const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}/messages/${messageId}`;
+  /**
+   * Move processed email to "Processed" subfolder. Also marks as read automatically.
+   * Creates the folder on first use (cached per mailbox for the run).
+   */
+  /**
+   * Mark as read + move to "Processed" subfolder.
+   * Creates the folder on first use (cached per mailbox for the run).
+   */
+  async moveToProcessed(token: string, mailbox: string, messageId: string): Promise<void> {
+    const userPath = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}`;
     try {
-      const response = await fetchWithRetry(url, {
+      // 1. Mark as read
+      const patchUrl = `${userPath}/messages/${messageId}`;
+      const patchResp = await fetchWithRetry(patchUrl, {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ isRead: true }),
       });
-      if (!response.ok) {
-        const errText = await response.text().catch(() => '');
-        console.warn(`[EmailParser] markAsRead FAILED (${response.status}): ${errText.slice(0, 300)}`);
+      if (!patchResp.ok) {
+        const errText = await patchResp.text().catch(() => '');
+        console.warn(`[EmailParser] markAsRead FAILED (${patchResp.status}): ${errText.slice(0, 200)}`);
+      }
+
+      // 2. Move to Processed folder
+      const folderId = await this.getOrCreateProcessedFolder(token, mailbox);
+      const moveUrl = `${userPath}/messages/${messageId}/move`;
+      const moveResp = await fetchWithRetry(moveUrl, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ destinationId: folderId }),
+      });
+      if (!moveResp.ok) {
+        const errText = await moveResp.text().catch(() => '');
+        console.warn(`[EmailParser] moveToProcessed FAILED (${moveResp.status}): ${errText.slice(0, 200)}`);
       } else {
-        console.log(`[EmailParser] markAsRead OK (${response.status}) for ${messageId.slice(-10)}`);
+        console.log(`[EmailParser] Moved to Processed: ${messageId.slice(-10)}`);
       }
     } catch (err) {
-      console.error(`[EmailParser] markAsRead THREW for ${messageId.slice(-10)}:`, err instanceof Error ? err.message : err);
+      console.error(`[EmailParser] moveToProcessed THREW for ${messageId.slice(-10)}:`, err instanceof Error ? err.message : err);
     }
+  }
+
+  private async getOrCreateProcessedFolder(token: string, mailbox: string): Promise<string> {
+    // Return cached folder ID if we already resolved it this run
+    const cached = this.processedFolderIds.get(mailbox);
+    if (cached) return cached;
+
+    const userPath = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}`;
+
+    // Check if "Processed" folder exists under Inbox
+    const listUrl = `${userPath}/mailFolders/Inbox/childFolders?$filter=displayName eq 'Processed'`;
+    const listResp = await fetchWithRetry(listUrl, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (listResp.ok) {
+      const listData = await listResp.json() as { value: Array<{ id: string; displayName: string }> };
+      if (listData.value?.length > 0) {
+        const folderId = listData.value[0].id;
+        this.processedFolderIds.set(mailbox, folderId);
+        console.log(`[EmailParser] Found existing "Processed" folder for ${mailbox}`);
+        return folderId;
+      }
+    }
+
+    // Create the folder
+    const createUrl = `${userPath}/mailFolders/Inbox/childFolders`;
+    const createResp = await fetchWithRetry(createUrl, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ displayName: 'Processed' }),
+    });
+
+    if (!createResp.ok) {
+      const errText = await createResp.text().catch(() => '');
+      throw new Error(`Failed to create Processed folder (${createResp.status}): ${errText.slice(0, 200)}`);
+    }
+
+    const createData = await createResp.json() as { id: string };
+    this.processedFolderIds.set(mailbox, createData.id);
+    console.log(`[EmailParser] Created "Processed" folder for ${mailbox}`);
+    return createData.id;
   }
 
   private async fetchMessages(token: string, mailbox: string): Promise<GraphMessage[]> {
