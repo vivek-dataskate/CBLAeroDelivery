@@ -9,6 +9,7 @@ export interface EmailParser {
 
 export interface EmailCandidateRecord {
   id: string;
+  mailbox: string;
   candidate: Record<string, unknown> & { firstName: string; lastName: string; email: string };
   receivedAt: string;
   subject: string;
@@ -41,14 +42,19 @@ export class MicrosoftGraphEmailParser implements EmailParser {
     for (const address of addresses) {
       const messages = await this.fetchMessages(token, address);
       for (const msg of messages) {
-        // Skip already-processed messages — avoids wasting LLM calls
-        if (processedIds?.has(msg.id)) continue;
+        // Skip already-processed messages — fingerprint safety net
+        if (processedIds?.has(msg.id)) {
+          // Already processed but still unread (edge case) — mark read now
+          await this.markAsRead(token, address, msg.id);
+          continue;
+        }
 
         // LLM classification FIRST — cheaper than fetching multi-MB attachment binaries
         const candidate = await extractCandidateFromEmail(msg.body.content, msg.subject ?? '');
         // Skip non-submission emails (treat undefined isSubmission as non-submission too)
         if (!candidate.isSubmission) {
           console.log(`[EmailParser] Skipping non-submission: ${msg.subject ?? '(no subject)'}`);
+          await this.markAsRead(token, address, msg.id);
           continue;
         }
 
@@ -58,6 +64,7 @@ export class MicrosoftGraphEmailParser implements EmailParser {
           : [];
         allEmails.push({
           id: msg.id,
+          mailbox: address,
           candidate: candidate as unknown as Record<string, unknown> & { firstName: string; lastName: string; email: string },
           receivedAt: msg.receivedDateTime,
           subject: msg.subject ?? '',
@@ -70,10 +77,22 @@ export class MicrosoftGraphEmailParser implements EmailParser {
     return allEmails;
   }
 
+  async markAsRead(token: string, mailbox: string, messageId: string): Promise<void> {
+    const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}/messages/${encodeURIComponent(messageId)}`;
+    const response = await fetchWithRetry(url, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isRead: true }),
+    });
+    if (!response.ok) {
+      console.warn(`[EmailParser] Failed to mark message ${messageId} as read (${response.status})`);
+    }
+  }
+
   private async fetchMessages(token: string, mailbox: string): Promise<GraphMessage[]> {
     const MAX_PAGES = 10; // Safety cap: 10 pages × 50 = 500 messages max
     let url: string | null = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}/mailFolders/Inbox/messages` +
-      `?$top=50&$select=id,subject,receivedDateTime,body,hasAttachments&$orderby=receivedDateTime desc`;
+      `?$top=50&$filter=isRead eq false&$select=id,subject,receivedDateTime,body,hasAttachments&$orderby=receivedDateTime desc`;
 
     const allMessages: GraphMessage[] = [];
     let page = 0;
