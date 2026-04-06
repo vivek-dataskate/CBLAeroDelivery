@@ -208,11 +208,11 @@ export class MicrosoftGraphEmailParser implements EmailParser {
 
     const data = await response.json() as { value: GraphAttachment[] };
     const allAtts = data.value ?? [];
-    const fileAtts = allAtts.filter((a) => a['@odata.type'] === '#microsoft.graph.fileAttachment' && a.contentBytes);
+    const withContent = allAtts.filter((a) => a.contentBytes);
     if (allAtts.length > 0) {
-      console.log(`[EmailParser] Message ${messageId}: ${allAtts.length} attachments total, ${fileAtts.length} file attachments (types: ${allAtts.map(a => a['@odata.type']).join(', ')})`);
+      console.log(`[EmailParser] Message ${messageId.slice(-10)}: ${allAtts.length} attachments, ${withContent.length} with content (types: ${allAtts.map(a => a['@odata.type']).join(', ')})`);
     }
-    return fileAtts.map((a) => ({
+    return withContent.map((a) => ({
       filename: a.name,
       content: Buffer.from(a.contentBytes, 'base64'),
     }));
