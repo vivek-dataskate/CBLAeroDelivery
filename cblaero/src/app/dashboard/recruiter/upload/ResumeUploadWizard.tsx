@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 
-type FileStatus = "queued" | "processing" | "complete" | "failed";
+type FileStatus = "queued" | "processing" | "complete" | "failed" | "skipped";
 
 interface ExtractionResult {
   filename: string;
@@ -156,7 +156,8 @@ export default function ResumeUploadWizard() {
             return;
           }
           setError(confirmPayload?.error?.message ?? "Auto-confirm failed. Please review and confirm candidates manually.");
-        } catch {
+        } catch (err) {
+          console.error('[ResumeUpload] Auto-confirm failed:', err);
           setError("Auto-confirm failed. Please review and confirm candidates manually.");
         }
       }
@@ -173,7 +174,8 @@ export default function ResumeUploadWizard() {
 
       setCards(successCards);
       setStep(3);
-    } catch {
+    } catch (err) {
+      console.error('[ResumeUpload] Upload failed:', err);
       setError("Upload failed. Please try again.");
     } finally {
       setUploading(false);
@@ -227,7 +229,8 @@ export default function ResumeUploadWizard() {
       }
 
       setSummary(payload.data);
-    } catch {
+    } catch (err) {
+      console.error('[ResumeUpload] Confirmation failed:', err);
       setError("Confirmation failed. Please try again.");
     } finally {
       setConfirming(false);

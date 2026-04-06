@@ -17,6 +17,7 @@ import { resolveRequestTenantId } from '@/app/api/internal/recruiter/csv-upload/
 const BATCH_SIZE = 50;
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per file
 const MAX_FILES_PER_UPLOAD = 200;
+const CONSECUTIVE_FAILURE_THRESHOLD = 5;
 
 function isPdfFile(file: File): boolean {
   return (
@@ -114,8 +115,24 @@ export const POST = withAuth(async ({ session, request, traceId }) => {
   }
 
   const fileResults: ResumeFileResult[] = [];
+  let consecutiveFailures = 0;
 
   for (let start = 0; start < files.length; start += BATCH_SIZE) {
+    // §26 circuit-breaker: abort remaining chunks if LLM appears down
+    if (consecutiveFailures >= CONSECUTIVE_FAILURE_THRESHOLD) {
+      const remaining = files.slice(start);
+      for (const file of remaining) {
+        fileResults.push({
+          filename: file.name,
+          status: 'failed',
+          error: `Skipped — ${CONSECUTIVE_FAILURE_THRESHOLD} consecutive extraction failures suggest the LLM service is unavailable`,
+          submissionId: crypto.randomUUID(),
+        });
+      }
+      console.warn(JSON.stringify({ level: 'warn', module: 'recruiter/resume-upload', action: 'circuit_breaker_tripped', traceId, batchId, consecutiveFailures, remainingFiles: remaining.length, timestamp: new Date().toISOString() }));
+      break;
+    }
+
     const chunk = files.slice(start, start + BATCH_SIZE);
 
     const chunkResults = await Promise.all(
@@ -149,6 +166,7 @@ export const POST = withAuth(async ({ session, request, traceId }) => {
           });
 
           if (result.error || !result.extraction) {
+            consecutiveFailures++;
             await insertSubmission({
               id: submissionId,
               tenantId,
@@ -183,6 +201,7 @@ export const POST = withAuth(async ({ session, request, traceId }) => {
 
           await recordFingerprint({ tenantId, type: 'file_sha256', hash: fileHash, source: 'resume_upload' });
 
+          consecutiveFailures = 0; // Reset on success
           return {
             filename: file.name,
             status: 'complete',
@@ -192,7 +211,9 @@ export const POST = withAuth(async ({ session, request, traceId }) => {
             submissionId,
           };
         } catch (err) {
+          consecutiveFailures++;
           const message = err instanceof Error ? err.message : String(err);
+          console.error(JSON.stringify({ level: 'error', module: 'recruiter/resume-upload', action: 'file_processing_failed', traceId, batchId, filename: file.name, error: message, timestamp: new Date().toISOString() }));
           // Record failed fingerprint if hash was computed (allows retry on next upload)
           if (typeof fileHash === 'string') {
             recordFingerprint({ tenantId, type: 'file_sha256', hash: fileHash, source: 'resume_upload', status: 'failed' }).catch((e) => console.warn(JSON.stringify({ level: 'warn', module: 'recruiter/resume-upload', action: 'record_failed_fingerprint', traceId, error: e instanceof Error ? e.message : String(e) })));
