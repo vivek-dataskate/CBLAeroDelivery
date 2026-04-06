@@ -345,6 +345,9 @@ export class OneDriveResumePollerJob implements SchedulerJob {
         .eq('id', batchId);
     }
 
+    // Clean up empty subfolders after processing
+    await this.deleteEmptySubfolders(token);
+
     console.log(`[OneDrivePoller] Complete: ${imported} imported, ${failed} failed out of ${files.length} files`);
    } catch (err) {
     recordSyncFailure('onedrive', 'polling', err);
@@ -357,49 +360,65 @@ export class OneDriveResumePollerJob implements SchedulerJob {
   private static PAGE_SIZE = 200;
 
   private async listPdfFiles(token: string): Promise<Array<{ id: string; name: string; size: number; downloadUrl: string }>> {
-    const user = encodeURIComponent(this.driveUser);
-    const folderPath = this.folderPath;
-    let url: string | null = `https://graph.microsoft.com/v1.0/users/${user}/drive/root:/${folderPath}:/children?$top=${OneDriveResumePollerJob.PAGE_SIZE}&$select=id,name,size,file`;
-
     type GraphItem = {
       id: string;
       name: string;
       size: number;
       file?: { mimeType: string };
+      folder?: { childCount: number };
       '@microsoft.graph.downloadUrl'?: string;
     };
 
     const allPdfs: Array<{ id: string; name: string; size: number; downloadUrl: string }> = [];
+    const user = encodeURIComponent(this.driveUser);
 
-    while (url && allPdfs.length < OneDriveResumePollerJob.MAX_FILES_PER_RUN) {
-      const response = await fetchWithRetry(url, { headers: { Authorization: `Bearer ${token}` } });
+    // BFS queue of folder URLs to scan (starts with the configured root folder)
+    const folderQueue: string[] = [
+      `https://graph.microsoft.com/v1.0/users/${user}/drive/root:/${this.folderPath}:/children?$top=${OneDriveResumePollerJob.PAGE_SIZE}`,
+    ];
 
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`OneDrive folder listing failed (${response.status}): ${text}`);
+    while (folderQueue.length > 0 && allPdfs.length < OneDriveResumePollerJob.MAX_FILES_PER_RUN) {
+      let url: string | null = folderQueue.shift()!;
+
+      // Paginate through all items in this folder
+      while (url && allPdfs.length < OneDriveResumePollerJob.MAX_FILES_PER_RUN) {
+        const response = await fetchWithRetry(url, { headers: { Authorization: `Bearer ${token}` } });
+
+        if (!response.ok) {
+          const text = await response.text();
+          console.warn(`[OneDrivePoller] Folder listing failed (${response.status}): ${text}`);
+          break;
+        }
+
+        const data = await response.json() as {
+          value: GraphItem[];
+          '@odata.nextLink'?: string;
+        };
+
+        for (const item of data.value ?? []) {
+          // Queue subfolders for recursive scanning
+          if (item.folder) {
+            folderQueue.push(
+              `https://graph.microsoft.com/v1.0/users/${user}/drive/items/${item.id}/children?$top=${OneDriveResumePollerJob.PAGE_SIZE}`
+            );
+            continue;
+          }
+
+          if (item.file && item.name.toLowerCase().endsWith('.pdf') && item['@microsoft.graph.downloadUrl']) {
+            allPdfs.push({
+              id: item.id,
+              name: item.name,
+              size: item.size,
+              downloadUrl: item['@microsoft.graph.downloadUrl'],
+            });
+          }
+        }
+
+        url = data['@odata.nextLink'] ?? null;
       }
-
-      const data = await response.json() as {
-        value: GraphItem[];
-        '@odata.nextLink'?: string;
-      };
-
-      const pagePdfs = (data.value ?? [])
-        .filter((item) => item.file && item.name.toLowerCase().endsWith('.pdf'))
-        .map((item) => ({
-          id: item.id,
-          name: item.name,
-          size: item.size,
-          downloadUrl: item['@microsoft.graph.downloadUrl'] ?? '',
-        }))
-        .filter((item) => item.downloadUrl);
-
-      allPdfs.push(...pagePdfs);
-      url = data['@odata.nextLink'] ?? null;
     }
 
-    // Cap at MAX_FILES_PER_RUN — remaining files picked up on the next hourly run
-    if (allPdfs.length > OneDriveResumePollerJob.MAX_FILES_PER_RUN) {
+    if (allPdfs.length >= OneDriveResumePollerJob.MAX_FILES_PER_RUN) {
       console.log(`[OneDrivePoller] ${allPdfs.length} PDFs found, capping to ${OneDriveResumePollerJob.MAX_FILES_PER_RUN} for this run`);
       return allPdfs.slice(0, OneDriveResumePollerJob.MAX_FILES_PER_RUN);
     }
@@ -429,6 +448,72 @@ export class OneDriveResumePollerJob implements SchedulerJob {
       console.log(`[OneDrivePoller] Deleted ${filename} from OneDrive`);
     } else {
       console.warn(`[OneDrivePoller] Failed to delete ${filename} from OneDrive (${response.status})`);
+    }
+  }
+
+  /**
+   * Walk subfolders of the configured root and delete any that are empty.
+   * Processes deepest folders first (reverse BFS) so parent folders become
+   * empty after their children are removed.
+   */
+  private async deleteEmptySubfolders(token: string): Promise<void> {
+    const user = encodeURIComponent(this.driveUser);
+    const rootUrl = `https://graph.microsoft.com/v1.0/users/${user}/drive/root:/${this.folderPath}:/children?$top=${OneDriveResumePollerJob.PAGE_SIZE}`;
+
+    type FolderEntry = { id: string; name: string };
+
+    // BFS to collect all subfolder IDs (not the root itself)
+    const folderQueue: string[] = [rootUrl];
+    const allSubfolders: FolderEntry[] = [];
+
+    while (folderQueue.length > 0) {
+      const url = folderQueue.shift()!;
+      const response = await fetchWithRetry(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!response.ok) continue;
+
+      const data = await response.json() as {
+        value: Array<{ id: string; name: string; folder?: { childCount: number } }>;
+        '@odata.nextLink'?: string;
+      };
+
+      for (const item of data.value ?? []) {
+        if (item.folder) {
+          allSubfolders.push({ id: item.id, name: item.name });
+          folderQueue.push(
+            `https://graph.microsoft.com/v1.0/users/${user}/drive/items/${item.id}/children?$top=${OneDriveResumePollerJob.PAGE_SIZE}`
+          );
+        }
+      }
+
+      if (data['@odata.nextLink']) {
+        folderQueue.push(data['@odata.nextLink']);
+      }
+    }
+
+    if (allSubfolders.length === 0) return;
+
+    // Delete deepest first (reverse order since BFS goes top-down)
+    for (const folder of allSubfolders.reverse()) {
+      // Check if folder is now empty
+      const checkUrl = `https://graph.microsoft.com/v1.0/users/${user}/drive/items/${folder.id}/children?$top=1`;
+      const checkRes = await fetchWithRetry(checkUrl, { headers: { Authorization: `Bearer ${token}` } });
+      if (!checkRes.ok) continue;
+
+      const checkData = await checkRes.json() as { value: unknown[] };
+      if ((checkData.value ?? []).length > 0) continue;
+
+      // Folder is empty — delete it
+      const delUrl = `https://graph.microsoft.com/v1.0/users/${user}/drive/items/${folder.id}`;
+      const delRes = await fetchWithRetry(delUrl, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (delRes.ok || delRes.status === 204) {
+        console.log(`[OneDrivePoller] Deleted empty subfolder: ${folder.name}`);
+      } else {
+        console.warn(`[OneDrivePoller] Failed to delete subfolder ${folder.name} (${delRes.status})`);
+      }
     }
   }
 }
