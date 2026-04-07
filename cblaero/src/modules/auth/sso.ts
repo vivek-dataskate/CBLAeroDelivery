@@ -377,11 +377,18 @@ export async function verifyAndMapIdentityClaims(
     );
   }
 
-  const tenantId =
+  const rawTenantId =
     (typeof payload.tid === "string" && payload.tid) ||
     (typeof payload.tenant_id === "string" && payload.tenant_id) ||
     "internal";
-  assertAllowedTenant(tenantId, config.allowedTenantId);
+  assertAllowedTenant(rawTenantId, config.allowedTenantId);
+
+  // Map Azure AD tenant UUID to application tenant ID.
+  // Single-tenant app: all data uses 'cbl-aero' as tenant_id.
+  const appTenantId = process.env.CBL_APP_TENANT_ID?.trim() || "cbl-aero";
+  const tenantId = config.allowedTenantId && rawTenantId === config.allowedTenantId
+    ? appTenantId
+    : rawTenantId;
 
   let roleSource: unknown = payload.role;
   if (Array.isArray(payload.roles) && payload.roles.length > 0) {
