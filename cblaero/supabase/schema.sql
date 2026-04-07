@@ -937,6 +937,58 @@ end; $$;
 
 grant execute on function cblaero_app.check_and_record_fingerprint to service_role;
 
+-- Story 2.4: find_candidate_ids_by_emails — lookup candidate IDs by email list
+create or replace function cblaero_app.find_candidate_ids_by_emails(
+  p_tenant_id text, p_emails text[]
+)
+returns table (id uuid, email text) language sql stable as $$
+  select c.id, c.email
+  from cblaero_app.candidates c
+  where c.tenant_id = p_tenant_id
+    and c.email = any(p_emails);
+$$;
+
+grant execute on function cblaero_app.find_candidate_ids_by_emails to service_role;
+
+-- Story 2.4: count_candidates_by_source — count candidates for a given source
+create or replace function cblaero_app.count_candidates_by_source(p_source text)
+returns bigint language sql stable as $$
+  select count(*) from cblaero_app.candidates where source = p_source;
+$$;
+
+grant execute on function cblaero_app.count_candidates_by_source to service_role;
+
+-- Story 2.4: get_last_candidate_update_by_source — latest updated_at for a source
+create or replace function cblaero_app.get_last_candidate_update_by_source(p_source text)
+returns timestamptz language sql stable as $$
+  select max(updated_at) from cblaero_app.candidates where source = p_source;
+$$;
+
+grant execute on function cblaero_app.get_last_candidate_update_by_source to service_role;
+
+-- Story 2.4: upsert_fingerprint_batch — batch upsert fingerprints with dedup
+create or replace function cblaero_app.upsert_fingerprint_batch(p_fingerprints jsonb)
+returns void language plpgsql as $$
+begin
+  insert into cblaero_app.content_fingerprints
+    (tenant_id, fingerprint_type, fingerprint_hash, source, status, candidate_id, metadata)
+  select
+    (f->>'tenant_id'),
+    (f->>'fingerprint_type'),
+    (f->>'fingerprint_hash'),
+    (f->>'source'),
+    coalesce(f->>'status', 'processed'),
+    (f->>'candidate_id')::uuid,
+    coalesce((f->'metadata')::jsonb, '{}'::jsonb)
+  from jsonb_array_elements(p_fingerprints) as f
+  on conflict (tenant_id, fingerprint_type, fingerprint_hash) do update
+    set status = excluded.status,
+        candidate_id = excluded.candidate_id,
+        metadata = excluded.metadata;
+end; $$;
+
+grant execute on function cblaero_app.upsert_fingerprint_batch to service_role;
+
 -- Story 2.3: Extended candidate fields for ATS/email ingestion
 alter table cblaero_app.candidates
   add column if not exists work_authorization text,

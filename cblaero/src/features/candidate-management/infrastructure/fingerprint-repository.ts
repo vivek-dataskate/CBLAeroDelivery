@@ -252,9 +252,9 @@ export async function recordFingerprintBatch(
     metadata: p.metadata ?? {},
   }));
 
-  const { error } = await client
-    .from("content_fingerprints")
-    .upsert(rows, { onConflict: "tenant_id,fingerprint_type,fingerprint_hash" });
+  const { error } = await client.rpc("upsert_fingerprint_batch", {
+    p_fingerprints: rows,
+  });
 
   if (error) {
     throw new Error(`[Fingerprint] Batch record failed: ${error.message}`);
