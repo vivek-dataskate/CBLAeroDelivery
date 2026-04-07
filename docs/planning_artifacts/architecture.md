@@ -328,6 +328,7 @@ Structured log on every skip: `{ event: 'fingerprint_hit', type, source, tenantI
   - `schedule_runs(run_id, schedule_id, tenant_id, scheduled_for, claimed_at, started_at, completed_at, status [claimed|completed|failed|skipped], emitted_outbox_event_id, worker_job_id, policy_version_id, error_code, error_summary)`
 - The scheduler loop claims due rows using a DB-safe claim pattern (`FOR UPDATE SKIP LOCKED` or equivalent), writes the outbox event for the due job, records a `schedule_runs` row, and advances `next_run_at` in the same transaction.
 - The scheduler never calls providers directly. It emits due work into the outbox/job system; downstream workers remain event-driven.
+- **Cold-start resilience:** The scheduler runs **in-process** inside the Next.js server (via `setInterval`), not as an external cron. This eliminates the cold-start problem where external HTTP calls fail because the server is sleeping (Render free tier spins down after 15 minutes of inactivity). In-process execution means jobs call `.run()` directly — no HTTP round-trip, no wake-up probe needed. The scheduler loop starts on server boot and runs as long as the process is alive.
 
 ### Schedule Taxonomy
 
