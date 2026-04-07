@@ -295,6 +295,11 @@ create index if not exists idx_candidates_name_fts
   on cblaero_app.candidates using gin (name_tsv)
   where ingestion_state = 'active';
 
+-- GIN index for skills JSONB contains queries
+create index if not exists idx_candidates_skills_gin
+  on cblaero_app.candidates using gin (skills)
+  where ingestion_state = 'active';
+
 -- Composite index for tenant + ingestion_state filtering (used on every query)
 create index if not exists idx_candidates_tenant_state
   on cblaero_app.candidates (tenant_id, ingestion_state);

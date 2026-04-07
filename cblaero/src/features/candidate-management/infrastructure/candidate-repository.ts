@@ -443,8 +443,8 @@ export async function listCandidates(params: CandidateListParams): Promise<Candi
     query = query.ilike("job_title", `%${escapeIlike(params.jobTitle)}%`);
   }
   if (params.skills) {
-    const escaped = escapeIlike(params.skills);
-    query = query.filter("skills::text", "ilike", `%${escaped}%`);
+    // skills is JSONB array of strings — use PostgREST contains operator for exact element match
+    query = query.contains("skills", JSON.stringify([params.skills]));
   }
   if (params.currentCompany) {
     query = query.ilike("current_company", `%${escapeIlike(params.currentCompany)}%`);
@@ -468,8 +468,7 @@ export async function listCandidates(params: CandidateListParams): Promise<Candi
     query = query.ilike("shift_preference", `%${escapeIlike(params.shiftPreference)}%`);
   }
   if (params.yearsOfExperience) {
-    // Column is text — cast to numeric for correct comparison (avoids "9" > "10" string comparison)
-    query = query.filter("years_of_experience::numeric", "gte", params.yearsOfExperience);
+    query = query.gte("years_of_experience", params.yearsOfExperience);
   }
   if (params.veteranStatus) {
     query = query.eq("veteran_status", params.veteranStatus);
