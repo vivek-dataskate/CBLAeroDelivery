@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { CeipalIngestionJob, EmailIngestionJob, OneDriveResumePollerJob } from '@/modules/ingestion/jobs';
-import { isSupabaseConfigured, getSupabaseAdminClient } from '@/modules/persistence';
+import { isSupabaseConfigured } from '@/modules/persistence';
 import {
   countCandidatesBySource,
   getLastCandidateUpdateBySource,
 } from '@/features/candidate-management/infrastructure/candidate-repository';
+import {
+  getMarkerValue,
+  setMarkerValue,
+} from '@/features/candidate-management/infrastructure/sync-error-repository';
 
 const JOBS_SECRET = process.env.CBL_JOBS_SECRET;
 
@@ -92,20 +96,10 @@ const RESUME_PAGE_KEY = 'ceipal_initial_load_resume_page';
 async function getResumePage(): Promise<number> {
   if (!isSupabaseConfigured()) return 1;
   try {
-    // Check for explicit high-water mark first (stored after each run)
-    const db = getSupabaseAdminClient();
-    const { data } = await db
-      .from('sync_errors')
-      .select('message')
-      .eq('source', RESUME_PAGE_KEY)
-      .eq('record_id', 'resume_page')
-      .order('occurred_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (data?.message) {
-      const stored = parseInt(data.message, 10);
-      if (!isNaN(stored) && stored > 1) return stored;
+    const stored = await getMarkerValue(RESUME_PAGE_KEY, 'resume_page');
+    if (stored) {
+      const page = parseInt(stored, 10);
+      if (!isNaN(page) && page > 1) return page;
     }
 
     // Fallback: derive from candidate count (first run or missing marker)
@@ -119,14 +113,7 @@ async function getResumePage(): Promise<number> {
 async function saveResumePage(nextPage: number): Promise<void> {
   if (!isSupabaseConfigured()) return;
   try {
-    // Store the next page as a simple marker row in sync_errors.
-    // This is a lightweight hack — avoids adding a new table for one value.
-    const db = getSupabaseAdminClient();
-    await db.from('sync_errors').insert({
-      source: RESUME_PAGE_KEY,
-      record_id: 'resume_page',
-      message: String(nextPage),
-    });
+    await setMarkerValue(RESUME_PAGE_KEY, 'resume_page', String(nextPage));
   } catch {
     // Non-fatal — next run will derive from counts
   }

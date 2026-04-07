@@ -288,39 +288,6 @@ export async function updateSubmissionCandidateIds(
   }
 }
 
-const ATTACHMENT_BUCKET = "candidate-attachments";
-
-export async function uploadResumeToStorage(
-  buffer: Buffer,
-  filename: string,
-  tenantId: string,
-  batchId: string,
-  submissionId: string,
-): Promise<{ url: string; warning?: string }> {
-  if (shouldUseInMemoryPersistenceForTests()) {
-    return { url: "" };
-  }
-
-  const client = getSupabaseAdminClient();
-  const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const storagePath = `resume-uploads/${tenantId}/${batchId}/${submissionId}/${safeName}`;
-
-  const { error: uploadError } = await client.storage
-    .from(ATTACHMENT_BUCKET)
-    .upload(storagePath, buffer, {
-      contentType: "application/pdf",
-      upsert: true,
-    });
-
-  if (uploadError) {
-    console.error(`[ResumeUpload] Storage upload failed for ${filename}:`, uploadError.message);
-    return { url: "", warning: "PDF storage failed — the original file may not be retrievable." };
-  }
-
-  const { data: urlData } = client.storage.from(ATTACHMENT_BUCKET).getPublicUrl(storagePath);
-  return { url: urlData.publicUrl };
-}
-
 export async function countFailedSubmissions(
   batchId: string,
   tenantId: string,

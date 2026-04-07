@@ -15,9 +15,10 @@ process.env.CBL_BACKUP_REGION ??= 'us-west-2';
 
 async function main() {
   const { extractCandidateFromDocument } = await import('../src/features/candidate-management/application/candidate-extraction');
-  const { getSupabaseAdminClient } = await import('../src/modules/persistence');
   const { mapToCandidateRow } = await import('../src/modules/ingestion');
   const { uploadFileToStorage } = await import('../src/features/candidate-management/infrastructure/storage');
+  const { upsertCandidateByEmail, insertCandidateNoEmail } = await import('../src/features/candidate-management/infrastructure/candidate-repository');
+  const { recordFingerprint } = await import('../src/features/candidate-management/infrastructure/fingerprint-repository');
 
   const pdfPath = process.argv[2];
   if (!pdfPath) { console.error('Usage: npx tsx scripts/process-single-pdf.ts <path>'); process.exit(1); }
@@ -53,35 +54,39 @@ async function main() {
   console.log(`  Title:  ${ext.jobTitle}`);
   console.log(`  Skills: ${Array.isArray(ext.skills) ? ext.skills.join(', ') : ext.skills}`);
 
-  // Upsert with resume_url
-  const db = getSupabaseAdminClient();
+  // Upsert with resume_url via repository
   const baseRow = mapToCandidateRow(
-    { ...(ext as unknown as Record<string, unknown>) },
+    { ...ext },
     'resume_upload',
     { ingestion_state: 'pending_enrichment' },
   );
 
+  const candidateRow = {
+    ...baseRow,
+    tenant_id: 'cbl-aero',
+    resume_url: storage.url || null,
+    extra_attributes: {},
+  };
+
   console.log('\nUpserting to Supabase...');
-  const { data: upserted, error: err } = await db
-    .from('candidates')
-    .upsert({
-      ...baseRow,
-      tenant_id: 'cbl-aero',
-      resume_url: storage.url || null,
-      extra_attributes: {},
-    }, { onConflict: 'tenant_id,email' })
-    .select('id, first_name, last_name, email, resume_url, ingestion_state')
-    .single();
+  const email = typeof ext.email === 'string' ? ext.email.trim().toLowerCase() : '';
+  let candidateId: string;
+  if (email) {
+    candidateId = await upsertCandidateByEmail(candidateRow);
+  } else {
+    candidateId = await insertCandidateNoEmail(candidateRow);
+  }
+  console.log(`Upserted candidate: ${candidateId}`);
 
-  if (err) { console.error('Upsert failed:', err.message); process.exit(1); }
-  console.log('Upserted:', JSON.stringify(upserted, null, 2));
-
-  // Fingerprint
-  await db.from('content_fingerprints').upsert({
-    tenant_id: 'cbl-aero', fingerprint_type: 'file_sha256', fingerprint_hash: fileHash,
-    source: 'resume_upload', status: 'processed', candidate_id: upserted!.id,
+  // Fingerprint via repository
+  await recordFingerprint({
+    tenantId: 'cbl-aero',
+    type: 'file_sha256',
+    hash: fileHash,
+    source: 'resume_upload',
+    candidateId,
     metadata: { filename: path.basename(pdfPath), fileSize: buffer.length },
-  }, { onConflict: 'tenant_id,fingerprint_type,fingerprint_hash' });
+  });
   console.log('Fingerprint recorded');
 }
 
