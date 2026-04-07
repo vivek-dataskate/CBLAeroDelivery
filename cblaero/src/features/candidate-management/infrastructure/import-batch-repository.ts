@@ -396,12 +396,11 @@ export async function deleteImportBatchCandidates(batchId: string): Promise<void
   }
 
   const client = getSupabaseAdminClient();
-  const { error } = await client
-    .from("candidates")
-    .delete()
-    .eq("source_batch_id", batchId);
+  const { error } = await client.rpc("rollback_import_batch", {
+    p_batch_id: batchId,
+  });
 
   if (error) {
-    throw new Error(`Failed to delete batch candidates: ${error.message}`);
+    throw new Error(`Failed to rollback import batch: ${error.message}`);
   }
 }

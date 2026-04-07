@@ -465,22 +465,21 @@ export async function getCandidateById(
   }
 
   const client = getSupabaseAdminClient();
-  const { data, error } = await client
-    .from("candidates")
-    .select("*")
-    .eq("id", candidateId)
-    .eq("tenant_id", tenantId)
-    .maybeSingle();
+  const { data, error } = await client.rpc("get_candidate_detail", {
+    p_candidate_id: candidateId,
+    p_tenant_id: tenantId,
+  });
 
   if (error) {
     throw new Error(`Failed to fetch candidate: ${error.message}`);
   }
 
-  if (!data) {
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) {
     throw new CandidateNotFoundError();
   }
 
-  return toDetail(data as CandidateDetailRow);
+  return toDetail(row as CandidateDetailRow);
 }
 
 export async function findCandidateIdsByEmails(
