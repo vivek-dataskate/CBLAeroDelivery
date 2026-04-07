@@ -273,6 +273,9 @@ export default function ResumeUploadWizard() {
           <p className="mt-2 text-xs text-slate-400">
             PDF files only. Select files from multiple folders — each selection adds to the list.
           </p>
+          <p className="mt-1 text-xs text-slate-400">
+            Have Word, RTF, or other formats? Convert to PDF first. For paper resumes, take a photo or scan and save as PDF — our system can read scanned images too.
+          </p>
         </div>
 
         {files.length > 0 && (

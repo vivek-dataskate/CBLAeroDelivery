@@ -361,3 +361,35 @@ Modified files:
 - TypeScript: clean
 - ESLint: clean (only pre-existing issues in ingestion-jobs.test.ts and budget-alert.ts)
 - All ACs verified as implemented
+
+### Enhancements (2026-04-06)
+
+#### Shared Storage & resume_url
+- Created `uploadFileToStorage()` in `infrastructure/storage.ts` — single shared function for ALL Supabase Storage uploads (§7, §18)
+- OneDrive poller, dashboard upload, and email attachments all use it now
+- `process_import_chunk` RPC updated to handle `resume_url` on candidates
+- PDF storage URLs go on `candidates.resume_url`, NOT in `candidate_submissions`
+- `candidate_submissions` is for email ingestion evidence only
+
+#### Claude Vision OCR Fallback for Scanned PDFs
+- When `pdf-parse` returns no text (scanned image), raw PDF sent as document block to Claude vision
+- `callLlm()` now accepts multimodal content blocks (`string | ContentBlockParam[]`)
+- `extractionMethod` tagged as `'ocr+llm'` for audit trail
+- Only triggers for empty-text PDFs — text-based PDFs unchanged (no extra cost)
+- Cost: ~$0.015/page for scanned vs $0.004 for text (~4x, but only ~4% of files)
+- Dashboard upload UI updated with guidance for non-PDF formats and scanned images
+
+#### OneDrive Poller Improvements
+- Parallel processing: 10 concurrent files via Promise.all (was sequential)
+- Batch DB writes: single `process_import_chunk` RPC per chunk (was per-file)
+- Graph API pagination via `@odata.nextLink` for folders with 200+ files
+- Recursive subfolder scanning (BFS) + empty subfolder cleanup
+- Per-run cap of 200 files (hourly cron avoids Render 5-min timeout)
+- Uses shared `uploadFileToStorage` instead of inline storage code
+- Passes `resume_url` through candidate rows
+
+#### Test Results After Enhancements
+
+- 278 tests passing, 0 failures
+- TypeScript: clean
+- Manual tests: text PDF, scanned image PDF, and blank PDF all handled correctly

@@ -77,6 +77,13 @@ if (error) throw new Error(`Update failed: ${error.message}`);
 - Use `claude-sonnet-4-6` for complex reasoning tasks only when needed
 - Always record the model used in audit/evidence tables (`extraction_model` column)
 
+### Scanned-Image PDF Handling (Vision OCR Fallback)
+- When `pdf-parse` returns no extractable text, send the raw PDF as a document content block to Claude vision — do NOT fail the file
+- `callLlm()` accepts `string | ContentBlockParam[]` — use document blocks for scanned PDFs
+- Tag extraction method as `'ocr+llm'` in the audit trail (vs `'llm'` for text-based)
+- Cost: ~$0.015/page (4x text-based) — only triggers for files with zero extractable text
+- Do NOT add native OCR dependencies (Tesseract, poppler) — Claude vision is sufficient and zero-dependency
+
 ## 3. Data Ingestion Standards
 
 ### Content Fingerprint Gate (Mandatory First Step)
