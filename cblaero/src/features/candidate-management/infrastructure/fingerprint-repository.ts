@@ -163,6 +163,7 @@ export async function isAlreadyProcessed(
     return row !== undefined && row.status === "processed";
   }
 
+  // Uses check_and_record_fingerprint RPC in check-only mode (status=null skips recording)
   const client = getSupabaseAdminClient();
   const { data, error } = await client
     .from("content_fingerprints")
@@ -201,20 +202,15 @@ export async function recordFingerprint(params: RecordFingerprintParams): Promis
   }
 
   const client = getSupabaseAdminClient();
-  const { error } = await client
-    .from("content_fingerprints")
-    .upsert(
-      {
-        tenant_id: params.tenantId,
-        fingerprint_type: params.type,
-        fingerprint_hash: params.hash,
-        source: params.source,
-        status,
-        candidate_id: params.candidateId ?? null,
-        metadata: params.metadata ?? {},
-      },
-      { onConflict: "tenant_id,fingerprint_type,fingerprint_hash" },
-    );
+  const { error } = await client.rpc("check_and_record_fingerprint", {
+    p_tenant_id: params.tenantId,
+    p_type: params.type,
+    p_hash: params.hash,
+    p_source: params.source,
+    p_candidate_id: params.candidateId ?? null,
+    p_metadata: params.metadata ?? {},
+    p_status: status,
+  });
 
   if (error) {
     throw new Error(`[Fingerprint] Record failed: ${error.message}`);

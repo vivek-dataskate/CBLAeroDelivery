@@ -543,8 +543,9 @@ export async function countCandidatesBySource(source: string): Promise<number> {
 // -----------------------------------------------------------------------
 
 /**
- * Upsert a single candidate by email conflict. Returns the candidate ID.
- * Uses `.upsert().select('id').single()` for a single DB round-trip.
+ * Upsert a single candidate via RPC. Handles email dedup server-side.
+ * If email exists for tenant, updates the record; otherwise inserts new.
+ * Returns the candidate ID.
  */
 export async function upsertCandidateByEmail(
   candidateRow: Record<string, unknown>,
@@ -556,24 +557,20 @@ export async function upsertCandidateByEmail(
   }
 
   const client = getSupabaseAdminClient();
-  const { data, error } = await client
-    .from("candidates")
-    .upsert(
-      { ...candidateRow, updated_at: new Date().toISOString() },
-      { onConflict: "tenant_id,email" },
-    )
-    .select("id")
-    .single();
+  const { data, error } = await client.rpc("upsert_candidate", {
+    p_candidate: candidateRow,
+  });
 
-  if (error || !data) {
-    throw new Error(`Candidate upsert failed: ${error?.message ?? "no data returned"}`);
+  if (error) {
+    throw new Error(`Candidate upsert failed: ${error.message}`);
   }
 
-  return data.id;
+  return String(data);
 }
 
 /**
  * Insert a candidate without email (no dedup possible). Returns the candidate ID.
+ * Uses the same RPC — it detects missing email and does a plain insert.
  */
 export async function insertCandidateNoEmail(
   candidateRow: Record<string, unknown>,
@@ -585,22 +582,20 @@ export async function insertCandidateNoEmail(
   }
 
   const client = getSupabaseAdminClient();
-  const { data, error } = await client
-    .from("candidates")
-    .insert(candidateRow)
-    .select("id")
-    .single();
+  const { data, error } = await client.rpc("upsert_candidate", {
+    p_candidate: candidateRow,
+  });
 
-  if (error || !data) {
-    throw new Error(`Candidate insert failed: ${error?.message ?? "no data returned"}`);
+  if (error) {
+    throw new Error(`Candidate insert failed: ${error.message}`);
   }
 
-  return data.id;
+  return String(data);
 }
 
 /**
- * Batch upsert candidates with email (conflict on tenant_id,email).
- * Returns count of rows affected.
+ * Batch upsert candidates via RPC. Handles email dedup server-side per row.
+ * Rows with email get upserted (update if exists); rows without get inserted.
  */
 export async function batchUpsertCandidatesByEmail(
   rows: Record<string, unknown>[],
@@ -616,9 +611,9 @@ export async function batchUpsertCandidatesByEmail(
   }
 
   const client = getSupabaseAdminClient();
-  const { error } = await client
-    .from("candidates")
-    .upsert(rows, { onConflict: "tenant_id,email" });
+  const { error } = await client.rpc("upsert_candidate_batch", {
+    p_candidates: rows,
+  });
 
   if (error) {
     throw new Error(`Batch candidate upsert failed: ${error.message}`);
@@ -626,7 +621,8 @@ export async function batchUpsertCandidatesByEmail(
 }
 
 /**
- * Batch insert candidates without email (no dedup possible).
+ * Batch insert candidates without email. Uses same batch RPC — it handles
+ * rows without email as plain inserts.
  */
 export async function batchInsertCandidatesNoEmail(
   rows: Record<string, unknown>[],
@@ -642,9 +638,9 @@ export async function batchInsertCandidatesNoEmail(
   }
 
   const client = getSupabaseAdminClient();
-  const { error } = await client
-    .from("candidates")
-    .insert(rows);
+  const { error } = await client.rpc("upsert_candidate_batch", {
+    p_candidates: rows,
+  });
 
   if (error) {
     throw new Error(`Batch candidate insert failed: ${error.message}`);

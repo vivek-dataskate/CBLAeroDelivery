@@ -845,6 +845,95 @@ $$;
 
 grant execute on function cblaero_app.cleanup_audit_logs to service_role;
 
+-- RPC: Upsert single candidate with email dedup (insert or update)
+create or replace function cblaero_app.upsert_candidate(p_candidate jsonb)
+returns uuid language plpgsql as $$
+declare v_id uuid; v_email text := p_candidate->>'email';
+begin
+  if v_email is not null and v_email != '' then
+    insert into cblaero_app.candidates
+    select * from jsonb_populate_record(null::cblaero_app.candidates, p_candidate || jsonb_build_object('updated_at', now()))
+    on conflict (tenant_id, email) where email is not null
+    do update set
+      first_name = excluded.first_name, last_name = excluded.last_name,
+      phone = coalesce(excluded.phone, cblaero_app.candidates.phone),
+      job_title = coalesce(excluded.job_title, cblaero_app.candidates.job_title),
+      skills = case when excluded.skills != '[]'::jsonb then excluded.skills else cblaero_app.candidates.skills end,
+      certifications = case when excluded.certifications != '[]'::jsonb then excluded.certifications else cblaero_app.candidates.certifications end,
+      availability_status = excluded.availability_status, ingestion_state = excluded.ingestion_state,
+      source = excluded.source, source_batch_id = excluded.source_batch_id, updated_at = now()
+    returning id into v_id;
+  else
+    insert into cblaero_app.candidates
+    select * from jsonb_populate_record(null::cblaero_app.candidates, p_candidate)
+    returning id into v_id;
+  end if;
+  return v_id;
+end; $$;
+
+grant execute on function cblaero_app.upsert_candidate to service_role;
+
+-- RPC: Batch upsert candidates with per-row email dedup
+create or replace function cblaero_app.upsert_candidate_batch(p_candidates jsonb)
+returns table (inserted int, updated int) language plpgsql as $$
+declare v_inserted int := 0; v_updated int := 0; v_row jsonb; v_email text; v_existing_id uuid;
+begin
+  for v_row in select jsonb_array_elements(p_candidates)
+  loop
+    v_email := v_row->>'email';
+    if v_email is not null and v_email != '' then
+      select c.id into v_existing_id from cblaero_app.candidates c
+        where c.tenant_id = v_row->>'tenant_id' and c.email = v_email limit 1;
+      insert into cblaero_app.candidates
+      select * from jsonb_populate_record(null::cblaero_app.candidates, v_row || jsonb_build_object('updated_at', now()))
+      on conflict (tenant_id, email) where email is not null
+      do update set
+        first_name = excluded.first_name, last_name = excluded.last_name,
+        phone = coalesce(excluded.phone, cblaero_app.candidates.phone),
+        job_title = coalesce(excluded.job_title, cblaero_app.candidates.job_title),
+        skills = case when excluded.skills != '[]'::jsonb then excluded.skills else cblaero_app.candidates.skills end,
+        certifications = case when excluded.certifications != '[]'::jsonb then excluded.certifications else cblaero_app.candidates.certifications end,
+        availability_status = excluded.availability_status, ingestion_state = excluded.ingestion_state,
+        source = excluded.source, source_batch_id = excluded.source_batch_id, updated_at = now();
+      if v_existing_id is not null then v_updated := v_updated + 1;
+      else v_inserted := v_inserted + 1; end if;
+    else
+      insert into cblaero_app.candidates
+      select * from jsonb_populate_record(null::cblaero_app.candidates, v_row);
+      v_inserted := v_inserted + 1;
+    end if;
+  end loop;
+  inserted := v_inserted; updated := v_updated; return next;
+end; $$;
+
+grant execute on function cblaero_app.upsert_candidate_batch to service_role;
+
+-- RPC: Atomic check-if-fingerprint-exists + record in one call (prevents race conditions)
+create or replace function cblaero_app.check_and_record_fingerprint(
+  p_tenant_id text, p_type text, p_hash text, p_source text,
+  p_candidate_id uuid default null, p_metadata jsonb default '{}'::jsonb,
+  p_status text default 'processed'
+)
+returns table (already_exists boolean) language plpgsql as $$
+declare v_exists boolean;
+begin
+  select exists(
+    select 1 from cblaero_app.content_fingerprints cf
+    where cf.tenant_id = p_tenant_id and cf.fingerprint_type = p_type
+      and cf.fingerprint_hash = p_hash and cf.status = 'processed'
+  ) into v_exists;
+  if not v_exists then
+    insert into cblaero_app.content_fingerprints
+      (tenant_id, fingerprint_type, fingerprint_hash, source, status, candidate_id, metadata)
+    values (p_tenant_id, p_type, p_hash, p_source, p_status, p_candidate_id, p_metadata)
+    on conflict (tenant_id, fingerprint_type, fingerprint_hash) do update
+      set status = excluded.status, candidate_id = excluded.candidate_id, metadata = excluded.metadata;
+  end if;
+  already_exists := v_exists; return next;
+end; $$;
+
+grant execute on function cblaero_app.check_and_record_fingerprint to service_role;
+
 -- Story 2.3: Extended candidate fields for ATS/email ingestion
 alter table cblaero_app.candidates
   add column if not exists work_authorization text,
