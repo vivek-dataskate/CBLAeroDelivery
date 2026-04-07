@@ -162,8 +162,8 @@ function toDetail(row: CandidateDetailRow): CandidateDetail {
 // Public repository functions
 // -----------------------------------------------------------------------
 
-const DEFAULT_LIMIT = 25;
-const MAX_LIMIT = 100;
+const DEFAULT_LIMIT = 500;
+const MAX_LIMIT = 500;
 const ZERO_UUID = "00000000-0000-0000-0000-000000000000";
 
 // Sort column mapping from API field names to DB column names
