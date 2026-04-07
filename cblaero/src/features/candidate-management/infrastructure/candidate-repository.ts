@@ -174,6 +174,22 @@ const SORT_COLUMN_MAP: Record<SortByField, string> = {
 
 const VALID_SORT_FIELDS = new Set<string>(Object.keys(SORT_COLUMN_MAP));
 
+// Composite cursor encoding for stable pagination across non-id sorts
+type CompositeCursor = { v: string | number | null; id: string };
+
+function encodeCursor(sortValue: unknown, id: string): string {
+  return Buffer.from(JSON.stringify({ v: sortValue ?? null, id })).toString('base64url');
+}
+
+function decodeCursor(cursor: string): CompositeCursor {
+  try {
+    return JSON.parse(Buffer.from(cursor, 'base64url').toString()) as CompositeCursor;
+  } catch {
+    // Fallback: treat as plain id cursor for backward compatibility
+    return { v: null, id: cursor };
+  }
+}
+
 function escapeIlike(value: string): string {
   return value.replace(/[%_]/g, (ch) => `\\${ch}`);
 }
@@ -198,6 +214,8 @@ function countActiveFilters(params: CandidateListParams): number {
   if (params.yearsOfExperience) count++;
   if (params.veteranStatus) count++;
   if (params.hasApLicense !== undefined) count++;
+  if (params.createdAfter) count++;
+  if (params.createdBefore) count++;
   return count;
 }
 
@@ -304,6 +322,13 @@ export async function listCandidates(params: CandidateListParams): Promise<Candi
     if (params.hasApLicense !== undefined) {
       candidates = candidates.filter((c) => c.hasApLicense === params.hasApLicense);
     }
+    if (params.createdAfter) {
+      candidates = candidates.filter((c) => c.createdAt >= params.createdAfter!);
+    }
+    if (params.createdBefore) {
+      const endOfDay = `${params.createdBefore}T23:59:59.999Z`;
+      candidates = candidates.filter((c) => c.createdAt <= endOfDay);
+    }
 
     // Sort (with ID tiebreaker for deterministic ordering)
     const NUMERIC_SORT_FIELDS = new Set(["years_of_experience"]);
@@ -348,9 +373,10 @@ export async function listCandidates(params: CandidateListParams): Promise<Candi
       });
     }
 
-    // Cursor-based pagination (by position after sort, using id as stable cursor)
+    // Cursor-based pagination using composite cursor
     if (params.cursor) {
-      const cursorIdx = candidates.findIndex((c) => c.id === params.cursor);
+      const decoded = decodeCursor(params.cursor);
+      const cursorIdx = candidates.findIndex((c) => c.id === decoded.id);
       if (cursorIdx >= 0) {
         candidates = candidates.slice(cursorIdx + 1);
       }
@@ -358,7 +384,14 @@ export async function listCandidates(params: CandidateListParams): Promise<Candi
 
     const hasMore = candidates.length > limit;
     const page = candidates.slice(0, limit);
-    const nextCursor = hasMore ? (page[page.length - 1]?.id ?? null) : null;
+    let nextCursor: string | null = null;
+    if (hasMore && page.length > 0) {
+      const last = page[page.length - 1];
+      const sortVal = params.sortBy
+        ? (last as unknown as Record<string, unknown>)[toCamelCase(params.sortBy)]
+        : last.createdAt;
+      nextCursor = encodeCursor(sortVal, last.id);
+    }
 
     return { items: page.map((c) => ({ ...c })), nextCursor, sortedBy: sortStrategy };
   }
@@ -405,7 +438,8 @@ export async function listCandidates(params: CandidateListParams): Promise<Candi
     query = query.ilike("job_title", `%${escapeIlike(params.jobTitle)}%`);
   }
   if (params.skills) {
-    query = query.contains("skills", JSON.stringify([params.skills]));
+    const escaped = escapeIlike(params.skills);
+    query = query.filter("skills::text", "ilike", `%${escaped}%`);
   }
   if (params.currentCompany) {
     query = query.ilike("current_company", `%${escapeIlike(params.currentCompany)}%`);
@@ -429,13 +463,20 @@ export async function listCandidates(params: CandidateListParams): Promise<Candi
     query = query.ilike("shift_preference", `%${escapeIlike(params.shiftPreference)}%`);
   }
   if (params.yearsOfExperience) {
-    query = query.gte("years_of_experience", params.yearsOfExperience);
+    // Column is text — cast to numeric for correct comparison (avoids "9" > "10" string comparison)
+    query = query.filter("years_of_experience::numeric", "gte", params.yearsOfExperience);
   }
   if (params.veteranStatus) {
     query = query.eq("veteran_status", params.veteranStatus);
   }
   if (params.hasApLicense !== undefined) {
     query = query.eq("has_ap_license", params.hasApLicense);
+  }
+  if (params.createdAfter) {
+    query = query.gte("created_at", params.createdAfter);
+  }
+  if (params.createdBefore) {
+    query = query.lte("created_at", `${params.createdBefore}T23:59:59.999Z`);
   }
 
   // Sorting
@@ -457,12 +498,28 @@ export async function listCandidates(params: CandidateListParams): Promise<Candi
       .order("id", { ascending: false });
   }
 
-  // Cursor pagination: uses ID as stable cursor reference.
-  // With non-id sorts, ID tiebreaker in ORDER BY ensures deterministic page boundaries.
-  // Limitation: rows with same sort value may shift between pages at scale. Acceptable for
-  // recruiter UX; composite cursor (ROW comparison) would be needed for strict consistency.
+  // Composite cursor pagination: encode (sort_value, id) for stable page boundaries.
+  // For descending sorts: fetch rows where (sort_col < cursor_val) OR (sort_col = cursor_val AND id < cursor_id)
+  // For ascending sorts: fetch rows where (sort_col > cursor_val) OR (sort_col = cursor_val AND id > cursor_id)
   if (params.cursor) {
-    query = query.gt("id", params.cursor);
+    const decoded = decodeCursor(params.cursor);
+    if (decoded.v !== null && params.sortBy && VALID_SORT_FIELDS.has(params.sortBy)) {
+      const col = SORT_COLUMN_MAP[params.sortBy];
+      const ascending = params.sortDir === "asc";
+      const cmp = ascending ? "gt" : "lt";
+      const idCmp = ascending ? "gt" : "lt";
+      query = query.or(`${col}.${cmp}.${decoded.v},and(${col}.eq.${decoded.v},id.${idCmp}.${decoded.id})`);
+    } else if (decoded.v !== null && sortStrategy === "relevance") {
+      // Relevance sort: availability_status ASC is primary key — use id tiebreaker only
+      query = query.or(`availability_status.gt.${decoded.v},and(availability_status.eq.${decoded.v},id.lt.${decoded.id})`);
+    } else {
+      // Default sort (created_at DESC) or fallback
+      if (decoded.v !== null) {
+        query = query.or(`created_at.lt.${decoded.v},and(created_at.eq.${decoded.v},id.lt.${decoded.id})`);
+      } else {
+        query = query.lt("id", decoded.id);
+      }
+    }
   }
 
   const { data, error } = await query;
@@ -474,7 +531,17 @@ export async function listCandidates(params: CandidateListParams): Promise<Candi
   const rows = (data ?? []) as CandidateRow[];
   const hasMore = rows.length > limit;
   const page = rows.slice(0, limit);
-  const nextCursor = hasMore ? (page[page.length - 1]?.id ?? null) : null;
+  let nextCursor: string | null = null;
+  if (hasMore && page.length > 0) {
+    const last = page[page.length - 1];
+    if (params.sortBy && VALID_SORT_FIELDS.has(params.sortBy)) {
+      nextCursor = encodeCursor(last[SORT_COLUMN_MAP[params.sortBy] as keyof CandidateRow], last.id);
+    } else if (sortStrategy === "relevance") {
+      nextCursor = encodeCursor(last.availability_status, last.id);
+    } else {
+      nextCursor = encodeCursor(last.created_at, last.id);
+    }
+  }
 
   return { items: page.map(toListItem), nextCursor, sortedBy: sortStrategy };
 }
