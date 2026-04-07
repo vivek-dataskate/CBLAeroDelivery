@@ -174,10 +174,42 @@ export class OneDriveResumePollerJob implements SchedulerJob {
     return process.env.CBL_ONEDRIVE_RESUME_PATH?.trim() || 'CBLAeroCons/Resumes';
   }
 
+  /** Skip files whose names strongly indicate non-resume content (job descriptions, payrates, etc.) */
+  private static NON_RESUME_PATTERNS = [
+    /\bJD\b/i, /\bjob.?desc/i, /\bjob.?post/i, /\bjob.?listing/i,
+    /\bpayrate/i, /\bpay.?rate/i, /\bsalary/i, /\bcompensation/i,
+    /\bcontract.?rate/i, /\brate.?sheet/i, /\brate.?card/i,
+    /\binvoice/i, /\bpurchase.?order/i, /\bPO\b/,
+    /\bpolicy/i, /\bprocedure/i, /\bhandbook/i, /\bmanual/i,
+    /\bnda\b/i, /\bagreement\b/i, /\bcontract\b/i,
+    /\borg.?chart/i, /\bflyer/i, /\bbrochure/i,
+    /\btemplate/i, /\bblank.?form/i,
+  ];
+
+  private isLikelyResume(filename: string): boolean {
+    return !OneDriveResumePollerJob.NON_RESUME_PATTERNS.some((p) => p.test(filename));
+  }
+
   async run() {
    try {
     const token = await acquireGraphToken();
-    const files = await this.listPdfFiles(token);
+    const allFiles = await this.listPdfFiles(token);
+
+    // Filter out non-resume files by filename before downloading
+    const skippedNames: string[] = [];
+    const files = allFiles.filter((f) => {
+      if (this.isLikelyResume(f.name)) return true;
+      skippedNames.push(f.name);
+      return false;
+    });
+    if (skippedNames.length > 0) {
+      console.log(`[OneDrivePoller] Skipped ${skippedNames.length} non-resume files: ${skippedNames.slice(0, 5).join(', ')}${skippedNames.length > 5 ? '...' : ''}`);
+      // Delete skipped files from OneDrive — they're not resumes
+      for (const name of skippedNames) {
+        const file = allFiles.find((f) => f.name === name);
+        if (file) await this.deleteFromOneDrive(token, file.id, file.name);
+      }
+    }
 
     if (files.length === 0) {
       console.log('[OneDrivePoller] No PDF files found in folder');
