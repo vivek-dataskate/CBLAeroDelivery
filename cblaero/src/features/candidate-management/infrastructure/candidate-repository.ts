@@ -45,6 +45,8 @@ type CandidateRow = {
   email: string | null;
   phone: string | null;
   location: string | null;
+  city: string | null;
+  state: string | null;
   availability_status: string;
   ingestion_state: string;
   job_title: string | null;
@@ -101,10 +103,13 @@ function toListItem(row: CandidateRow): CandidateListItem {
     email: row.email,
     phone: row.phone,
     location: row.location,
+    city: row.city,
+    state: row.state,
     availabilityStatus: row.availability_status as AvailabilityStatus,
     ingestionState: row.ingestion_state as IngestionState,
     jobTitle: row.job_title,
     skills: Array.isArray(row.skills) ? row.skills : [],
+    yearsOfExperience: row.years_of_experience,
     source: row.source,
     sourceBatchId: row.source_batch_id,
     createdAt: row.created_at,
@@ -398,7 +403,7 @@ export async function listCandidates(params: CandidateListParams): Promise<Candi
 
   const client = getSupabaseAdminClient();
   const selectCols =
-    "id, tenant_id, first_name, last_name, email, phone, location, availability_status, ingestion_state, job_title, skills, source, source_batch_id, created_at, updated_at, years_of_experience";
+    "id, tenant_id, first_name, last_name, email, phone, location, city, state, availability_status, ingestion_state, job_title, skills, source, source_batch_id, created_at, updated_at, years_of_experience";
 
   let query = client
     .from("candidates")

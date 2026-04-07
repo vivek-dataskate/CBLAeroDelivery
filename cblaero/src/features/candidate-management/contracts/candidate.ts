@@ -13,10 +13,13 @@ export type CandidateListItem = {
   email: string | null;
   phone: string | null;
   location: string | null;
+  city: string | null;
+  state: string | null;
   availabilityStatus: AvailabilityStatus;
   ingestionState: IngestionState;
   jobTitle: string | null;
   skills: unknown[];
+  yearsOfExperience: string | null;
   source: string;
   sourceBatchId: string | null;
   createdAt: string;
