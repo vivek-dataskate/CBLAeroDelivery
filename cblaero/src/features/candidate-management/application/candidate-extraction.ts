@@ -64,7 +64,7 @@ export interface CandidateExtraction {
   additionalFields?: Record<string, string>;
 
   // Tracks which extraction method was used
-  extractionMethod?: 'llm' | 'regex';
+  extractionMethod?: 'llm' | 'regex' | 'ocr+llm';
 
   // Whether LLM classified this as a candidate submission email
   isSubmission?: boolean;
@@ -175,12 +175,15 @@ export function _setPdfParseForTest(fn: ((buf: Buffer) => Promise<{ text: string
   _pdfParseFn = fn;
 }
 
+/** Sentinel returned when pdf-parse yields no text (scanned image PDF) */
+export const PDF_NO_TEXT = '__PDF_NO_TEXT__';
+
 export async function preprocessPdf(content: Buffer): Promise<string> {
   const pdfParse = await getPdfParse();
   const result = await pdfParse(content);
   const text = (result.text as string).trim();
   if (!text) {
-    throw new Error('This PDF appears to be a scanned image without extractable text');
+    return PDF_NO_TEXT;
   }
   return text.slice(0, MAX_CONTENT_LENGTH);
 }
@@ -234,18 +237,23 @@ export async function extractCandidateFromDocument(
     }
 
     const client = getSharedAnthropicClient();
-    if (client) {
-      return await extractWithLLM(plainText, metadata.source, contentType);
+    if (!client) {
+      if (contentType === 'email_body') {
+        console.warn('[CandidateExtraction] ANTHROPIC_API_KEY not set — using regex fallback');
+        return {
+          extraction: extractWithRegex(typeof content === 'string' ? content : '', metadata.subject ?? '', metadata.source),
+        };
+      }
+      return { extraction: null, error: 'ANTHROPIC_API_KEY not configured — cannot extract from PDF without LLM' };
     }
 
-    if (contentType === 'email_body') {
-      console.warn('[CandidateExtraction] ANTHROPIC_API_KEY not set — using regex fallback');
-      return {
-        extraction: extractWithRegex(typeof content === 'string' ? content : '', metadata.subject ?? '', metadata.source),
-      };
+    // Scanned image PDF: send raw PDF as document block for Claude vision OCR
+    if (plainText === PDF_NO_TEXT && content instanceof Buffer) {
+      console.log('[CandidateExtraction] No extractable text — using PDF vision (OCR fallback)');
+      return await extractWithLLMVision(content, metadata.source);
     }
 
-    return { extraction: null, error: 'ANTHROPIC_API_KEY not configured — cannot extract from PDF without LLM' };
+    return await extractWithLLM(plainText, metadata.source, contentType);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return { extraction: null, error: message };
@@ -350,6 +358,86 @@ async function extractWithLLM(
       responseSnippet: responseText.slice(0, 200),
     }));
     return { extraction: null, error: 'Failed to parse LLM extraction response', extractionModel: model };
+  }
+}
+
+/**
+ * Vision-based extraction for scanned-image PDFs.
+ * Sends the raw PDF as a base64 document block to Claude, which reads it visually.
+ * Only called when pdf-parse returns no text.
+ */
+async function extractWithLLMVision(
+  pdfBuffer: Buffer,
+  source: string,
+): Promise<ExtractionResult> {
+  const promptRecord = await loadPrompt('candidate-extraction');
+  const systemPrompt = promptRecord?.prompt_text ?? EXTRACTION_PROMPT;
+  const model = promptRecord?.model ?? 'claude-haiku-4-5-20251001';
+
+  // Send PDF as a document content block — Claude reads it visually
+  const contentBlocks = [
+    {
+      type: 'document' as const,
+      source: {
+        type: 'base64' as const,
+        media_type: 'application/pdf' as const,
+        data: pdfBuffer.toString('base64'),
+      },
+    },
+    {
+      type: 'text' as const,
+      text: 'Extract candidate data from this resume PDF.',
+    },
+  ];
+
+  const result = await callLlm(model, systemPrompt, contentBlocks, {
+    module: 'candidate-extraction',
+    action: 'extract_vision',
+    promptName: 'candidate-extraction',
+    promptVersion: promptRecord?.version ?? '1.0.0',
+  });
+
+  if (!result) {
+    return { extraction: null, error: 'LLM vision call returned null — client unavailable', extractionModel: model };
+  }
+
+  let responseText = result.text
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```\s*$/, '')
+    .trim();
+
+  try {
+    const parsed = JSON.parse(responseText);
+    const sanitized = sanitizeLlmResponse(parsed);
+
+    const totalFields = ALLOWED_EXTRACTION_KEYS.size - 1;
+    const fieldsPopulated = Object.keys(sanitized).filter(
+      (k) => k !== 'isSubmission' && sanitized[k] != null && sanitized[k] !== ''
+    ).length;
+    const fillRate = Math.round((fieldsPopulated / totalFields) * 100);
+    console.log(
+      JSON.stringify({
+        level: 'info', module: 'candidate-extraction', action: 'extraction_complete_vision',
+        fillRate, fieldsPopulated, totalFields, promptVersion: promptRecord?.version ?? '1.0.0',
+      })
+    );
+
+    return {
+      extraction: {
+        ...sanitized,
+        source,
+        extractionMethod: 'ocr+llm' as const,
+        isSubmission: true,
+      } as CandidateExtraction,
+      extractionModel: model,
+    };
+  } catch (err) {
+    console.error(JSON.stringify({
+      level: 'error', module: 'candidate-extraction', action: 'parse_vision_response',
+      error: err instanceof Error ? err.message : String(err),
+      responseSnippet: responseText.slice(0, 200),
+    }));
+    return { extraction: null, error: 'Failed to parse LLM vision response', extractionModel: model };
   }
 }
 
