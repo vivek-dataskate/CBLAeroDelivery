@@ -165,11 +165,22 @@ const { error } = await db.rpc('upsert_candidate_with_audit', {
 - Any batch operation where individual inserts would create N round-trips
 - Any operation requiring transaction-level atomicity
 
-**Existing RPCs to reuse:**
-- `process_import_chunk` — batch candidate upsert with error tracking (used by CSV, resume, OneDrive flows)
+**Existing RPCs (all in `cblaero_app` schema, `supabase/schema.sql`):**
+- `search_candidates` — filtered, paginated candidate search with cursor pagination. Used by `listCandidates()`.
+- `get_candidate_detail` — single candidate with all columns. Used by `getCandidateById()`.
+- `upsert_candidate` — single candidate upsert with email dedup. Used by `upsertCandidateByEmail()` and `insertCandidateNoEmail()`.
+- `upsert_candidate_batch` — batch candidate upsert. Used by `batchUpsertCandidatesByEmail()` and `batchInsertCandidatesNoEmail()`.
+- `process_import_chunk` — batch candidate upsert with per-row error tracking. Used by `processImportChunk()`.
+- `rollback_import_batch` — delete candidates from a batch. Used by `deleteImportBatchCandidates()`.
+- `check_and_record_fingerprint` — atomic check+upsert fingerprint. Used by `recordFingerprint()`.
+- `upsert_fingerprint_batch` — batch fingerprint upsert with dedup. Used by `recordFingerprintBatch()`.
+- `load_recent_fingerprints` — batch pre-load fingerprint hashes. Used by `loadRecentFingerprints()`.
+- `find_candidate_ids_by_emails` — batch email→id lookup. Used by `findCandidateIdsByEmails()`.
+- `count_candidates_by_source` — count candidates by source. Used by `countCandidatesBySource()`.
+- `get_last_candidate_update_by_source` — latest updated_at for source. Used by `getLastCandidateUpdateBySource()`.
+- `cleanup_audit_logs` — purge old audit records (retention policy).
 
 **RPCs needed (create when implementing stories that touch these):**
-- `upsert_candidate_from_email` — candidate upsert + submission insert + dedup check (replaces 4-5 calls in `upsertCandidateFromEmailFull`)
 - `register_or_sync_user` — user upsert by actor_id (replaces check-before-insert in `registerOrSyncUserFromSession`)
 - `create_invitation_with_audit` — invitation insert + audit log (replaces 3 calls in `inviteUser`)
 - `assign_role_with_audit` — role update + audit log (replaces 3 calls in `assignUserRole`)
@@ -213,7 +224,21 @@ const { error } = await db.rpc('process_import_chunk', {
 });
 ```
 
-### 4.4 Reusable repository functions — no direct DB calls in routes
+### 4.4 Max batch size — 500 rows per DB call
+
+All batch operations (RPCs and direct upserts) must cap at **500 rows per call**. Larger batches cause timeouts due to index recomputation (especially trigram GIN indexes and `name_tsv` generated columns on the candidates table).
+
+```typescript
+const MAX_BATCH = 500;
+for (let i = 0; i < rows.length; i += MAX_BATCH) {
+  const chunk = rows.slice(i, i + MAX_BATCH);
+  await db.rpc('upsert_candidate_batch', { p_candidates: chunk });
+}
+```
+
+Repository functions enforce this: `candidate-repository.ts` sets `MAX_LIMIT = 500`, and all batch functions should chunk at 500.
+
+### 4.5 Reusable repository functions — no direct DB calls in routes
 
 Route handlers must NEVER call `db.from()` directly. All DB access goes through repository functions in `infrastructure/` or `modules/`.
 
