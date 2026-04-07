@@ -744,6 +744,107 @@ grant select, insert, update, delete on cblaero_app.candidates
 grant execute on function cblaero_app.process_import_chunk(uuid, jsonb, jsonb, int, int, int)
   to service_role;
 
+-- RPC: Get single candidate detail with explicit columns (replaces select(*))
+create or replace function cblaero_app.get_candidate_detail(p_candidate_id uuid, p_tenant_id text)
+returns table (
+  id uuid, tenant_id text, first_name text, last_name text, middle_name text,
+  email text, phone text, home_phone text, work_phone text,
+  location text, address text, city text, state text, country text, postal_code text,
+  availability_status text, ingestion_state text,
+  current_company text, job_title text, alternate_email text,
+  skills jsonb, certifications jsonb, experience jsonb, extra_attributes jsonb,
+  work_authorization text, clearance text, aircraft_experience jsonb,
+  employment_type text, current_rate text, per_diem text, has_ap_license boolean,
+  years_of_experience text, ceipal_id text, submitted_by text, submitter_email text,
+  shift_preference text, expected_start_date text, call_availability text,
+  interview_availability text, veteran_status text,
+  source text, source_batch_id uuid, created_at timestamptz, updated_at timestamptz
+)
+language sql stable
+as $$
+  select c.id, c.tenant_id, c.first_name, c.last_name, c.middle_name,
+    c.email, c.phone, c.home_phone, c.work_phone,
+    c.location, c.address, c.city, c.state, c.country, c.postal_code,
+    c.availability_status, c.ingestion_state,
+    c.current_company, c.job_title, c.alternate_email,
+    c.skills, c.certifications, c.experience, c.extra_attributes,
+    c.work_authorization, c.clearance, c.aircraft_experience,
+    c.employment_type, c.current_rate, c.per_diem, c.has_ap_license,
+    c.years_of_experience, c.ceipal_id, c.submitted_by, c.submitter_email,
+    c.shift_preference, c.expected_start_date, c.call_availability,
+    c.interview_availability, c.veteran_status,
+    c.source, c.source_batch_id, c.created_at, c.updated_at
+  from cblaero_app.candidates c
+  where c.id = p_candidate_id and c.tenant_id = p_tenant_id
+  limit 1;
+$$;
+
+grant execute on function cblaero_app.get_candidate_detail to anon, authenticated, service_role;
+
+-- RPC: Atomic rollback of import batch (delete candidates + mark batch rolled_back)
+create or replace function cblaero_app.rollback_import_batch(p_batch_id uuid)
+returns table (deleted_candidates bigint)
+language plpgsql
+as $$
+declare v_count bigint;
+begin
+  delete from cblaero_app.candidates where source_batch_id = p_batch_id;
+  get diagnostics v_count = row_count;
+  update cblaero_app.import_batch set status = 'rolled_back', completed_at = now() where id = p_batch_id;
+  deleted_candidates := v_count;
+  return next;
+end;
+$$;
+
+grant execute on function cblaero_app.rollback_import_batch to service_role;
+
+-- RPC: Bulk load fingerprint hashes for in-memory dedup cache
+create or replace function cblaero_app.load_recent_fingerprints(
+  p_tenant_id text, p_type text, p_days int default 30, p_max_count int default 100000
+)
+returns table (fingerprint_hash text)
+language sql stable
+as $$
+  select cf.fingerprint_hash from cblaero_app.content_fingerprints cf
+  where cf.tenant_id = p_tenant_id and cf.fingerprint_type = p_type
+    and cf.status = 'processed' and cf.created_at >= now() - (p_days || ' days')::interval
+  limit p_max_count;
+$$;
+
+grant execute on function cblaero_app.load_recent_fingerprints to service_role;
+
+-- RPC: Cleanup old audit logs across all tables atomically
+create or replace function cblaero_app.cleanup_audit_logs(p_retention_days int default 90)
+returns table (table_name text, deleted_count bigint)
+language plpgsql
+as $$
+declare
+  v_cutoff timestamptz := now() - (p_retention_days || ' days')::interval;
+  v_count bigint;
+begin
+  delete from cblaero_app.audit_authorization_denials where occurred_at < v_cutoff;
+  get diagnostics v_count = row_count;
+  table_name := 'audit_authorization_denials'; deleted_count := v_count; return next;
+  delete from cblaero_app.audit_admin_actions where occurred_at < v_cutoff;
+  get diagnostics v_count = row_count;
+  table_name := 'audit_admin_actions'; deleted_count := v_count; return next;
+  delete from cblaero_app.audit_step_up_attempts where occurred_at < v_cutoff;
+  get diagnostics v_count = row_count;
+  table_name := 'audit_step_up_attempts'; deleted_count := v_count; return next;
+  delete from cblaero_app.audit_client_context_confirmations where occurred_at < v_cutoff;
+  get diagnostics v_count = row_count;
+  table_name := 'audit_client_context_confirmations'; deleted_count := v_count; return next;
+  delete from cblaero_app.audit_data_residency_checks where occurred_at < v_cutoff;
+  get diagnostics v_count = row_count;
+  table_name := 'audit_data_residency_checks'; deleted_count := v_count; return next;
+  delete from cblaero_app.audit_import_batch_accesses where occurred_at < v_cutoff;
+  get diagnostics v_count = row_count;
+  table_name := 'audit_import_batch_accesses'; deleted_count := v_count; return next;
+end;
+$$;
+
+grant execute on function cblaero_app.cleanup_audit_logs to service_role;
+
 -- Story 2.3: Extended candidate fields for ATS/email ingestion
 alter table cblaero_app.candidates
   add column if not exists work_authorization text,

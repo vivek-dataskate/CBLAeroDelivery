@@ -286,23 +286,21 @@ export async function loadRecentFingerprints(
 
   const MAX_FINGERPRINTS = 100_000;
   const client = getSupabaseAdminClient();
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-  const { data, error } = await client
-    .from("content_fingerprints")
-    .select("fingerprint_hash")
-    .eq("tenant_id", tenantId)
-    .eq("fingerprint_type", type)
-    .eq("status", "processed")
-    .gte("created_at", since)
-    .limit(MAX_FINGERPRINTS);
+  const { data, error } = await client.rpc("load_recent_fingerprints", {
+    p_tenant_id: tenantId,
+    p_type: type,
+    p_days: days,
+    p_max_count: MAX_FINGERPRINTS,
+  });
 
   if (error) {
     throw new Error(`[Fingerprint] Batch load failed: ${error.message}`);
   }
 
-  if ((data ?? []).length >= MAX_FINGERPRINTS) {
+  const rows = (data ?? []) as Array<{ fingerprint_hash: string }>;
+  if (rows.length >= MAX_FINGERPRINTS) {
     console.warn(`[Fingerprint] Hit ${MAX_FINGERPRINTS} limit for ${type} — some duplicates may not be caught`);
   }
 
-  return new Set((data ?? []).map((row: { fingerprint_hash: string }) => row.fingerprint_hash));
+  return new Set(rows.map((row) => row.fingerprint_hash));
 }
