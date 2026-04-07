@@ -209,7 +209,8 @@ extractCandidateFromDocument(
 - Extracted data is presented to the recruiter for review before confirmation — recruiter can edit, accept, or reject individual parsed candidates.
 - Confirmed records are persisted via the standard ingestion pipeline with `source: resume_upload` and `ingestion_state: pending_enrichment`.
 - A `candidate_submissions` row is created per PDF linking the raw file URL, extraction JSON, and the resulting candidate record.
-- Per-file error reporting: PDFs that fail extraction (encrypted, scanned-image-only, corrupted) are flagged with clear error messages; the recruiter can retry or skip.
+- **Scanned-image PDF support:** When `pdf-parse` returns no extractable text, the system automatically falls back to Claude vision — the raw PDF is sent as a document content block and Claude reads it visually. This handles scanned resumes, photos of resumes, and image-embedded PDFs. The extraction method is tagged as `ocr+llm` for audit trail. Cost is ~4x higher per file ($0.015 vs $0.004) but only triggers for the ~4% of PDFs that are scanned images.
+- Per-file error reporting: PDFs that fail extraction (encrypted, truly blank, corrupted) are flagged with clear error messages; the recruiter can retry or skip.
 - No hard cap on file count per upload session — recruiters may select an entire folder. The system processes files in internal batches of 50 to bound concurrent LLM extraction cost and memory usage. A progress tracker shows overall and per-file status so the recruiter can monitor large uploads.
 - The Supabase Storage URL for each uploaded PDF is persisted as `candidates.resume_url` — not in `candidate_submissions`. Submissions are reserved for email ingestion evidence only.
 
@@ -1085,7 +1086,7 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 | Capability | Location | When to Use |
 |-----------|----------|-------------|
 | `getSharedAnthropicClient()` | `src/modules/ai/client.ts` | Shared Anthropic SDK singleton. Returns null if no API key. ALL LLM usage must go through this — never `new Anthropic()` directly. |
-| `callLlm(model, systemPrompt, userContent, opts)` | `src/modules/ai/inference.ts` | Centralized LLM call wrapper with token counting, cost estimation, structured logging, anomaly detection, and usage persistence. Returns `{ text, inputTokens, outputTokens, estimatedCostUsd, durationMs, model }`. |
+| `callLlm(model, systemPrompt, userContent, opts)` | `src/modules/ai/inference.ts` | Centralized LLM call wrapper with token counting, cost estimation, structured logging, anomaly detection, and usage persistence. Accepts `string` or `ContentBlockParam[]` (multimodal — document/image blocks for vision OCR). Returns `{ text, inputTokens, outputTokens, estimatedCostUsd, durationMs, model }`. |
 | `recordLlmUsage(entry)` | `src/modules/ai/usage-log.ts` | Persist per-call token counts and estimated cost to `llm_usage_log` table. Called automatically by `callLlm()` (fire-and-forget). |
 | `loadPrompt(name, version?)` | `src/modules/ai/prompt-registry.ts` | Load prompt from `prompt_registry` table (DB-first, in-memory fallback). Returns `{ name, version, prompt_text, model }`. |
 | `registerFallbackPrompt(record)` | `src/modules/ai/prompt-registry.ts` | Register inline fallback prompt for when DB is unavailable (tests, no Supabase). |
@@ -1110,7 +1111,7 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 ### Candidate Data Pipeline
 | Capability | Location | When to Use |
 |-----------|----------|-------------|
-| `extractCandidateFromDocument(input, type, opts)` | `src/features/candidate-management/application/candidate-extraction.ts` | LLM extraction from any document type (email, PDF, DOCX). Uses `callLlm()` from `modules/ai/`. Haiku 4.5, 10K char limit. |
+| `extractCandidateFromDocument(input, type, opts)` | `src/features/candidate-management/application/candidate-extraction.ts` | LLM extraction from any document type (email, PDF, DOCX). Uses `callLlm()` from `modules/ai/`. Haiku 4.5, 10K char limit. Scanned-image PDFs automatically fall back to Claude vision OCR (`extractionMethod: 'ocr+llm'`). |
 | `extractCandidateFromEmail(body, subject)` | `src/modules/email/nlp-extract-and-upload.ts` | Thin wrapper for email-specific extraction. Delegates to `extractCandidateFromDocument`. |
 | `mapToCandidateRow(record, source, overrides?)` | `src/modules/ingestion/index.ts` | Maps any extracted candidate data to `candidates` table columns. Handles all 30+ fields. |
 | `mapCeipalApplicantToCandidate(applicant)` | `src/modules/ats/ceipal.ts` | Maps Ceipal API response to ingestion candidate shape. |
