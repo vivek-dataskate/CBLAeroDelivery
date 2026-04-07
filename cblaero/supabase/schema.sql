@@ -333,6 +333,91 @@ create index if not exists idx_candidates_tenant_yoe_desc
   on cblaero_app.candidates (tenant_id, years_of_experience desc nulls last)
   where ingestion_state = 'active';
 
+-- RPC: Candidate search with all filters, sorting, and pagination in SQL
+-- Avoids PostgREST filter limitations; supports skills::text ILIKE, numeric casts, tsvector search
+create or replace function cblaero_app.search_candidates(
+  p_tenant_id text,
+  p_search text default null,
+  p_email text default null,
+  p_job_title text default null,
+  p_skills text default null,
+  p_city text default null,
+  p_state text default null,
+  p_availability_status text default null,
+  p_work_authorization text default null,
+  p_source text default null,
+  p_employment_type text default null,
+  p_years_of_experience numeric default null,
+  p_veteran_status text default null,
+  p_has_ap_license boolean default null,
+  p_cert_type text default null,
+  p_current_company text default null,
+  p_phone text default null,
+  p_shift_preference text default null,
+  p_created_after timestamptz default null,
+  p_created_before timestamptz default null,
+  p_sort_by text default 'created_at',
+  p_sort_dir text default 'desc',
+  p_limit int default 25
+)
+returns table (
+  id uuid, tenant_id text, first_name text, last_name text,
+  email text, phone text, location text, city text, state text,
+  availability_status text, ingestion_state text, job_title text,
+  skills jsonb, years_of_experience text, source text,
+  source_batch_id uuid, created_at timestamptz, updated_at timestamptz
+)
+language plpgsql stable
+as $$
+declare v_tsquery tsquery;
+begin
+  if p_search is not null and trim(p_search) != '' then
+    v_tsquery := to_tsquery('english',
+      array_to_string(array(select s || ':*' from unnest(string_to_array(trim(p_search), ' ')) as s where s != ''), ' & ')
+    );
+  end if;
+  return query
+  select c.id, c.tenant_id, c.first_name, c.last_name, c.email, c.phone,
+    c.location, c.city, c.state, c.availability_status, c.ingestion_state,
+    c.job_title, c.skills, c.years_of_experience, c.source,
+    c.source_batch_id, c.created_at, c.updated_at
+  from cblaero_app.candidates c
+  where c.tenant_id = p_tenant_id and c.ingestion_state = 'active'
+    and (v_tsquery is null or c.name_tsv @@ v_tsquery)
+    and (p_email is null or c.email ilike '%' || p_email || '%')
+    and (p_job_title is null or c.job_title ilike '%' || p_job_title || '%')
+    and (p_skills is null or c.skills::text ilike '%' || p_skills || '%')
+    and (p_city is null or c.city ilike '%' || p_city || '%')
+    and (p_state is null or c.state ilike '%' || p_state || '%')
+    and (p_work_authorization is null or c.work_authorization ilike '%' || p_work_authorization || '%')
+    and (p_current_company is null or c.current_company ilike '%' || p_current_company || '%')
+    and (p_phone is null or c.phone ilike '%' || p_phone || '%')
+    and (p_shift_preference is null or c.shift_preference ilike '%' || p_shift_preference || '%')
+    and (p_availability_status is null or c.availability_status = p_availability_status)
+    and (p_source is null or c.source = p_source)
+    and (p_employment_type is null or c.employment_type = p_employment_type)
+    and (p_veteran_status is null or c.veteran_status = p_veteran_status)
+    and (p_has_ap_license is null or c.has_ap_license = p_has_ap_license)
+    and (p_cert_type is null or c.certifications @> jsonb_build_array(jsonb_build_object('type', p_cert_type)))
+    and (p_years_of_experience is null or (c.years_of_experience is not null and c.years_of_experience != '' and c.years_of_experience::numeric >= p_years_of_experience))
+    and (p_created_after is null or c.created_at >= p_created_after)
+    and (p_created_before is null or c.created_at < (p_created_before + interval '1 day'))
+  order by
+    case when p_sort_by = 'created_at' and p_sort_dir = 'desc' then c.created_at end desc nulls last,
+    case when p_sort_by = 'created_at' and p_sort_dir = 'asc' then c.created_at end asc nulls last,
+    case when p_sort_by = 'years_of_experience' and p_sort_dir = 'desc' then c.years_of_experience end desc nulls last,
+    case when p_sort_by = 'years_of_experience' and p_sort_dir = 'asc' then c.years_of_experience end asc nulls last,
+    case when p_sort_by = 'first_name' and p_sort_dir = 'asc' then c.first_name end asc nulls last,
+    case when p_sort_by = 'first_name' and p_sort_dir = 'desc' then c.first_name end desc nulls last,
+    case when p_sort_by = 'job_title' and p_sort_dir = 'asc' then c.job_title end asc nulls last,
+    case when p_sort_by = 'job_title' and p_sort_dir = 'desc' then c.job_title end desc nulls last,
+    c.id desc
+  limit p_limit + 1;
+end;
+$$;
+
+grant execute on function cblaero_app.search_candidates to anon, authenticated, service_role;
+
 create or replace function cblaero_app.process_import_chunk(
   p_batch_id uuid,
   p_candidates jsonb,

@@ -401,132 +401,36 @@ export async function listCandidates(params: CandidateListParams): Promise<Candi
     return { items: page.map((c) => ({ ...c })), nextCursor, sortedBy: sortStrategy };
   }
 
+  // All filtering, sorting, and pagination handled by search_candidates RPC
   const client = getSupabaseAdminClient();
-  const selectCols =
-    "id, tenant_id, first_name, last_name, email, phone, location, city, state, availability_status, ingestion_state, job_title, skills, source, source_batch_id, created_at, updated_at, years_of_experience";
+  const rpcParams: Record<string, unknown> = {
+    p_tenant_id: params.tenantId,
+    p_limit: limit,
+    p_sort_by: params.sortBy ?? "created_at",
+    p_sort_dir: params.sortDir ?? "desc",
+  };
 
-  let query = client
-    .from("candidates")
-    .select(selectCols)
-    .eq("tenant_id", params.tenantId)
-    .eq("ingestion_state", "active")
-    .limit(limit + 1);
+  if (params.search) rpcParams.p_search = params.search;
+  if (params.email) rpcParams.p_email = params.email;
+  if (params.jobTitle) rpcParams.p_job_title = params.jobTitle;
+  if (params.skills) rpcParams.p_skills = params.skills;
+  if (params.city) rpcParams.p_city = params.city;
+  if (params.state) rpcParams.p_state = params.state;
+  if (params.availabilityStatus) rpcParams.p_availability_status = params.availabilityStatus;
+  if (params.workAuthorization) rpcParams.p_work_authorization = params.workAuthorization;
+  if (params.source) rpcParams.p_source = params.source;
+  if (params.employmentType) rpcParams.p_employment_type = params.employmentType;
+  if (params.yearsOfExperience) rpcParams.p_years_of_experience = parseFloat(params.yearsOfExperience);
+  if (params.veteranStatus) rpcParams.p_veteran_status = params.veteranStatus;
+  if (params.hasApLicense !== undefined) rpcParams.p_has_ap_license = params.hasApLicense;
+  if (params.certType) rpcParams.p_cert_type = params.certType;
+  if (params.currentCompany) rpcParams.p_current_company = params.currentCompany;
+  if (params.phone) rpcParams.p_phone = params.phone;
+  if (params.shiftPreference) rpcParams.p_shift_preference = params.shiftPreference;
+  if (params.createdAfter) rpcParams.p_created_after = params.createdAfter;
+  if (params.createdBefore) rpcParams.p_created_before = params.createdBefore;
 
-  // Existing filters
-  if (params.availabilityStatus) {
-    query = query.eq("availability_status", params.availabilityStatus);
-  }
-  if (params.location) {
-    query = query.ilike("location", `%${escapeIlike(params.location)}%`);
-  }
-  if (params.certType) {
-    query = query.contains("certifications", JSON.stringify([{ type: params.certType }]));
-  }
-  if (params.search) {
-    const tsquery = params.search
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean)
-      .map((term) => `${term}:*`)
-      .join(" & ");
-    query = query.textSearch("name_tsv", tsquery);
-  }
-
-  // New filters
-  if (params.email) {
-    query = query.ilike("email", `%${escapeIlike(params.email)}%`);
-  }
-  if (params.phone) {
-    query = query.ilike("phone", `%${escapeIlike(params.phone)}%`);
-  }
-  if (params.jobTitle) {
-    query = query.ilike("job_title", `%${escapeIlike(params.jobTitle)}%`);
-  }
-  if (params.skills) {
-    // skills is JSONB array of strings — use PostgREST contains operator for exact element match
-    query = query.contains("skills", JSON.stringify([params.skills]));
-  }
-  if (params.currentCompany) {
-    query = query.ilike("current_company", `%${escapeIlike(params.currentCompany)}%`);
-  }
-  if (params.state) {
-    query = query.ilike("state", `%${escapeIlike(params.state)}%`);
-  }
-  if (params.city) {
-    query = query.ilike("city", `%${escapeIlike(params.city)}%`);
-  }
-  if (params.workAuthorization) {
-    query = query.ilike("work_authorization", `%${escapeIlike(params.workAuthorization)}%`);
-  }
-  if (params.employmentType) {
-    query = query.eq("employment_type", params.employmentType);
-  }
-  if (params.source) {
-    query = query.eq("source", params.source);
-  }
-  if (params.shiftPreference) {
-    query = query.ilike("shift_preference", `%${escapeIlike(params.shiftPreference)}%`);
-  }
-  if (params.yearsOfExperience) {
-    query = query.gte("years_of_experience", params.yearsOfExperience);
-  }
-  if (params.veteranStatus) {
-    query = query.eq("veteran_status", params.veteranStatus);
-  }
-  if (params.hasApLicense !== undefined) {
-    query = query.eq("has_ap_license", params.hasApLicense);
-  }
-  if (params.createdAfter) {
-    query = query.gte("created_at", params.createdAfter);
-  }
-  if (params.createdBefore) {
-    query = query.lte("created_at", `${params.createdBefore}T23:59:59.999Z`);
-  }
-
-  // Sorting
-  if (sortStrategy === "relevance") {
-    query = query
-      .order("availability_status", { ascending: true })
-      .order("years_of_experience", { ascending: false, nullsFirst: false })
-      .order("created_at", { ascending: false })
-      .order("id", { ascending: false });
-  } else if (params.sortBy && VALID_SORT_FIELDS.has(params.sortBy)) {
-    const ascending = params.sortDir === "asc";
-    query = query
-      .order(SORT_COLUMN_MAP[params.sortBy], { ascending, nullsFirst: false })
-      .order("id", { ascending: true });
-  } else {
-    // Default: created_at DESC
-    query = query
-      .order("created_at", { ascending: false })
-      .order("id", { ascending: false });
-  }
-
-  // Composite cursor pagination: encode (sort_value, id) for stable page boundaries.
-  // For descending sorts: fetch rows where (sort_col < cursor_val) OR (sort_col = cursor_val AND id < cursor_id)
-  // For ascending sorts: fetch rows where (sort_col > cursor_val) OR (sort_col = cursor_val AND id > cursor_id)
-  if (params.cursor) {
-    const decoded = decodeCursor(params.cursor);
-    if (decoded.v !== null && params.sortBy && VALID_SORT_FIELDS.has(params.sortBy)) {
-      const col = SORT_COLUMN_MAP[params.sortBy];
-      const ascending = params.sortDir === "asc";
-      const cmp = ascending ? "gt" : "lt";
-      const idCmp = ascending ? "gt" : "lt";
-      query = query.or(`${col}.${cmp}.${decoded.v},and(${col}.eq.${decoded.v},id.${idCmp}.${decoded.id})`);
-    } else if (decoded.v !== null && sortStrategy === "relevance") {
-      // Relevance sort: availability_status ASC is primary key — use id tiebreaker only
-      query = query.or(`availability_status.gt.${decoded.v},and(availability_status.eq.${decoded.v},id.lt.${decoded.id})`);
-    } else {
-      // Default sort (created_at DESC) or fallback
-      if (decoded.v !== null) {
-        query = query.or(`created_at.lt.${decoded.v},and(created_at.eq.${decoded.v},id.lt.${decoded.id})`);
-      } else {
-        query = query.lt("id", decoded.id);
-      }
-    }
-  }
-
-  const { data, error } = await query;
+  const { data, error } = await client.rpc("search_candidates", rpcParams);
 
   if (error) {
     throw new Error(`Failed to list candidates: ${error.message}`);
@@ -538,13 +442,7 @@ export async function listCandidates(params: CandidateListParams): Promise<Candi
   let nextCursor: string | null = null;
   if (hasMore && page.length > 0) {
     const last = page[page.length - 1];
-    if (params.sortBy && VALID_SORT_FIELDS.has(params.sortBy)) {
-      nextCursor = encodeCursor(last[SORT_COLUMN_MAP[params.sortBy] as keyof CandidateRow], last.id);
-    } else if (sortStrategy === "relevance") {
-      nextCursor = encodeCursor(last.availability_status, last.id);
-    } else {
-      nextCursor = encodeCursor(last.created_at, last.id);
-    }
+    nextCursor = encodeCursor(last.created_at, last.id);
   }
 
   return { items: page.map(toListItem), nextCursor, sortedBy: sortStrategy };
