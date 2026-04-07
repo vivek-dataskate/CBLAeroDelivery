@@ -1,9 +1,9 @@
 import { fetchCeipalApplicants, mapCeipalApplicantToCandidate } from '../ats';
 import { MicrosoftGraphEmailParser } from '../email';
 import { acquireGraphToken } from '../email/graph-auth';
-import { getSupabaseAdminClient, isSupabaseConfigured } from '../persistence';
+import { isSupabaseConfigured } from '../persistence';
 import { extractCandidateFromDocument } from '../../features/candidate-management/application/candidate-extraction';
-import { recordSyncFailure, upsertCandidateFromEmailFull, batchUpsertCandidatesFromATS, DEFAULT_TENANT_ID } from './index';
+import { recordSyncFailure, upsertCandidateFromEmailFull, batchUpsertCandidatesFromATS, DEFAULT_TENANT_ID, mapToCandidateRow } from './index';
 import { fetchWithRetry } from './fetch-with-retry';
 import {
   computeFileHash,
@@ -18,6 +18,11 @@ import {
 import {
   uploadFileToStorage,
 } from '../../features/candidate-management/infrastructure/storage';
+import {
+  createImportBatch,
+  updateImportBatch,
+  processImportChunk,
+} from '../../features/candidate-management/infrastructure/import-batch-repository';
 
 export interface SchedulerJob {
   name: string;
@@ -181,25 +186,21 @@ export class OneDriveResumePollerJob implements SchedulerJob {
 
     console.log(`[OneDrivePoller] ${files.length} PDF files to process`);
 
-    const db = isSupabaseConfigured() ? getSupabaseAdminClient() : null;
     let batchId: string | null = null;
 
-    if (db) {
-      const { data: batchRow, error: batchErr } = await db
-        .from('import_batch')
-        .insert({
-          tenant_id: 'cbl-aero',
+    if (isSupabaseConfigured()) {
+      try {
+        const batch = await createImportBatch({
+          tenantId: 'cbl-aero',
           source: 'resume_upload',
           status: 'processing',
-          total_rows: files.length,
-        })
-        .select('id')
-        .single();
-
-      if (batchErr) {
-        console.error('[OneDrivePoller] Failed to create import batch:', batchErr.message);
+          totalRows: files.length,
+          createdByActorId: 'system:onedrive-poller',
+        });
+        batchId = batch.id;
+      } catch (batchErr) {
+        console.error('[OneDrivePoller] Failed to create import batch:', batchErr instanceof Error ? batchErr.message : batchErr);
       }
-      batchId = batchRow ? String(batchRow.id) : null;
     }
 
     let imported = 0;
@@ -272,54 +273,32 @@ export class OneDriveResumePollerJob implements SchedulerJob {
       const chunkFailed = chunkResults.filter((r) => r.status === 'failed').length;
       failed += chunkFailed;
 
-      if (db && batchId && successes.length > 0) {
+      if (isSupabaseConfigured() && batchId && successes.length > 0) {
         const candidateRows = successes.map((r, i) => {
           const ext = r.extraction!;
-          const email = typeof ext.email === 'string' ? ext.email.trim().toLowerCase() : null;
+          const baseRow = mapToCandidateRow({ ...ext }, 'resume_upload');
           return {
+            ...baseRow,
             row_number: imported + i + 1,
             raw_data: ext,
-            tenant_id: 'cbl-aero',
-            email,
-            phone: ext.phone ?? null,
-            first_name: ext.firstName ?? '',
-            last_name: ext.lastName ?? '',
-            middle_name: ext.middleName ?? null,
-            home_phone: null,
-            work_phone: null,
-            location: ext.location ?? null,
-            address: ext.address ?? null,
-            city: ext.city ?? null,
-            state: ext.state ?? null,
-            country: ext.country ?? null,
-            postal_code: ext.zipCode ?? null,
-            current_company: ext.client ?? null,
-            job_title: ext.jobTitle ?? null,
-            alternate_email: null,
-            skills: ext.skills ?? [],
-            availability_status: 'active',
-            ingestion_state: 'pending_enrichment',
-            source: 'resume_upload',
             source_batch_id: batchId,
             resume_url: r.storageUrl || null,
-            extra_attributes: {},
           };
         });
 
-        const { error: rpcError } = await db.rpc('process_import_chunk', {
-          p_batch_id: batchId,
-          p_candidates: candidateRows,
-          p_error_rows: [],
-          p_total_imported: imported,
-          p_total_skipped: 0,
-          p_total_errors: failed,
-        });
-
-        if (rpcError) {
-          console.error(`[OneDrivePoller] RPC failed for chunk:`, rpcError.message);
-          failed += successes.length;
-        } else {
+        try {
+          await processImportChunk({
+            batchId,
+            candidates: candidateRows,
+            errorRows: [],
+            totalImported: imported,
+            totalSkipped: 0,
+            totalErrors: failed,
+          });
           imported += successes.length;
+        } catch (rpcErr) {
+          console.error(`[OneDrivePoller] RPC failed for chunk:`, rpcErr instanceof Error ? rpcErr.message : rpcErr);
+          failed += successes.length;
         }
       } else {
         imported += successes.length;
@@ -328,11 +307,13 @@ export class OneDriveResumePollerJob implements SchedulerJob {
       console.log(`[OneDrivePoller] Chunk ${Math.floor(start / PARALLEL_CHUNK) + 1}: ${successes.length} ok, ${chunkFailed} failed`);
     }
 
-    if (db && batchId) {
-      await db
-        .from('import_batch')
-        .update({ status: 'complete', imported, errors: failed, completed_at: new Date().toISOString() })
-        .eq('id', batchId);
+    if (isSupabaseConfigured() && batchId) {
+      await updateImportBatch(batchId, {
+        status: 'complete',
+        imported,
+        errors: failed,
+        completedAt: new Date().toISOString(),
+      });
     }
 
     // Clean up empty subfolders after processing
@@ -344,8 +325,8 @@ export class OneDriveResumePollerJob implements SchedulerJob {
    }
   }
 
-  /** Max files to process per cron invocation — keeps each run under Render's 5-min timeout */
-  private static MAX_FILES_PER_RUN = 200;
+  /** Max files to process per cron invocation — 500 files × 10 parallel ≈ 3.3 min, under Render's 5-min timeout */
+  private static MAX_FILES_PER_RUN = 500;
   /** Graph API page size */
   private static PAGE_SIZE = 200;
 
