@@ -521,6 +521,14 @@ export class OneDriveResumePollerJob implements SchedulerJob {
   }
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 export class SavedSearchDigestJob implements SchedulerJob {
   name = 'SavedSearchDigestJob';
 
@@ -560,22 +568,27 @@ export class SavedSearchDigestJob implements SchedulerJob {
 
           const rows = result.items.map((c, i) => {
             const skills = Array.isArray(c.skills)
-              ? c.skills.slice(0, 3).map((s) => (typeof s === 'string' ? s : JSON.stringify(s))).join(', ')
+              ? c.skills.slice(0, 3).map((s) => escapeHtml(typeof s === 'string' ? s : JSON.stringify(s))).join(', ')
               : '';
+            const name = escapeHtml(`${c.firstName ?? ''} ${c.lastName ?? ''}`.trim());
+            const title = escapeHtml(c.jobTitle ?? '—');
+            const loc = escapeHtml(c.location ?? '—');
+            const avail = escapeHtml(c.availabilityStatus);
             return `<tr>
               <td style="padding:6px;border:1px solid #e5e7eb">${i + 1}</td>
-              <td style="padding:6px;border:1px solid #e5e7eb">${c.firstName ?? ''} ${c.lastName ?? ''}</td>
-              <td style="padding:6px;border:1px solid #e5e7eb">${c.jobTitle ?? '—'}</td>
-              <td style="padding:6px;border:1px solid #e5e7eb">${c.location ?? '—'}</td>
-              <td style="padding:6px;border:1px solid #e5e7eb">${c.availabilityStatus}</td>
+              <td style="padding:6px;border:1px solid #e5e7eb">${name}</td>
+              <td style="padding:6px;border:1px solid #e5e7eb">${title}</td>
+              <td style="padding:6px;border:1px solid #e5e7eb">${loc}</td>
+              <td style="padding:6px;border:1px solid #e5e7eb">${avail}</td>
               <td style="padding:6px;border:1px solid #e5e7eb">${skills || '—'}</td>
             </tr>`;
           }).join('\n');
 
           const date = new Date().toISOString().slice(0, 10);
+          const safeName = escapeHtml(search.name);
           const html = `
             <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto">
-              <h2 style="color:#1f2937">CBL Aero Daily Digest: "${search.name}"</h2>
+              <h2 style="color:#1f2937">CBL Aero Daily Digest: &quot;${safeName}&quot;</h2>
               <p style="color:#6b7280">Top ${result.items.length} candidates matching your saved search — ${date}</p>
               <table style="width:100%;border-collapse:collapse;font-size:13px">
                 <thead><tr style="background:#f9fafb">
