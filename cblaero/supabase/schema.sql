@@ -358,6 +358,8 @@ create or replace function cblaero_app.search_candidates(
   p_created_before timestamptz default null,
   p_sort_by text default 'created_at',
   p_sort_dir text default 'desc',
+  p_cursor_id uuid default null,
+  p_cursor_created_at timestamptz default null,
   p_limit int default 25
 )
 returns table (
@@ -383,6 +385,7 @@ begin
     c.source_batch_id, c.created_at, c.updated_at
   from cblaero_app.candidates c
   where c.tenant_id = p_tenant_id and c.ingestion_state = 'active'
+    and (p_cursor_created_at is null or (c.created_at, c.id) < (p_cursor_created_at, p_cursor_id))
     and (v_tsquery is null or c.name_tsv @@ v_tsquery)
     and (p_email is null or c.email ilike '%' || p_email || '%')
     and (p_job_title is null or c.job_title ilike '%' || p_job_title || '%')
