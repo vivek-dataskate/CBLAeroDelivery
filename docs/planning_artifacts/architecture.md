@@ -211,6 +211,7 @@ extractCandidateFromDocument(
 - A `candidate_submissions` row is created per PDF linking the raw file URL, extraction JSON, and the resulting candidate record.
 - Per-file error reporting: PDFs that fail extraction (encrypted, scanned-image-only, corrupted) are flagged with clear error messages; the recruiter can retry or skip.
 - No hard cap on file count per upload session — recruiters may select an entire folder. The system processes files in internal batches of 50 to bound concurrent LLM extraction cost and memory usage. A progress tracker shows overall and per-file status so the recruiter can monitor large uploads.
+- The Supabase Storage URL for each uploaded PDF is persisted as `candidates.resume_url` — not in `candidate_submissions`. Submissions are reserved for email ingestion evidence only.
 
 **Path 3 — ATS connector and email inbox sync (automated, Tier 2):**
 
@@ -1113,12 +1114,13 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 | `extractCandidateFromEmail(body, subject)` | `src/modules/email/nlp-extract-and-upload.ts` | Thin wrapper for email-specific extraction. Delegates to `extractCandidateFromDocument`. |
 | `mapToCandidateRow(record, source, overrides?)` | `src/modules/ingestion/index.ts` | Maps any extracted candidate data to `candidates` table columns. Handles all 30+ fields. |
 | `mapCeipalApplicantToCandidate(applicant)` | `src/modules/ats/ceipal.ts` | Maps Ceipal API response to ingestion candidate shape. |
-| `uploadAttachmentToStorage(db, buffer, filename, candidateId, submissionId)` | `src/modules/email/nlp-extract-and-upload.ts` | Upload files to Supabase Storage `candidate-attachments` bucket with sanitized paths. |
+| `uploadFileToStorage(buffer, filename, storagePath)` | `src/features/candidate-management/infrastructure/storage.ts` | **Single shared function** for ALL Supabase Storage uploads. Used by resume uploads, OneDrive poller, and email attachments. Never use `db.storage.upload()` directly. |
+| `uploadAttachmentToStorage(db, buffer, filename, candidateId, submissionId)` | `src/modules/email/nlp-extract-and-upload.ts` | Email attachment wrapper — delegates to `uploadFileToStorage`. |
 
 ### Database Operations (RPCs & Repositories)
 | Capability | Location | When to Use |
 |-----------|----------|-------------|
-| `process_import_chunk` RPC | `supabase/schema.sql` | Batch candidate upsert with per-row error tracking. Used by CSV upload, resume upload, OneDrive poller. |
+| `process_import_chunk` RPC | `supabase/schema.sql` | Batch candidate upsert with per-row error tracking. Handles `resume_url` for PDF uploads. Used by CSV upload, resume upload, OneDrive poller. |
 | `listCandidates(tenantId, params)` | `src/features/candidate-management/infrastructure/candidate-repository.ts` | Filtered, paginated candidate list with cursor-based pagination. Supports 15+ filters. |
 | `getCandidateById(tenantId, candidateId)` | `src/features/candidate-management/infrastructure/candidate-repository.ts` | Single candidate detail with all columns. |
 | `batchUpsertCandidatesFromATS(records)` | `src/modules/ingestion/index.ts` | Batch upsert with email dedup + fallback to individual inserts on conflict. |
@@ -1153,7 +1155,7 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 |-----------|----------|-------------|
 | `CeipalIngestionJob` | `src/modules/ingestion/jobs.ts` | Polls Ceipal API for applicants, batch upserts. Supports `startPage`, `maxPages`, `since` params. |
 | `EmailIngestionJob` | `src/modules/ingestion/jobs.ts` | Stream-processes Graph inbox: fetches unread emails, LLM classifies, persists submissions with attachments, marks as read. Uses `processInbox()` for one-at-a-time processing (no OOM). |
-| `OneDriveResumePollerJob` | `src/modules/ingestion/jobs.ts` | Polls OneDrive folder for PDFs, LLM extraction, persist via `process_import_chunk` RPC. Deletes source only after backup confirmed. |
+| `OneDriveResumePollerJob` | `src/modules/ingestion/jobs.ts` | Polls OneDrive folder recursively (BFS subfolders) for PDFs. 10-concurrent parallel processing, 200-file cap per run (hourly cron). Uses shared `uploadResumeToStorage` → LLM extraction → `process_import_chunk` RPC with `resume_url`. Deletes source only after storage backup confirmed. Cleans up empty subfolders. |
 | `SavedSearchDigestJob` | `src/modules/ingestion/jobs.ts` | Sends daily digest emails for saved searches via Graph sendMail. Checks response status. |
 | `registerIngestionJobs(scheduler)` | `src/modules/ingestion/jobs.ts` | Registers all 4 jobs (Ceipal, Email, OneDrive, SavedSearchDigest) with any scheduler implementing `{ register(job: SchedulerJob): void }`. |
 
