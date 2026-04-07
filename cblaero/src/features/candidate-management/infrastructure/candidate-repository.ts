@@ -506,18 +506,17 @@ export async function findCandidateIdsByEmails(
   }
 
   const client = getSupabaseAdminClient();
-  const { data, error } = await client
-    .from("candidates")
-    .select("id, email")
-    .in("email", emails)
-    .eq("tenant_id", tenantId);
+  const { data, error } = await client.rpc("find_candidate_ids_by_emails", {
+    p_tenant_id: tenantId,
+    p_emails: emails,
+  });
 
   if (error) {
     throw new Error(`Failed to find candidates by emails: ${error.message}`);
   }
 
   const result = new Map<string, string>();
-  for (const row of data ?? []) {
+  for (const row of (data ?? []) as Array<{ id: string; email: string }>) {
     if (row.email) result.set(row.email, row.id);
   }
   return result;
@@ -533,16 +532,15 @@ export async function countCandidatesBySource(source: string): Promise<number> {
   }
 
   const client = getSupabaseAdminClient();
-  const { count, error } = await client
-    .from("candidates")
-    .select("id", { count: "exact", head: true })
-    .eq("source", source);
+  const { data, error } = await client.rpc("count_candidates_by_source", {
+    p_source: source,
+  });
 
   if (error) {
     throw new Error(`Failed to count candidates by source: ${error.message}`);
   }
 
-  return count ?? 0;
+  return Number(data ?? 0);
 }
 
 // -----------------------------------------------------------------------
@@ -666,17 +664,13 @@ export async function getLastCandidateUpdateBySource(source: string): Promise<Da
   }
 
   const client = getSupabaseAdminClient();
-  const { data, error } = await client
-    .from("candidates")
-    .select("updated_at")
-    .eq("source", source)
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const { data, error } = await client.rpc("get_last_candidate_update_by_source", {
+    p_source: source,
+  });
 
   if (error) {
     throw new Error(`Failed to get last update by source: ${error.message}`);
   }
 
-  return data?.updated_at ? new Date(data.updated_at) : undefined;
+  return data ? new Date(data as string) : undefined;
 }
