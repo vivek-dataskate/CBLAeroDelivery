@@ -570,6 +570,119 @@ export async function countCandidatesBySource(source: string): Promise<number> {
   return count ?? 0;
 }
 
+// -----------------------------------------------------------------------
+// Candidate upsert functions (centralized — all ingestion paths use these)
+// -----------------------------------------------------------------------
+
+/**
+ * Upsert a single candidate by email conflict. Returns the candidate ID.
+ * Uses `.upsert().select('id').single()` for a single DB round-trip.
+ */
+export async function upsertCandidateByEmail(
+  candidateRow: Record<string, unknown>,
+): Promise<string> {
+  if (shouldUseInMemoryPersistenceForTests()) {
+    const id = (candidateRow.id as string) ?? crypto.randomUUID();
+    candidateStore.set(id, { id, tenantId: candidateRow.tenant_id as string } as CandidateDetail);
+    return id;
+  }
+
+  const client = getSupabaseAdminClient();
+  const { data, error } = await client
+    .from("candidates")
+    .upsert(
+      { ...candidateRow, updated_at: new Date().toISOString() },
+      { onConflict: "tenant_id,email" },
+    )
+    .select("id")
+    .single();
+
+  if (error || !data) {
+    throw new Error(`Candidate upsert failed: ${error?.message ?? "no data returned"}`);
+  }
+
+  return data.id;
+}
+
+/**
+ * Insert a candidate without email (no dedup possible). Returns the candidate ID.
+ */
+export async function insertCandidateNoEmail(
+  candidateRow: Record<string, unknown>,
+): Promise<string> {
+  if (shouldUseInMemoryPersistenceForTests()) {
+    const id = crypto.randomUUID();
+    candidateStore.set(id, { id, tenantId: candidateRow.tenant_id as string } as CandidateDetail);
+    return id;
+  }
+
+  const client = getSupabaseAdminClient();
+  const { data, error } = await client
+    .from("candidates")
+    .insert(candidateRow)
+    .select("id")
+    .single();
+
+  if (error || !data) {
+    throw new Error(`Candidate insert failed: ${error?.message ?? "no data returned"}`);
+  }
+
+  return data.id;
+}
+
+/**
+ * Batch upsert candidates with email (conflict on tenant_id,email).
+ * Returns count of rows affected.
+ */
+export async function batchUpsertCandidatesByEmail(
+  rows: Record<string, unknown>[],
+): Promise<void> {
+  if (rows.length === 0) return;
+
+  if (shouldUseInMemoryPersistenceForTests()) {
+    for (const row of rows) {
+      const id = crypto.randomUUID();
+      candidateStore.set(id, { id, tenantId: row.tenant_id as string } as CandidateDetail);
+    }
+    return;
+  }
+
+  const client = getSupabaseAdminClient();
+  const { error } = await client
+    .from("candidates")
+    .upsert(rows, { onConflict: "tenant_id,email" });
+
+  if (error) {
+    throw new Error(`Batch candidate upsert failed: ${error.message}`);
+  }
+}
+
+/**
+ * Batch insert candidates without email (no dedup possible).
+ */
+export async function batchInsertCandidatesNoEmail(
+  rows: Record<string, unknown>[],
+): Promise<void> {
+  if (rows.length === 0) return;
+
+  if (shouldUseInMemoryPersistenceForTests()) {
+    for (const row of rows) {
+      const id = crypto.randomUUID();
+      candidateStore.set(id, { id, tenantId: row.tenant_id as string } as CandidateDetail);
+    }
+    return;
+  }
+
+  const client = getSupabaseAdminClient();
+  const { error } = await client
+    .from("candidates")
+    .insert(rows);
+
+  if (error) {
+    throw new Error(`Batch candidate insert failed: ${error.message}`);
+  }
+}
+
 export async function getLastCandidateUpdateBySource(source: string): Promise<Date | undefined> {
   if (shouldUseInMemoryPersistenceForTests()) {
     let latest: string | undefined;
