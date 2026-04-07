@@ -383,12 +383,9 @@ export async function verifyAndMapIdentityClaims(
     "internal";
   assertAllowedTenant(rawTenantId, config.allowedTenantId);
 
-  // Map Azure AD tenant UUID to application tenant ID.
-  // Single-tenant app: all data uses 'cbl-aero' as tenant_id.
-  const appTenantId = process.env.CBL_APP_TENANT_ID?.trim() || "cbl-aero";
-  const tenantId = config.allowedTenantId && rawTenantId === config.allowedTenantId
-    ? appTenantId
-    : rawTenantId;
+  // Single-tenant app: always use the application tenant ID for data access.
+  // The Azure AD tid is a UUID; all ingested data uses 'cbl-aero'.
+  const tenantId = process.env.CBL_APP_TENANT_ID?.trim() || "cbl-aero";
 
   let roleSource: unknown = payload.role;
   if (Array.isArray(payload.roles) && payload.roles.length > 0) {
