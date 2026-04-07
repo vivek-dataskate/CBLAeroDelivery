@@ -277,28 +277,11 @@ create unique index if not exists uq_candidates_tenant_phone
   on cblaero_app.candidates (tenant_id, phone)
   where phone is not null;
 
-create index if not exists idx_candidates_tenant_availability
-  on cblaero_app.candidates (tenant_id, availability_status)
-  where ingestion_state = 'active';
-
-create index if not exists idx_candidates_tenant_location
-  on cblaero_app.candidates (tenant_id, location)
-  where ingestion_state = 'active';
-
 create index if not exists idx_candidates_source_batch
   on cblaero_app.candidates (source_batch_id)
   where source_batch_id is not null;
 
--- Story 2.4: GIN indexes for JSONB queryability at 1M+ rows
-create index if not exists idx_candidates_certifications_gin
-  on cblaero_app.candidates using gin (certifications)
-  where ingestion_state = 'active';
-
-create index if not exists idx_candidates_skills_gin
-  on cblaero_app.candidates using gin (skills)
-  where ingestion_state = 'active';
-
--- Story 2.4: Full-text search on name fields (name column was dropped; use first_name + last_name only)
+-- Full-text search on name fields (tsvector generated column)
 alter table cblaero_app.candidates
   add column if not exists name_tsv tsvector
   generated always as (
@@ -312,35 +295,26 @@ create index if not exists idx_candidates_name_fts
   on cblaero_app.candidates using gin (name_tsv)
   where ingestion_state = 'active';
 
--- Story 2.4: Composite index for state-scoped tenant queries
+-- Composite index for tenant + ingestion_state filtering (used on every query)
 create index if not exists idx_candidates_tenant_state
   on cblaero_app.candidates (tenant_id, ingestion_state);
 
--- Story 2.4 rework: indexes for expanded filterable fields (all partial on active)
-create index if not exists idx_candidates_tenant_job_title
-  on cblaero_app.candidates (tenant_id, job_title)
+-- Trigram indexes for fast ILIKE '%...%' substring searches (pg_trgm)
+create extension if not exists pg_trgm;
+
+create index if not exists idx_candidates_email_trgm
+  on cblaero_app.candidates using gin (email gin_trgm_ops)
   where ingestion_state = 'active';
 
-create index if not exists idx_candidates_tenant_email
-  on cblaero_app.candidates (tenant_id, email)
+create index if not exists idx_candidates_job_title_trgm
+  on cblaero_app.candidates using gin (job_title gin_trgm_ops)
   where ingestion_state = 'active';
 
-create index if not exists idx_candidates_tenant_state_geo
-  on cblaero_app.candidates (tenant_id, state)
+create index if not exists idx_candidates_city_trgm
+  on cblaero_app.candidates using gin (city gin_trgm_ops)
   where ingestion_state = 'active';
 
-create index if not exists idx_candidates_tenant_city
-  on cblaero_app.candidates (tenant_id, city)
-  where ingestion_state = 'active';
-
-create index if not exists idx_candidates_tenant_work_auth
-  on cblaero_app.candidates (tenant_id, work_authorization)
-  where ingestion_state = 'active';
-
-create index if not exists idx_candidates_tenant_emp_type
-  on cblaero_app.candidates (tenant_id, employment_type)
-  where ingestion_state = 'active';
-
+-- Source filter index
 create index if not exists idx_candidates_tenant_source
   on cblaero_app.candidates (tenant_id, source)
   where ingestion_state = 'active';
@@ -352,11 +326,6 @@ create index if not exists idx_candidates_tenant_created_desc
 
 create index if not exists idx_candidates_tenant_yoe_desc
   on cblaero_app.candidates (tenant_id, years_of_experience desc nulls last)
-  where ingestion_state = 'active';
-
--- Relevance ranking composite index
-create index if not exists idx_candidates_relevance_sort
-  on cblaero_app.candidates (tenant_id, availability_status, years_of_experience desc nulls last, created_at desc)
   where ingestion_state = 'active';
 
 create or replace function cblaero_app.process_import_chunk(
