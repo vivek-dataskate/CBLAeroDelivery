@@ -48,14 +48,16 @@ function estimateCost(model: string, inputTokens: number, outputTokens: number):
 export async function callLlm(
   model: string,
   systemPrompt: string,
-  userContent: string,
+  userContent: string | Anthropic.Messages.ContentBlockParam[],
   opts: CallLlmOptions = {}
 ): Promise<CallLlmResult | null> {
   const client = getSharedAnthropicClient();
   if (!client) return null;
 
   const start = Date.now();
-  const inputChars = systemPrompt.length + userContent.length;
+  const inputChars = typeof userContent === 'string'
+    ? systemPrompt.length + userContent.length
+    : systemPrompt.length; // multimodal — char count not meaningful for binary
 
   let message: Anthropic.Message;
   try {

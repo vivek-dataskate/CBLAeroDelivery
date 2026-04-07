@@ -690,7 +690,7 @@ So that ATS syncs, inbox scans, refresh sweeps, and future digests do not rely o
   - `SavedSearchDigestJob` — sends daily digest emails for saved searches via Graph sendMail.
 - All jobs implement `SchedulerJob` interface (`name: string`, `run(): Promise<void>`)
 - `GlobalScheduler` stub was **removed** in code review pass 7 — Story 2.7 must implement from scratch using the Postgres-backed `schedule_definitions`/`schedule_runs` design
-- **Interim:** Render Cron Jobs call `/api/internal/jobs/run` endpoint (email: every 15 min, Ceipal: daily). Cron jobs are temporary until Story 2.7.
+- **Interim:** Render Cron Jobs call `/api/internal/jobs/run` endpoint (email: every 15 min, Ceipal: daily, OneDrive: hourly). Cron jobs are temporary until Story 2.7.
 **And** prior runs remain auditable against the schedule and policy version in effect at execution time
 
 ## Epic 3: Outreach Orchestration and Candidate Engagement
