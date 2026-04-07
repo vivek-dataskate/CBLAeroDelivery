@@ -124,7 +124,7 @@ describe('POST /api/internal/recruiter/resume-upload', () => {
     expect(response.status).toBe(200);
   });
 
-  it('handles extraction failure with actionable error message (AC 8)', async () => {
+  it('handles scanned-image PDFs via vision OCR fallback (AC 8)', async () => {
     mockPdfParse.mockResolvedValueOnce({ text: '' });
 
     const { token } = await issueSessionToken({ actorId: 'recruiter-1', email: 'rec@test.com', role: 'recruiter', tenantId: 'cbl-aero', rememberDevice: false });
@@ -133,7 +133,8 @@ describe('POST /api/internal/recruiter/resume-upload', () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.data.files).toHaveLength(1);
-    expect(body.data.files[0].status).toBe('failed');
-    expect(body.data.files[0].error).toContain('scanned image');
+    // Scanned PDFs now succeed via Claude vision — no longer fail
+    expect(body.data.files[0].status).toBe('complete');
+    expect(body.data.files[0].extraction).toBeDefined();
   });
 });
