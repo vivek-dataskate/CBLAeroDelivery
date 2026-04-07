@@ -560,10 +560,14 @@ Before writing a new helper, check if one already exists:
 | Submission evidence CRUD | `insertSubmission()`, `findSubmissionByMessageId()`, `listSubmissionsByBatch()` | `@/features/candidate-management/infrastructure/submission-repository` |
 | Submission failure count | `countFailedSubmissions()` | `@/features/candidate-management/infrastructure/submission-repository` |
 | File storage upload | `uploadFileToStorage()` | `@/features/candidate-management/infrastructure/storage` — **single shared function** for all Supabase Storage uploads (resumes, attachments). Never use `db.storage.upload()` directly. |
-| Resume storage upload (legacy wrapper) | `uploadResumeToStorage()` | `@/features/candidate-management/infrastructure/submission-repository` — delegates to `uploadFileToStorage`. Prefer calling `uploadFileToStorage` directly for new code. |
+| Candidate upsert (by email) | `upsertCandidateByEmail()` | `@/features/candidate-management/infrastructure/candidate-repository` — single round-trip upsert+select. Use for all email-based candidate persistence. |
+| Candidate insert (no email) | `insertCandidateNoEmail()` | `@/features/candidate-management/infrastructure/candidate-repository` — insert+select for candidates without email. |
+| Candidate batch upsert | `batchUpsertCandidatesByEmail()`, `batchInsertCandidatesNoEmail()` | `@/features/candidate-management/infrastructure/candidate-repository` — batch operations for bulk ingestion. |
 | Fingerprint batch recording | `recordFingerprintBatch()` | `@/features/candidate-management/infrastructure/fingerprint-repository` |
 | Candidate email lookup | `findCandidateIdsByEmails()` | `@/features/candidate-management/infrastructure/candidate-repository` |
 | Candidate source stats | `countCandidatesBySource()`, `getLastCandidateUpdateBySource()` | `@/features/candidate-management/infrastructure/candidate-repository` |
+| Sync error recording | `recordSyncFailure()`, `listRecentSyncErrors()` | `@/features/candidate-management/infrastructure/sync-error-repository` — centralized sync_errors table access with in-memory fallback. |
+| Sync error markers (KV) | `getMarkerValue()`, `setMarkerValue()` | `@/features/candidate-management/infrastructure/sync-error-repository` — lightweight KV storage using sync_errors table. |
 | Import batch audit | `recordImportBatchAccessEvent()`, `listImportBatchAccessEvents()` | `@/modules/audit` |
 | Cross-client confirmation | `issueCrossClientConfirmationToken()`, `verifyCrossClientConfirmationToken()`, `consumeCrossClientConfirmationToken()` | `@/modules/auth/cross-client-confirmation` |
 
@@ -586,7 +590,8 @@ Every table must have a dedicated repository or module with named functions for 
 | `saved_searches` | `saved-search-repository.ts` | Exists |
 | `candidate_submissions` | `submission-repository.ts` | Exists |
 | `import_batch` | `import-batch-repository.ts` | Exists |
-| `sync_errors` | (in ingestion/index.ts) | OK (simple, self-contained) |
+| `sync_errors` | `sync-error-repository.ts` | Exists |
+| `content_fingerprints` | `fingerprint-repository.ts` | Exists |
 | `admin_managed_users` | `admin/index.ts` | OK (module owns table) |
 | `admin_invitations` | `admin/index.ts` | OK (module owns table) |
 | `audit_*` tables | `audit/index.ts` | OK (module owns tables) |

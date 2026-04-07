@@ -1124,10 +1124,16 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 | `process_import_chunk` RPC | `supabase/schema.sql` | Batch candidate upsert with per-row error tracking. Handles `resume_url` for PDF uploads. Used by CSV upload, resume upload, OneDrive poller. |
 | `listCandidates(tenantId, params)` | `src/features/candidate-management/infrastructure/candidate-repository.ts` | Filtered, paginated candidate list with cursor-based pagination. Supports 15+ filters. |
 | `getCandidateById(tenantId, candidateId)` | `src/features/candidate-management/infrastructure/candidate-repository.ts` | Single candidate detail with all columns. |
-| `batchUpsertCandidatesFromATS(records)` | `src/modules/ingestion/index.ts` | Batch upsert with email dedup + fallback to individual inserts on conflict. |
-| `upsertCandidateFromEmailFull(record)` | `src/modules/ingestion/index.ts` | Single email submission: dedup check first, then `.upsert()` candidate + submission evidence + attachment upload. Returns `'dedup_skip'` if already processed. |
-| `recordSyncFailure(source, recordId, err)` | `src/modules/ingestion/index.ts` | Log sync errors to Supabase `sync_errors` table with in-memory fallback. |
-| `listRecentSyncErrors()` | `src/modules/ingestion/index.ts` | Fetch recent sync errors for admin dashboard. |
+| `upsertCandidateByEmail(candidateRow)` | `src/features/candidate-management/infrastructure/candidate-repository.ts` | Single-roundtrip candidate upsert by email conflict. Returns candidate ID. All ingestion paths must use this. |
+| `insertCandidateNoEmail(candidateRow)` | `src/features/candidate-management/infrastructure/candidate-repository.ts` | Insert candidate without email (no dedup). Returns candidate ID. |
+| `batchUpsertCandidatesByEmail(rows)` | `src/features/candidate-management/infrastructure/candidate-repository.ts` | Batch upsert with email conflict key. Used by ATS/Ceipal bulk ingestion. |
+| `batchInsertCandidatesNoEmail(rows)` | `src/features/candidate-management/infrastructure/candidate-repository.ts` | Batch insert for candidates without email. |
+| `batchUpsertCandidatesFromATS(records)` | `src/modules/ingestion/index.ts` | Orchestrates batch upsert via repository functions with email dedup + fallback to individual inserts on conflict. |
+| `upsertCandidateFromEmailFull(record)` | `src/modules/ingestion/index.ts` | Single email submission: dedup check first, then repository upsert + submission evidence + attachment upload. Returns `'dedup_skip'` if already processed. |
+| `recordSyncFailure(source, recordId, err)` | `src/features/candidate-management/infrastructure/sync-error-repository.ts` | Log sync errors to Supabase `sync_errors` table with in-memory fallback. Re-exported from `ingestion/index.ts` for backward compatibility. |
+| `listRecentSyncErrors()` | `src/features/candidate-management/infrastructure/sync-error-repository.ts` | Fetch recent sync errors for admin dashboard. |
+| `getMarkerValue(source, recordId)` | `src/features/candidate-management/infrastructure/sync-error-repository.ts` | Read KV marker from sync_errors table (e.g., Ceipal resume page). |
+| `setMarkerValue(source, recordId, value)` | `src/features/candidate-management/infrastructure/sync-error-repository.ts` | Write KV marker to sync_errors table. |
 | `createImportBatch(params)` | `src/features/candidate-management/infrastructure/import-batch-repository.ts` | Create new import batch (CSV, resume, email). Returns id + startedAt. Dual persistence. |
 | `getImportBatchById(batchId, tenantId)` | `src/features/candidate-management/infrastructure/import-batch-repository.ts` | Fetch single import batch by id with tenant isolation. |
 | `updateImportBatch(batchId, updates)` | `src/features/candidate-management/infrastructure/import-batch-repository.ts` | Update batch status, counts, completedAt. |
@@ -1156,7 +1162,7 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 |-----------|----------|-------------|
 | `CeipalIngestionJob` | `src/modules/ingestion/jobs.ts` | Polls Ceipal API for applicants, batch upserts. Supports `startPage`, `maxPages`, `since` params. |
 | `EmailIngestionJob` | `src/modules/ingestion/jobs.ts` | Stream-processes Graph inbox: fetches unread emails, LLM classifies, persists submissions with attachments, marks as read. Uses `processInbox()` for one-at-a-time processing (no OOM). |
-| `OneDriveResumePollerJob` | `src/modules/ingestion/jobs.ts` | Polls OneDrive folder recursively (BFS subfolders) for PDFs. 10-concurrent parallel processing, 200-file cap per run (hourly cron). Uses shared `uploadResumeToStorage` → LLM extraction → `process_import_chunk` RPC with `resume_url`. Deletes source only after storage backup confirmed. Cleans up empty subfolders. |
+| `OneDriveResumePollerJob` | `src/modules/ingestion/jobs.ts` | Polls OneDrive folder recursively (BFS subfolders) for PDFs. 10-concurrent parallel processing, 500-file cap per run (hourly cron). Uses `uploadFileToStorage` → LLM extraction → `processImportChunk()` repository wrapper with `resume_url`. Uses `mapToCandidateRow()` for field mapping. Uses `createImportBatch()`/`updateImportBatch()` repository functions. Deletes source only after storage backup confirmed. Cleans up empty subfolders. |
 | `SavedSearchDigestJob` | `src/modules/ingestion/jobs.ts` | Sends daily digest emails for saved searches via Graph sendMail. Checks response status. |
 | `registerIngestionJobs(scheduler)` | `src/modules/ingestion/jobs.ts` | Registers all 4 jobs (Ceipal, Email, OneDrive, SavedSearchDigest) with any scheduler implementing `{ register(job: SchedulerJob): void }`. |
 
