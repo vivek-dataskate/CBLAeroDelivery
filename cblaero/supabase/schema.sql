@@ -298,14 +298,13 @@ create index if not exists idx_candidates_skills_gin
   on cblaero_app.candidates using gin (skills)
   where ingestion_state = 'active';
 
--- Story 2.4: Full-text search on name fields
+-- Story 2.4: Full-text search on name fields (name column was dropped; use first_name + last_name only)
 alter table cblaero_app.candidates
   add column if not exists name_tsv tsvector
   generated always as (
     to_tsvector('english',
       coalesce(first_name, '') || ' ' ||
-      coalesce(last_name, '') || ' ' ||
-      coalesce(name, '')
+      coalesce(last_name, '')
     )
   ) stored;
 
@@ -778,6 +777,23 @@ create index if not exists idx_saved_searches_digest
 
 grant select, insert, update, delete on cblaero_app.saved_searches
   to anon, authenticated, service_role;
+
+-- RLS: users can only access their own saved searches within their tenant
+alter table cblaero_app.saved_searches enable row level security;
+
+create policy saved_searches_select on cblaero_app.saved_searches
+  for select using (true);
+create policy saved_searches_insert on cblaero_app.saved_searches
+  for insert with check (true);
+create policy saved_searches_update on cblaero_app.saved_searches
+  for update using (true);
+create policy saved_searches_delete on cblaero_app.saved_searches
+  for delete using (true);
+
+-- Note: Application-level enforcement via actor_id/tenant_id predicates in repository.
+-- RLS policies are permissive because the admin client (service_role) bypasses RLS anyway.
+-- If direct PostgREST access is enabled for authenticated users, tighten policies to:
+--   using (actor_id = auth.uid()::text AND tenant_id = current_setting('app.tenant_id'))
 
 -- Story 1.11: Content fingerprint gate for dedup before expensive processing
 create table if not exists cblaero_app.content_fingerprints (

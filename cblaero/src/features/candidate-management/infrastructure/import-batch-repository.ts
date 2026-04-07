@@ -349,15 +349,15 @@ export async function processImportChunk(params: {
     throw new Error(`Failed to process import chunk: ${error.message}`);
   }
 
-  const result = Array.isArray(data) ? data[0] : null;
+  const result = Array.isArray(data) ? data[0] : data;
   if (!result) {
     throw new Error("process_import_chunk RPC returned no result");
   }
 
   return {
-    imported: Number(result.imported),
-    skipped: Number(result.skipped),
-    errors: Number(result.errors),
+    imported: Number(result.imported ?? 0),
+    skipped: Number(result.skipped ?? 0),
+    errors: Number(result.errors ?? 0),
   };
 }
 

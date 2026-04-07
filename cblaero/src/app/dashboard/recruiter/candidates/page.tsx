@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, useCallback } from "react";
 
 type CandidateRow = {
@@ -51,6 +52,7 @@ function SkillsCell({ skills }: { skills: unknown[] }) {
 }
 
 export default function CandidatesPage() {
+  const router = useRouter();
   // Filter state
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [candidates, setCandidates] = useState<CandidateRow[]>([]);
@@ -68,16 +70,16 @@ export default function CandidatesPage() {
 
   const filterFields = [
     { key: "availability_status", label: "Availability", type: "select", options: ["active", "passive", "unavailable"] },
-    { key: "employment_type", label: "Employment", type: "select", options: ["full-time", "contract", "part-time"] },
     { key: "source", label: "Source", type: "select", options: ["csv", "email", "ceipal", "resume_upload"] },
-    { key: "location", label: "Location", type: "text" },
     { key: "job_title", label: "Job Title", type: "text" },
     { key: "skills", label: "Skills", type: "text" },
-    { key: "search", label: "Name", type: "text" },
+    { key: "search", label: "Name (First Last)", type: "text" },
     { key: "city", label: "City", type: "text" },
     { key: "state", label: "State", type: "text" },
     { key: "work_authorization", label: "Work Auth", type: "text" },
     { key: "years_of_experience", label: "Min YoE", type: "text" },
+    { key: "created_after", label: "Added After", type: "date" },
+    { key: "created_before", label: "Added Before", type: "date" },
   ];
 
   const hasActiveFilters = Object.values(filters).some((v) => v.length > 0);
@@ -155,15 +157,21 @@ export default function CandidatesPage() {
       for (const [k, v] of Object.entries(filters)) {
         if (v) activeFilters[k] = v;
       }
-      await fetch("/api/internal/saved-searches", {
+      const res = await fetch("/api/internal/saved-searches", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: saveName.trim(), filters: activeFilters }),
       });
+      if (!res.ok) {
+        setError("Failed to save search. Please try again.");
+        return;
+      }
       setSaveName("");
       setShowSaveModal(false);
       loadSavedSearches();
-    } catch { /* ignore */ }
+    } catch {
+      setError("Failed to save search. Please check your connection.");
+    }
   };
 
   const handleLoadSavedSearch = (search: SavedSearchItem) => {
@@ -174,17 +182,33 @@ export default function CandidatesPage() {
   };
 
   const handleToggleDigest = async (id: string, enabled: boolean) => {
-    await fetch(`/api/internal/saved-searches/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ digestEnabled: !enabled }),
-    });
-    loadSavedSearches();
+    try {
+      const res = await fetch(`/api/internal/saved-searches/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ digestEnabled: !enabled }),
+      });
+      if (!res.ok) {
+        setError("Failed to update digest setting.");
+        return;
+      }
+      loadSavedSearches();
+    } catch {
+      setError("Failed to update digest setting. Please check your connection.");
+    }
   };
 
   const handleDeleteSaved = async (id: string) => {
-    await fetch(`/api/internal/saved-searches/${id}`, { method: "DELETE" });
-    loadSavedSearches();
+    try {
+      const res = await fetch(`/api/internal/saved-searches/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        setError("Failed to delete saved search.");
+        return;
+      }
+      loadSavedSearches();
+    } catch {
+      setError("Failed to delete saved search. Please check your connection.");
+    }
   };
 
   const sortLabel =
@@ -296,6 +320,16 @@ export default function CandidatesPage() {
                     ))}
                   </select>
                 </label>
+              ) : f.type === "date" ? (
+                <label key={f.key} className="text-xs text-gray-600">
+                  {f.label}
+                  <input
+                    type="date"
+                    value={filters[f.key] ?? ""}
+                    onChange={(e) => setFilters((p) => ({ ...p, [f.key]: e.target.value }))}
+                    className="mt-0.5 block w-32 rounded border border-gray-300 px-2 py-1 text-xs text-gray-900"
+                  />
+                </label>
               ) : (
                 <label key={f.key} className="text-xs text-gray-600">
                   {f.label}
@@ -399,6 +433,7 @@ export default function CandidatesPage() {
                 {candidates.map((c) => (
                   <tr
                     key={c.id}
+                    onClick={() => router.push(`/dashboard/recruiter/candidates/${c.id}`)}
                     className="cursor-pointer border-b border-gray-100 text-sm text-gray-700 hover:bg-gray-50"
                   >
                     <td className="px-6 py-2">{c.firstName}</td>
