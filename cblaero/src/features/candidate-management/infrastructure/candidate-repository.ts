@@ -430,6 +430,13 @@ export async function listCandidates(params: CandidateListParams): Promise<Candi
   if (params.createdAfter) rpcParams.p_created_after = params.createdAfter;
   if (params.createdBefore) rpcParams.p_created_before = params.createdBefore;
 
+  // Cursor pagination: decode cursor and pass to RPC
+  if (params.cursor) {
+    const decoded = decodeCursor(params.cursor);
+    rpcParams.p_cursor_id = decoded.id;
+    rpcParams.p_cursor_created_at = decoded.v;
+  }
+
   const { data, error } = await client.rpc("search_candidates", rpcParams);
 
   if (error) {
