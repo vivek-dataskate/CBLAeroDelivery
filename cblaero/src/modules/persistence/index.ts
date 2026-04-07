@@ -86,10 +86,6 @@ export function getSupabaseAdminClient(): SchemaBoundSupabaseClient {
   return cachedClient;
 }
 
-export function clearSupabaseClientForTest(): void {
-  cachedClient = null;
-}
-
 export function toDeterministicVectorLiteral(input: string, dimensions: number): string {
   const bucket = new Array<number>(dimensions).fill(0);
 
