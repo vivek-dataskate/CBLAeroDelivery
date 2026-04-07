@@ -691,6 +691,16 @@ So that ATS syncs, inbox scans, refresh sweeps, and future digests do not rely o
 - All jobs implement `SchedulerJob` interface (`name: string`, `run(): Promise<void>`)
 - `GlobalScheduler` stub was **removed** in code review pass 7 — Story 2.7 must implement from scratch using the Postgres-backed `schedule_definitions`/`schedule_runs` design
 - **Interim:** Render Cron Jobs call `/api/internal/jobs/run` endpoint (email: every 15 min, Ceipal: daily, OneDrive: hourly). Cron jobs are temporary until Story 2.7.
+
+**Cold-Start / Server Wake-Up Requirement (learned from interim cron failures):**
+- Render free tier spins down after 15 minutes of inactivity. Jobs that run less frequently than every 15 minutes (Ceipal daily, OneDrive hourly) hit a cold/sleeping server and fail with `fetch failed`.
+- **The global scheduler MUST handle cold-start wake-up before dispatching jobs.** Implementation options:
+  1. **Health-check probe before dispatch:** Scheduler pings the health endpoint, waits for 200, then dispatches the job. Timeout + retry if server is still cold.
+  2. **In-process scheduler:** Run the scheduler loop inside the web process itself (not as a separate cron). Jobs execute in-process, no HTTP call needed. Server stays warm as long as the process is alive.
+  3. **Keep-alive heartbeat:** Scheduler emits a lightweight ping every 10 minutes to prevent spin-down. All jobs then dispatch to a guaranteed-warm server.
+- Option 2 (in-process) is preferred for Render — avoids the HTTP round-trip entirely and eliminates the cold-start problem. The scheduler loop runs on a `setInterval` inside the Next.js server, claims due `schedule_definitions` rows, and calls job `.run()` directly.
+- If using external dispatch (option 1), the wake-up probe must be the **first step** in every schedule run, not just for infrequent jobs — any job can hit a cold server after a deploy or crash restart.
+
 **And** prior runs remain auditable against the schedule and policy version in effect at execution time
 
 ## Epic 3: Outreach Orchestration and Candidate Engagement
