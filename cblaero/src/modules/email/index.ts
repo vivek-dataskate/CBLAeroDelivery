@@ -276,27 +276,49 @@ export class MicrosoftGraphEmailParser implements EmailParser {
     mailbox: string,
     messageId: string
   ): Promise<Array<{ filename: string; content: Buffer }>> {
-    // No $select — requesting contentBytes fails with 400 when itemAttachments are present
-    const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}/messages/${messageId}/attachments`;
+    const userPath = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}`;
+    const url = `${userPath}/messages/${messageId}/attachments`;
 
     const response = await fetchWithRetry(url, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
     if (!response.ok) {
-      console.warn(`Graph attachments fetch failed for message ${messageId} (${response.status})`);
+      console.warn(`[EmailParser] Attachments fetch failed for ${messageId.slice(-10)} (${response.status})`);
       return [];
     }
 
     const data = await response.json() as { value: GraphAttachment[] };
     const allAtts = data.value ?? [];
-    const withContent = allAtts.filter((a) => a.contentBytes);
-    if (allAtts.length > 0) {
-      console.log(`[EmailParser] Message ${messageId.slice(-10)}: ${allAtts.length} attachments, ${withContent.length} with content (types: ${allAtts.map(a => a['@odata.type']).join(', ')})`);
+    if (allAtts.length === 0) return [];
+
+    const results: Array<{ filename: string; content: Buffer }> = [];
+
+    for (const att of allAtts) {
+      if (att.contentBytes) {
+        // File attachments have contentBytes inline
+        results.push({ filename: att.name, content: Buffer.from(att.contentBytes, 'base64') });
+      } else if (att['@odata.type'] === '#microsoft.graph.itemAttachment') {
+        // Item attachments (embedded emails) need a separate fetch for raw MIME content
+        try {
+          const itemUrl = `${userPath}/messages/${messageId}/attachments/${att.id}/$value`;
+          const itemResp = await fetchWithRetry(itemUrl, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (itemResp.ok) {
+            const buf = Buffer.from(await itemResp.arrayBuffer());
+            const safeName = (att.name || 'embedded-email').replace(/[^a-zA-Z0-9._-]/g, '_');
+            results.push({ filename: `${safeName}.eml`, content: buf });
+          } else {
+            console.warn(`[EmailParser] Item attachment fetch failed for ${att.name} (${itemResp.status})`);
+          }
+        } catch (err) {
+          console.warn(`[EmailParser] Item attachment fetch threw for ${att.name}:`, err instanceof Error ? err.message : err);
+        }
+      }
     }
-    return withContent.map((a) => ({
-      filename: a.name,
-      content: Buffer.from(a.contentBytes, 'base64'),
-    }));
+
+    console.log(`[EmailParser] Message ${messageId.slice(-10)}: ${allAtts.length} attachments, ${results.length} saved (types: ${allAtts.map(a => a['@odata.type']).join(', ')})`);
+    return results;
   }
 }
