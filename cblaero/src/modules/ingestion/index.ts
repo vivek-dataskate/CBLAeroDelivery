@@ -1,89 +1,27 @@
-import { getSupabaseAdminClient, isSupabaseConfigured } from '../persistence';
+import { isSupabaseConfigured } from '../persistence';
 import { uploadAttachmentToStorage } from '../email/nlp-extract-and-upload';
 import {
   findSubmissionByMessageId,
   insertSubmission,
 } from '@/features/candidate-management/infrastructure/submission-repository';
+import {
+  upsertCandidateByEmail,
+  insertCandidateNoEmail,
+  batchUpsertCandidatesByEmail,
+  batchInsertCandidatesNoEmail,
+} from '@/features/candidate-management/infrastructure/candidate-repository';
+
+// Re-export sync error functions from centralized repository for backward compatibility
+export {
+  recordSyncFailure,
+  listRecentSyncErrors,
+  clearSyncErrorsForTest,
+} from '@/features/candidate-management/infrastructure/sync-error-repository';
+export type { SyncError } from '@/features/candidate-management/infrastructure/sync-error-repository';
+
+import { recordSyncFailure } from '@/features/candidate-management/infrastructure/sync-error-repository';
 
 export type IngestionSource = "csv" | "ats" | "email" | "ceipal" | "resume_upload";
-
-// IngestionEnvelope removed — dead code (no consumers)
-
-// --- Sync Error Store ---
-
-export type SyncError = {
-  id: string;
-  source: string;
-  recordId: string;
-  message: string;
-  timestamp: string;
-};
-
-const SYNC_ERROR_MAX = 100;
-// In-memory buffer for fast reads; also persisted to Supabase when configured.
-const recentSyncErrors: SyncError[] = [];
-
-export function recordSyncFailure(source: string, recordId: string, err: unknown): void {
-  const error: SyncError = {
-    id: `${source}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    source,
-    recordId,
-    message: err instanceof Error ? err.message : String(err),
-    timestamp: new Date().toISOString(),
-  };
-  recentSyncErrors.unshift(error);
-  if (recentSyncErrors.length > SYNC_ERROR_MAX) {
-    recentSyncErrors.splice(SYNC_ERROR_MAX);
-  }
-  // Persist to Supabase (fire-and-forget — don't block the caller)
-  if (isSupabaseConfigured()) {
-    const db = getSupabaseAdminClient();
-    Promise.resolve(
-      db.from('sync_errors').insert({
-        source,
-        record_id: recordId,
-        message: error.message,
-        occurred_at: error.timestamp,
-      })
-    ).then(({ error: dbErr }) => {
-      if (dbErr) console.error('[SyncError] Failed to persist:', dbErr.message);
-      // Prune rows older than 30 days (fire-and-forget cleanup)
-      const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-      db.from('sync_errors').delete().lt('occurred_at', cutoff).then(() => {});
-    }).catch((e: unknown) => {
-      console.error('[SyncError] Persist transport error:', e instanceof Error ? e.message : e);
-    });
-  }
-}
-
-export async function listRecentSyncErrors(): Promise<SyncError[]> {
-  // Prefer Supabase if configured; fall back to in-memory only when unconfigured
-  if (isSupabaseConfigured()) {
-    const db = getSupabaseAdminClient();
-    const { data, error } = await db
-      .from('sync_errors')
-      .select('id, source, record_id, message, occurred_at')
-      .order('occurred_at', { ascending: false })
-      .limit(SYNC_ERROR_MAX);
-    if (error) {
-      console.error('[SyncError] Failed to query sync_errors:', error.message);
-      // Fall through to in-memory on DB error
-    } else if (data) {
-      return data.map((r: { id: string; source: string; record_id: string; message: string; occurred_at: string }) => ({
-        id: String(r.id),
-        source: r.source,
-        recordId: r.record_id,
-        message: r.message,
-        timestamp: r.occurred_at,
-      }));
-    }
-  }
-  return [...recentSyncErrors];
-}
-
-export function clearSyncErrorsForTest(): void {
-  recentSyncErrors.splice(0);
-}
 
 // Default tenant for single-tenant MVP
 export const DEFAULT_TENANT_ID = 'cbl-aero';
@@ -91,13 +29,12 @@ export const DEFAULT_TENANT_ID = 'cbl-aero';
 // --- Candidate upsert (real Supabase persistence) ---
 
 /**
- * Batch upsert candidates from ATS. Uses Supabase .upsert() with email as conflict key.
+ * Batch upsert candidates from ATS. Uses repository functions for DB access.
  * Much faster than individual inserts for bulk loads.
  */
 export async function batchUpsertCandidatesFromATS(records: Record<string, unknown>[]): Promise<{ inserted: number; failed: number }> {
   if (!isSupabaseConfigured() || records.length === 0) return { inserted: 0, failed: 0 };
 
-  const db = getSupabaseAdminClient();
   let failed = 0;
 
   // Filter out records with no email and no phone
@@ -129,28 +66,28 @@ export async function batchUpsertCandidatesFromATS(records: Record<string, unkno
 
   // Batch upsert rows that have email — uses partial unique index
   if (withEmail.length > 0) {
-    const { error: upsertErr } = await db.from('candidates').upsert(withEmail, { onConflict: 'tenant_id,email' });
-    if (upsertErr) {
-      console.error(`[Ingestion] Batch upsert (with email) failed: ${upsertErr.message}`);
+    try {
+      await batchUpsertCandidatesByEmail(withEmail);
+      totalInserted += withEmail.length;
+    } catch (upsertErr) {
+      console.error(`[Ingestion] Batch upsert (with email) failed: ${upsertErr instanceof Error ? upsertErr.message : upsertErr}`);
       // Fall back to individual inserts
       for (const record of validRecords.filter((r) => r.email)) {
         try { await upsertCandidateFromATS(record); totalInserted++; } catch (err) {
           recordSyncFailure(String(record.source ?? 'ats'), String(record.email ?? 'unknown'), err); failed++;
         }
       }
-    } else {
-      totalInserted += withEmail.length;
     }
   }
 
   // Insert rows without email (no dedup possible)
   if (withoutEmail.length > 0) {
-    const { error: insertErr } = await db.from('candidates').insert(withoutEmail);
-    if (insertErr) {
-      console.error(`[Ingestion] Batch insert (no email) failed: ${insertErr.message}`);
-      failed += withoutEmail.length;
-    } else {
+    try {
+      await batchInsertCandidatesNoEmail(withoutEmail);
       totalInserted += withoutEmail.length;
+    } catch (insertErr) {
+      console.error(`[Ingestion] Batch insert (no email) failed: ${insertErr instanceof Error ? insertErr.message : insertErr}`);
+      failed += withoutEmail.length;
     }
   }
 
@@ -164,7 +101,6 @@ export async function upsertCandidateFromATS(record: Record<string, unknown>): P
     return;
   }
 
-  const db = getSupabaseAdminClient();
   const email = typeof record.email === 'string' ? record.email.trim().toLowerCase() : '';
   const phone = typeof record.phone === 'string' ? record.phone.trim() : '';
   const source = typeof record.source === 'string' ? record.source : 'ats';
@@ -175,20 +111,13 @@ export async function upsertCandidateFromATS(record: Record<string, unknown>): P
     return;
   }
 
-  // Upsert candidate — atomic, no check-before-write race
   const candidateRow = mapToCandidateRow(record, source);
 
   if (email) {
-    const { error } = await db.from('candidates').upsert(
-      { ...candidateRow, updated_at: new Date().toISOString() },
-      { onConflict: 'tenant_id,email' }
-    );
-    if (error) throw new Error(`Candidate upsert failed: ${error.message}`);
+    await upsertCandidateByEmail(candidateRow);
     console.log(`[Ingestion] Upserted candidate ${email}`);
   } else {
-    // No email — insert without dedup
-    const { error } = await db.from('candidates').insert(candidateRow);
-    if (error) throw new Error(`Candidate insert failed: ${error.message}`);
+    await insertCandidateNoEmail(candidateRow);
     console.log(`[Ingestion] Inserted candidate (no email): ${record.firstName} ${record.lastName}`);
   }
 }
@@ -206,7 +135,6 @@ export async function upsertCandidateFromEmailFull(record: {
     return;
   }
 
-  const db = getSupabaseAdminClient();
   const email = typeof record.candidate.email === 'string' ? record.candidate.email.trim().toLowerCase() : '';
   const source = typeof record.candidate.source === 'string' ? record.candidate.source : 'email';
 
@@ -217,27 +145,19 @@ export async function upsertCandidateFromEmailFull(record: {
     return 'dedup_skip';
   }
 
-  // 2. Upsert the candidate record — atomic, no check-before-write race
+  // 2. Upsert the candidate record via repository — single round-trip
   const candidateRow = mapToCandidateRow(record.candidate, source);
-  let candidateId: string;
+  let candidateId: string | null = null;
+  const phone = typeof record.candidate.phone === 'string' ? record.candidate.phone.trim() : '';
 
   if (email) {
-    // Use upsert for atomic dedup, then fetch the id
-    const { error: upsertErr } = await db.from('candidates').upsert(
-      { ...candidateRow, updated_at: new Date().toISOString() },
-      { onConflict: 'tenant_id,email' }
-    );
-    if (upsertErr) throw new Error(`Candidate upsert failed: ${upsertErr.message}`);
-    // Retrieve the candidate id after upsert
-    const { data: row, error: fetchErr } = await db.from('candidates')
-      .select('id').eq('email', email).eq('tenant_id', DEFAULT_TENANT_ID).single();
-    if (fetchErr || !row) throw new Error(`Candidate lookup after upsert failed: ${fetchErr?.message}`);
-    candidateId = row.id;
+    candidateId = await upsertCandidateByEmail(candidateRow);
     console.log(`[Ingestion] Upserted candidate ${email} from email`);
+  } else if (phone) {
+    candidateId = await insertCandidateNoEmail(candidateRow);
   } else {
-    const { data, error } = await db.from('candidates').insert(candidateRow).select('id').single();
-    if (error) throw new Error(`Candidate insert failed: ${error.message}`);
-    candidateId = data.id;
+    // No email or phone — can't create candidate, but still save submission evidence
+    console.warn(`[Ingestion] No email or phone for "${record.subject}" — saving submission evidence only`);
   }
 
   // 3. Build submission record
@@ -254,7 +174,7 @@ export async function upsertCandidateFromEmailFull(record: {
       continue;
     }
     try {
-      const result = await uploadAttachmentToStorage(db, att.content, att.filename, candidateId, submissionId);
+      const result = await uploadAttachmentToStorage(null, att.content, att.filename, candidateId ?? 'no-candidate', submissionId);
       attachmentMeta.push(result);
     } catch (err) {
       console.warn(`[Ingestion] Attachment upload failed for ${att.filename}:`, err instanceof Error ? err.message : err);
@@ -267,7 +187,7 @@ export async function upsertCandidateFromEmailFull(record: {
     await insertSubmission({
       id: submissionId,
       tenantId: DEFAULT_TENANT_ID,
-      candidateId,
+      candidateId: candidateId ?? undefined,
       source,
       emailMessageId: record.id,
       emailSubject: record.subject,
