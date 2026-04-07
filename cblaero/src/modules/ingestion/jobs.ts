@@ -15,6 +15,9 @@ import {
 import {
   getLastCandidateUpdateBySource,
 } from '../../features/candidate-management/infrastructure/candidate-repository';
+import {
+  uploadFileToStorage,
+} from '../../features/candidate-management/infrastructure/storage';
 
 export interface SchedulerJob {
   name: string;
@@ -157,7 +160,6 @@ export class CeipalIngestionJob implements SchedulerJob {
  */
 export class OneDriveResumePollerJob implements SchedulerJob {
   name = 'OneDriveResumePollerJob';
-  private static ATTACHMENT_BUCKET = 'candidate-attachments';
 
   private get driveUser(): string {
     return process.env.CBL_ONEDRIVE_USER?.trim() || 'vivek@cblsolutions.com';
@@ -221,23 +223,12 @@ export class OneDriveResumePollerJob implements SchedulerJob {
             }
 
             // Store PDF in Supabase Storage (source of truth) before extraction
-            let storageUrl = '';
-            if (db && batchId) {
-              const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-              const fileSubmissionId = crypto.randomUUID().slice(0, 8);
-              const storagePath = `resume-uploads/cbl-aero/${batchId}/${fileSubmissionId}/${safeName}`;
-              const { error: uploadErr } = await db.storage
-                .from(OneDriveResumePollerJob.ATTACHMENT_BUCKET)
-                .upload(storagePath, buffer, { contentType: 'application/pdf', upsert: true });
-
-              if (uploadErr) {
-                console.warn(`[OneDrivePoller] Storage upload failed for ${file.name}:`, uploadErr.message);
-              } else {
-                const { data: urlData } = db.storage
-                  .from(OneDriveResumePollerJob.ATTACHMENT_BUCKET)
-                  .getPublicUrl(storagePath);
-                storageUrl = urlData.publicUrl;
-              }
+            const fileId = crypto.randomUUID().slice(0, 8);
+            const storagePath = `resume-uploads/cbl-aero/${batchId ?? fileId}/${fileId}`;
+            const storage = await uploadFileToStorage(buffer, file.name, storagePath);
+            const storageUrl = storage.url;
+            if (storage.warning) {
+              console.warn(`[OneDrivePoller] ${file.name}: ${storage.warning}`);
             }
 
             const result = await extractCandidateFromDocument(buffer, 'pdf', {
@@ -268,10 +259,10 @@ export class OneDriveResumePollerJob implements SchedulerJob {
               console.warn(`[OneDrivePoller] Keeping ${file.name} in OneDrive — no storage backup`);
             }
 
-            return { status: 'ok' as const, file, extraction: ext };
+            return { status: 'ok' as const, file, extraction: ext, storageUrl };
           } catch (err) {
             recordSyncFailure('onedrive', file.name, err);
-            return { status: 'failed' as const, file };
+            return { status: 'failed' as const, file, storageUrl: '' };
           }
         })
       );
@@ -310,6 +301,7 @@ export class OneDriveResumePollerJob implements SchedulerJob {
             ingestion_state: 'pending_enrichment',
             source: 'resume_upload',
             source_batch_id: batchId,
+            resume_url: r.storageUrl || null,
             extra_attributes: {},
           };
         });

@@ -3,7 +3,8 @@ import { withAuth } from '@/modules/auth';
 import { recordImportBatchAccessEvent } from '@/modules/audit';
 import { extractCandidateFromDocument } from '@/features/candidate-management/application/candidate-extraction';
 import { createImportBatch } from '@/features/candidate-management/infrastructure/import-batch-repository';
-import { insertSubmission, uploadResumeToStorage } from '@/features/candidate-management/infrastructure/submission-repository';
+import { insertSubmission } from '@/features/candidate-management/infrastructure/submission-repository';
+import { uploadFileToStorage } from '@/features/candidate-management/infrastructure/storage';
 import {
   computeFileHash,
   isAlreadyProcessed,
@@ -155,7 +156,8 @@ export const POST = withAuth(async ({ session, request, traceId }) => {
             };
           }
 
-          const storage = await uploadResumeToStorage(buffer, file.name, tenantId, batchId, submissionId);
+          const storagePath = `resume-uploads/${tenantId}/${batchId}/${submissionId}`;
+          const storage = await uploadFileToStorage(buffer, file.name, storagePath);
           const storageUrl = storage.url;
           const storageWarning = storage.warning;
 

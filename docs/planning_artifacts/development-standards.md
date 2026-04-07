@@ -296,13 +296,34 @@ async function acquireToken(): Promise<string> {
 
 ## 7. File & Attachment Storage
 
-### Supabase Storage pattern
+### Single shared upload function — `uploadFileToStorage()`
+All file uploads to Supabase Storage MUST use the centralized `uploadFileToStorage()` from `@/features/candidate-management/infrastructure/storage`. **NEVER use `db.storage.upload()` directly in routes or jobs.**
+
+```typescript
+import { uploadFileToStorage } from '@/features/candidate-management/infrastructure/storage';
+
+// Resume uploads (dashboard + OneDrive poller)
+const storagePath = `resume-uploads/${tenantId}/${batchId}/${fileId}`;
+const { url, size, warning } = await uploadFileToStorage(buffer, filename, storagePath);
+
+// Email attachments (via uploadAttachmentToStorage wrapper)
+const storagePath = `${candidateIdShort}/${submissionIdShort}`;
+const { url, size } = await uploadFileToStorage(buffer, filename, storagePath);
+```
+
+### Storage conventions
 - Bucket: `candidate-attachments` (public)
-- Path: `/{candidate_id_short}/{submission_id_short}/{sanitized_filename}`
+- Path patterns:
+  - Resumes (PDF uploads): `resume-uploads/{tenant_id}/{batch_id}/{file_id}/{filename}`
+  - Email attachments: `{candidate_id_short}/{submission_id_short}/{filename}`
 - Short IDs = first 8 chars of UUID
 - Sanitize filenames: `filename.replace(/[^a-zA-Z0-9._-]/g, '_')`
-- Store URL + size + original filename in JSONB `attachments` column
-- Always set correct MIME type via `contentType` option
+- Always set correct MIME type via `contentType` option (auto-detected by `uploadFileToStorage`)
+
+### Where to store the URL
+- **PDF resumes** → `candidates.resume_url` (set via `process_import_chunk` RPC). NOT in `candidate_submissions`.
+- **Email attachments** → `candidate_submissions.attachments` JSONB array.
+- `candidate_submissions` is for **email ingestion evidence only** — never for PDF uploads.
 
 ## 8. Testing Standards
 
@@ -531,7 +552,8 @@ Before writing a new helper, check if one already exists:
 | Import row errors | `listImportRowErrors()` | `@/features/candidate-management/infrastructure/import-batch-repository` |
 | Submission evidence CRUD | `insertSubmission()`, `findSubmissionByMessageId()`, `listSubmissionsByBatch()` | `@/features/candidate-management/infrastructure/submission-repository` |
 | Submission failure count | `countFailedSubmissions()` | `@/features/candidate-management/infrastructure/submission-repository` |
-| Resume storage upload | `uploadResumeToStorage()` | `@/features/candidate-management/infrastructure/submission-repository` |
+| File storage upload | `uploadFileToStorage()` | `@/features/candidate-management/infrastructure/storage` — **single shared function** for all Supabase Storage uploads (resumes, attachments). Never use `db.storage.upload()` directly. |
+| Resume storage upload (legacy wrapper) | `uploadResumeToStorage()` | `@/features/candidate-management/infrastructure/submission-repository` — delegates to `uploadFileToStorage`. Prefer calling `uploadFileToStorage` directly for new code. |
 | Fingerprint batch recording | `recordFingerprintBatch()` | `@/features/candidate-management/infrastructure/fingerprint-repository` |
 | Candidate email lookup | `findCandidateIdsByEmails()` | `@/features/candidate-management/infrastructure/candidate-repository` |
 | Candidate source stats | `countCandidatesBySource()`, `getLastCandidateUpdateBySource()` | `@/features/candidate-management/infrastructure/candidate-repository` |

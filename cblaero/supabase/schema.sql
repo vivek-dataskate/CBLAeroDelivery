@@ -398,6 +398,7 @@ declare
   v_job_title text;
   v_alternate_email text;
   v_computed_name text;
+  v_resume_url text;
 begin
   for v_error in select value from jsonb_array_elements(coalesce(p_error_rows, '[]'::jsonb)) loop
     insert into cblaero_app.import_row_error (
@@ -436,6 +437,7 @@ begin
     v_current_company := nullif(trim(coalesce(v_candidate->>'current_company', '')), '');
     v_job_title := nullif(trim(coalesce(v_candidate->>'job_title', '')), '');
     v_alternate_email := nullif(trim(coalesce(v_candidate->>'alternate_email', '')), '');
+    v_resume_url := nullif(trim(coalesce(v_candidate->>'resume_url', '')), '');
     -- Derive name: prefer first_name + last_name; fall back to explicit name field
     v_computed_name := coalesce(
       nullif(trim(coalesce(v_first_name, '') || ' ' || coalesce(v_last_name, '')), ''),
@@ -493,6 +495,7 @@ begin
           source,
           source_batch_id,
           created_by_actor_id,
+          resume_url,
           updated_at
         )
         values (
@@ -523,6 +526,7 @@ begin
           coalesce(v_candidate->>'source', 'migration'),
           coalesce((v_candidate->>'source_batch_id')::uuid, p_batch_id),
           nullif(trim(coalesce(v_candidate->>'created_by_actor_id', '')), ''),
+          v_resume_url,
           coalesce((v_candidate->>'updated_at')::timestamptz, now())
         )
         on conflict (tenant_id, email) where email is not null
@@ -552,58 +556,23 @@ begin
           source = excluded.source,
           source_batch_id = excluded.source_batch_id,
           created_by_actor_id = coalesce(candidates.created_by_actor_id, excluded.created_by_actor_id),
+          resume_url = coalesce(excluded.resume_url, candidates.resume_url),
           updated_at = excluded.updated_at
         returning xmax into v_xmax;
       else
         insert into cblaero_app.candidates (
-          tenant_id,
-          email,
-          phone,
-          name,
-          first_name,
-          last_name,
-          middle_name,
-          home_phone,
-          work_phone,
-          location,
-          address,
-          city,
-          state,
-          country,
-          postal_code,
-          current_company,
-          job_title,
-          alternate_email,
-          skills,
-          certifications,
-          experience,
-          extra_attributes,
-          availability_status,
-          ingestion_state,
-          source,
-          source_batch_id,
-          created_by_actor_id,
-          updated_at
+          tenant_id, email, phone, name, first_name, last_name, middle_name,
+          home_phone, work_phone, location, address, city, state, country,
+          postal_code, current_company, job_title, alternate_email,
+          skills, certifications, experience, extra_attributes,
+          availability_status, ingestion_state, source, source_batch_id,
+          created_by_actor_id, resume_url, updated_at
         )
         values (
-          v_candidate->>'tenant_id',
-          v_email,
-          v_phone,
-          v_computed_name,
-          v_first_name,
-          v_last_name,
-          v_middle_name,
-          v_home_phone,
-          v_work_phone,
-          nullif(v_candidate->>'location', ''),
-          v_address,
-          v_city,
-          v_state,
-          v_country,
-          v_postal_code,
-          v_current_company,
-          v_job_title,
-          v_alternate_email,
+          v_candidate->>'tenant_id', v_email, v_phone, v_computed_name,
+          v_first_name, v_last_name, v_middle_name, v_home_phone, v_work_phone,
+          nullif(v_candidate->>'location', ''), v_address, v_city, v_state,
+          v_country, v_postal_code, v_current_company, v_job_title, v_alternate_email,
           coalesce(v_candidate->'skills', '[]'::jsonb),
           coalesce(v_candidate->'certifications', '[]'::jsonb),
           coalesce(v_candidate->'experience', '[]'::jsonb),
@@ -613,35 +582,26 @@ begin
           coalesce(v_candidate->>'source', 'migration'),
           coalesce((v_candidate->>'source_batch_id')::uuid, p_batch_id),
           nullif(trim(coalesce(v_candidate->>'created_by_actor_id', '')), ''),
+          v_resume_url,
           coalesce((v_candidate->>'updated_at')::timestamptz, now())
         )
         on conflict (tenant_id, phone) where phone is not null
         do update set
-          email = excluded.email,
-          name = excluded.name,
-          first_name = excluded.first_name,
-          last_name = excluded.last_name,
-          middle_name = excluded.middle_name,
-          home_phone = excluded.home_phone,
-          work_phone = excluded.work_phone,
-          location = excluded.location,
-          address = excluded.address,
-          city = excluded.city,
-          state = excluded.state,
-          country = excluded.country,
-          postal_code = excluded.postal_code,
-          current_company = excluded.current_company,
-          job_title = excluded.job_title,
-          alternate_email = excluded.alternate_email,
-          skills = excluded.skills,
-          certifications = excluded.certifications,
-          experience = excluded.experience,
+          email = excluded.email, name = excluded.name,
+          first_name = excluded.first_name, last_name = excluded.last_name,
+          middle_name = excluded.middle_name, home_phone = excluded.home_phone,
+          work_phone = excluded.work_phone, location = excluded.location,
+          address = excluded.address, city = excluded.city, state = excluded.state,
+          country = excluded.country, postal_code = excluded.postal_code,
+          current_company = excluded.current_company, job_title = excluded.job_title,
+          alternate_email = excluded.alternate_email, skills = excluded.skills,
+          certifications = excluded.certifications, experience = excluded.experience,
           extra_attributes = excluded.extra_attributes,
           availability_status = excluded.availability_status,
-          ingestion_state = excluded.ingestion_state,
-          source = excluded.source,
+          ingestion_state = excluded.ingestion_state, source = excluded.source,
           source_batch_id = excluded.source_batch_id,
           created_by_actor_id = coalesce(candidates.created_by_actor_id, excluded.created_by_actor_id),
+          resume_url = coalesce(excluded.resume_url, candidates.resume_url),
           updated_at = excluded.updated_at
         returning xmax into v_xmax;
       end if;
