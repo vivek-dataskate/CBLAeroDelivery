@@ -80,7 +80,8 @@ export default function CandidatesPage() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [sortedBy, setSortedBy] = useState<string>("");
   const [loading, setLoading] = useState(false);
-  const [totalShown, setTotalShown] = useState(0);
+  const [pageSize, setPageSize] = useState(25);
+  const [currentPage, setCurrentPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
 
   const [savedSearches, setSavedSearches] = useState<SavedSearchItem[]>([]);
@@ -103,7 +104,7 @@ export default function CandidatesPage() {
           if (v) params.set(k, v);
         }
         if (cursor) params.set("cursor", cursor);
-        params.set("limit", "25");
+        params.set("limit", "500");
 
         const res = await fetch(`/api/internal/candidates?${params.toString()}`);
         const json = await res.json();
@@ -116,10 +117,9 @@ export default function CandidatesPage() {
         const items = json.data as CandidateRow[];
         if (cursor) {
           setCandidates((prev) => [...prev, ...items]);
-          setTotalShown((prev) => prev + items.length);
         } else {
           setCandidates(items);
-          setTotalShown(items.length);
+          setCurrentPage(1);
         }
         setNextCursor(json.meta?.nextCursor ?? null);
         setSortedBy(json.meta?.sortedBy ?? "");
@@ -133,7 +133,7 @@ export default function CandidatesPage() {
   );
 
   const handleSearch = () => { if (hasActiveFilters) fetchCandidates(); };
-  const handleClear = () => { setFilters({}); setCandidates([]); setNextCursor(null); setTotalShown(0); setSortedBy(""); setError(null); };
+  const handleClear = () => { setFilters({}); setCandidates([]); setNextCursor(null); setCurrentPage(1); setSortedBy(""); setError(null); };
   const handleLoadMore = () => { if (nextCursor) fetchCandidates(nextCursor); };
 
   // Saved searches
@@ -377,69 +377,115 @@ export default function CandidatesPage() {
         )}
 
         {/* Results */}
-        {candidates.length > 0 && (
-          <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-            {/* Results header */}
-            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
-              <span className="text-sm font-medium text-gray-700">
-                {totalShown} candidate{totalShown !== 1 ? "s" : ""}
-              </span>
-              {sortLabel && <span className="text-xs text-gray-400">Sorted by: {sortLabel}</span>}
-            </div>
+        {candidates.length > 0 && (() => {
+          const totalLoaded = candidates.length;
+          const totalPages = Math.ceil(totalLoaded / pageSize);
+          const startIdx = (currentPage - 1) * pageSize;
+          const pageRows = candidates.slice(startIdx, startIdx + pageSize);
+          const isLastPage = currentPage >= totalPages;
+          const canLoadMore = isLastPage && nextCursor;
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50/50">
-                    <th className="px-5 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Name</th>
-                    <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Job Title</th>
-                    <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Location</th>
-                    <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Status</th>
-                    <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Experience</th>
-                    <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Skills</th>
-                    <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Added</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {candidates.map((c) => (
-                    <tr key={c.id} onClick={() => router.push(`/dashboard/recruiter/candidates/${c.id}`)}
-                      className="cursor-pointer text-sm text-gray-700 transition-colors hover:bg-emerald-50/40">
-                      <td className="px-5 py-2.5">
-                        <div className="font-medium text-gray-900">{c.firstName} {c.lastName}</div>
-                        <div className="text-xs text-gray-400">{c.email ?? "—"}</div>
-                      </td>
-                      <td className="px-4 py-2.5">{c.jobTitle ?? "—"}</td>
-                      <td className="px-4 py-2.5">
-                        {c.city || c.state
-                          ? `${c.city ?? ""}${c.city && c.state ? ", " : ""}${c.state ?? ""}`
-                          : "—"}
-                      </td>
-                      <td className="px-4 py-2.5"><AvailabilityBadge status={c.availabilityStatus} /></td>
-                      <td className="px-4 py-2.5 text-xs">
-                        {c.yearsOfExperience ? `${c.yearsOfExperience} yr${c.yearsOfExperience === "1" ? "" : "s"}` : "—"}
-                      </td>
-                      <td className="px-4 py-2.5 text-xs"><SkillsCell skills={c.skills ?? []} /></td>
-                      <td className="px-4 py-2.5 text-xs text-gray-400">{formatDate(c.createdAt)}</td>
+          return (
+            <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+              {/* Results header */}
+              <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-gray-700">
+                    {totalLoaded} candidate{totalLoaded !== 1 ? "s" : ""} loaded
+                  </span>
+                  {sortLabel && <span className="text-xs text-gray-400">| Sorted by: {sortLabel}</span>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">Rows per page:</span>
+                  <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+                    className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700">
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                    <option value={200}>200</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="border-b border-gray-100 bg-gray-50/50">
+                      <th className="px-5 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Name</th>
+                      <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Job Title</th>
+                      <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Location</th>
+                      <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Status</th>
+                      <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Experience</th>
+                      <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Skills</th>
+                      <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Added</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {pageRows.map((c) => (
+                      <tr key={c.id} onClick={() => router.push(`/dashboard/recruiter/candidates/${c.id}`)}
+                        className="cursor-pointer text-sm text-gray-700 transition-colors hover:bg-emerald-50/40">
+                        <td className="px-5 py-2.5">
+                          <div className="font-medium text-gray-900">{c.firstName} {c.lastName}</div>
+                          <div className="text-xs text-gray-400">{c.email ?? "—"}</div>
+                        </td>
+                        <td className="px-4 py-2.5">{c.jobTitle ?? "—"}</td>
+                        <td className="px-4 py-2.5">
+                          {c.city || c.state
+                            ? `${c.city ?? ""}${c.city && c.state ? ", " : ""}${c.state ?? ""}`
+                            : "—"}
+                        </td>
+                        <td className="px-4 py-2.5"><AvailabilityBadge status={c.availabilityStatus} /></td>
+                        <td className="px-4 py-2.5 text-xs">
+                          {c.yearsOfExperience ? `${c.yearsOfExperience} yr${c.yearsOfExperience === "1" ? "" : "s"}` : "—"}
+                        </td>
+                        <td className="px-4 py-2.5 text-xs"><SkillsCell skills={c.skills ?? []} /></td>
+                        <td className="px-4 py-2.5 text-xs text-gray-400">{formatDate(c.createdAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
 
-            {/* Pagination */}
-            <div className="flex items-center justify-between border-t border-gray-100 px-5 py-3">
-              <span className="text-xs text-gray-400">
-                Showing {totalShown} result{totalShown !== 1 ? "s" : ""}
-              </span>
-              {nextCursor && (
-                <button type="button" onClick={handleLoadMore} disabled={loading}
-                  className="rounded-md border border-gray-300 px-4 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
-                  {loading ? "Loading..." : "Load More"}
-                </button>
-              )}
+              {/* Pagination controls */}
+              <div className="flex items-center justify-between border-t border-gray-100 px-5 py-3">
+                <span className="text-xs text-gray-400">
+                  Showing {startIdx + 1}–{Math.min(startIdx + pageSize, totalLoaded)} of {totalLoaded}{nextCursor ? "+" : ""}
+                </span>
+                <div className="flex items-center gap-2">
+                  {/* Page navigation */}
+                  <button type="button" onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={currentPage <= 1}
+                    className="rounded border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-30">
+                    Prev
+                  </button>
+                  {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                    let page: number;
+                    if (totalPages <= 7) { page = i + 1; }
+                    else if (currentPage <= 4) { page = i + 1; }
+                    else if (currentPage >= totalPages - 3) { page = totalPages - 6 + i; }
+                    else { page = currentPage - 3 + i; }
+                    return (
+                      <button key={page} type="button" onClick={() => setCurrentPage(page)}
+                        className={`rounded px-2.5 py-1 text-xs font-medium ${page === currentPage ? "bg-emerald-600 text-white" : "border border-gray-300 text-gray-600 hover:bg-gray-50"}`}>
+                        {page}
+                      </button>
+                    );
+                  })}
+                  <button type="button" onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages}
+                    className="rounded border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-30">
+                    Next
+                  </button>
+                  {/* Load more from DB */}
+                  {canLoadMore && (
+                    <button type="button" onClick={handleLoadMore} disabled={loading}
+                      className="ml-2 rounded-md bg-emerald-600 px-4 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
+                      {loading ? "Loading..." : "Load 500 More"}
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Empty states */}
         {!loading && !error && candidates.length === 0 && hasActiveFilters && (
