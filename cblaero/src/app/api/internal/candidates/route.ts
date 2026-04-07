@@ -344,6 +344,8 @@ export const GET = withAuth(async ({ session, request, traceId }) => {
   const yearsOfExperience = sp.get("years_of_experience");
   const veteranStatus = sp.get("veteran_status");
   const hasApLicenseRaw = sp.get("has_ap_license");
+  const createdAfter = sp.get("created_after");
+  const createdBefore = sp.get("created_before");
   const sortBy = sp.get("sort_by");
   const sortDir = sp.get("sort_dir");
 
@@ -376,6 +378,19 @@ export const GET = withAuth(async ({ session, request, traceId }) => {
     );
   }
 
+  // Validate sort_dir
+  if (sortDir && sortDir !== "asc" && sortDir !== "desc") {
+    return NextResponse.json(
+      {
+        error: {
+          code: "invalid_sort",
+          message: "Invalid sort_dir value. Must be one of: asc, desc.",
+        },
+      },
+      { status: 400 },
+    );
+  }
+
   // Parse boolean filter
   const hasApLicense = hasApLicenseRaw === "true" ? true : hasApLicenseRaw === "false" ? false : undefined;
 
@@ -385,7 +400,7 @@ export const GET = withAuth(async ({ session, request, traceId }) => {
     email || phone || jobTitle || skills || currentCompany ||
     stateGeo || city || workAuthorization || employmentType ||
     source || shiftPreference || yearsOfExperience || veteranStatus ||
-    hasApLicense !== undefined
+    hasApLicense !== undefined || createdAfter || createdBefore
   );
   if (!hasFilter) {
     return NextResponse.json(
@@ -424,6 +439,8 @@ export const GET = withAuth(async ({ session, request, traceId }) => {
     yearsOfExperience: yearsOfExperience ?? undefined,
     veteranStatus: veteranStatus ?? undefined,
     hasApLicense,
+    createdAfter: createdAfter ?? undefined,
+    createdBefore: createdBefore ?? undefined,
     sortBy: (sortBy as import("@/features/candidate-management/contracts/candidate").SortByField) ?? undefined,
     sortDir: (sortDir === "asc" || sortDir === "desc") ? sortDir : undefined,
     cursor,

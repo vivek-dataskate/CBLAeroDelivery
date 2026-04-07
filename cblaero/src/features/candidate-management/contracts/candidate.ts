@@ -80,6 +80,9 @@ export type CandidateListParams = {
   yearsOfExperience?: string;
   veteranStatus?: string;
   hasApLicense?: boolean;
+  // Date range
+  createdAfter?: string;
+  createdBefore?: string;
   // Sorting
   sortBy?: SortByField;
   sortDir?: SortDir;
