@@ -1122,9 +1122,21 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 ### Database Operations (RPCs & Repositories)
 | Capability | Location | When to Use |
 |-----------|----------|-------------|
+| `search_candidates` RPC | `supabase/schema.sql` | Filtered, paginated candidate search with trigram indexes. Called by `listCandidates()`. |
+| `get_candidate_detail` RPC | `supabase/schema.sql` | Single candidate with all columns. Called by `getCandidateById()`. |
+| `upsert_candidate` RPC | `supabase/schema.sql` | Atomic candidate upsert with email dedup. Called by `upsertCandidateByEmail()` and `insertCandidateNoEmail()`. |
+| `upsert_candidate_batch` RPC | `supabase/schema.sql` | Batch candidate upsert (max 500). Called by `batchUpsertCandidatesByEmail()` and `batchInsertCandidatesNoEmail()`. |
 | `process_import_chunk` RPC | `supabase/schema.sql` | Batch candidate upsert with per-row error tracking. Handles `resume_url` for PDF uploads. Used by CSV upload, resume upload, OneDrive poller. |
-| `listCandidates(tenantId, params)` | `src/features/candidate-management/infrastructure/candidate-repository.ts` | Filtered, paginated candidate list with cursor-based pagination. Supports 15+ filters. |
-| `getCandidateById(tenantId, candidateId)` | `src/features/candidate-management/infrastructure/candidate-repository.ts` | Single candidate detail with all columns. |
+| `rollback_import_batch` RPC | `supabase/schema.sql` | Delete all candidates from a batch. Called by `deleteImportBatchCandidates()`. |
+| `check_and_record_fingerprint` RPC | `supabase/schema.sql` | Atomic check+upsert fingerprint with dedup. Called by `recordFingerprint()`. |
+| `upsert_fingerprint_batch` RPC | `supabase/schema.sql` | Batch fingerprint upsert with ON CONFLICT dedup (max 500). Called by `recordFingerprintBatch()`. |
+| `load_recent_fingerprints` RPC | `supabase/schema.sql` | Batch pre-load fingerprint hashes into Set. Called by `loadRecentFingerprints()`. |
+| `find_candidate_ids_by_emails` RPC | `supabase/schema.sql` | Batch email→candidateId lookup. Called by `findCandidateIdsByEmails()`. |
+| `count_candidates_by_source` RPC | `supabase/schema.sql` | Count candidates by source. Called by `countCandidatesBySource()`. |
+| `get_last_candidate_update_by_source` RPC | `supabase/schema.sql` | Latest updated_at for a source. Called by `getLastCandidateUpdateBySource()`. |
+| `cleanup_audit_logs` RPC | `supabase/schema.sql` | Purge audit records older than retention period. |
+| `listCandidates(tenantId, params)` | `src/features/candidate-management/infrastructure/candidate-repository.ts` | Filtered, paginated candidate list with cursor-based pagination. Supports 15+ filters. Uses `search_candidates` RPC. |
+| `getCandidateById(tenantId, candidateId)` | `src/features/candidate-management/infrastructure/candidate-repository.ts` | Single candidate detail with all columns. Uses `get_candidate_detail` RPC. |
 | `upsertCandidateByEmail(candidateRow)` | `src/features/candidate-management/infrastructure/candidate-repository.ts` | Single-roundtrip candidate upsert by email conflict. Returns candidate ID. All ingestion paths must use this. |
 | `insertCandidateNoEmail(candidateRow)` | `src/features/candidate-management/infrastructure/candidate-repository.ts` | Insert candidate without email (no dedup). Returns candidate ID. |
 | `batchUpsertCandidatesByEmail(rows)` | `src/features/candidate-management/infrastructure/candidate-repository.ts` | Batch upsert with email conflict key. Used by ATS/Ceipal bulk ingestion. |
