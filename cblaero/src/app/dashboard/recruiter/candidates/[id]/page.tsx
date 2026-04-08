@@ -112,9 +112,9 @@ export default function CandidateDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+      <div className="flex min-h-screen items-center justify-center bg-white">
         <div className="text-center">
-          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
+          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-cbl-navy border-t-transparent" />
           <p className="mt-3 text-sm text-gray-500">Loading candidate...</p>
         </div>
       </div>
@@ -123,9 +123,9 @@ export default function CandidateDetailPage() {
 
   if (error || !candidate) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-gray-50">
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-white">
         <p className="text-red-600">{error ?? "Candidate not found."}</p>
-        <Link href="/dashboard/recruiter/candidates" className="text-sm text-emerald-600 hover:text-emerald-700">
+        <Link href="/dashboard/recruiter/candidates" className="text-base font-medium text-cbl-navy hover:text-cbl-blue">
           &larr; Back to Search
         </Link>
       </div>
@@ -164,41 +164,44 @@ export default function CandidateDetailPage() {
   const bestPhone = candidate.phone || candidate.homePhone || candidate.workPhone;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="flex min-h-screen flex-col bg-white">
       {/* Sticky header */}
-      <div className="sticky top-0 z-10 border-b border-gray-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-3">
-          <Link href="/dashboard/recruiter/candidates" className="flex items-center gap-1 text-sm font-medium text-emerald-600 hover:text-emerald-700">
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
-            Back to Search
-          </Link>
-          <span className="hidden text-xs text-gray-400 sm:block">ID: {candidate.id.slice(0, 8)}...</span>
+      <header className="sticky top-0 z-10 bg-cbl-navy shadow-md">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+          <nav className="flex items-center gap-2 text-base font-medium">
+            <Link href="/dashboard" className="text-cbl-light hover:text-white">Dashboard</Link>
+            <span className="text-cbl-light/40">/</span>
+            <Link href="/dashboard/recruiter/candidates" className="text-cbl-light hover:text-white">Candidates</Link>
+            <span className="text-cbl-light/40">/</span>
+            <span className="text-white">{fullName}</span>
+          </nav>
+          <span className="hidden text-sm text-cbl-light/60 sm:block">ID: {candidate.id.slice(0, 8)}...</span>
         </div>
-      </div>
+      </header>
 
       {/* Content */}
-      <div className="mx-auto max-w-4xl px-4 py-6">
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-6">
+        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
 
           {/* Hero header */}
-          <div className="bg-gradient-to-r from-slate-800 to-slate-700 px-6 py-6 text-white">
+          <div className="border-b border-gray-200 bg-gray-50 px-6 py-6">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <h1 className="truncate text-2xl font-bold">{fullName}</h1>
-                {candidate.jobTitle && <p className="mt-1 text-sm text-slate-300">{candidate.jobTitle}</p>}
-                {candidate.currentCompany && <p className="text-sm text-slate-400">at {candidate.currentCompany}</p>}
-                {location && <p className="mt-1 text-xs text-slate-400">{location}</p>}
+                <h1 className="truncate text-2xl font-bold text-gray-900">{fullName}</h1>
+                {candidate.jobTitle && <p className="mt-1 text-sm text-gray-600">{candidate.jobTitle}</p>}
+                {candidate.currentCompany && <p className="text-sm text-gray-500">at {candidate.currentCompany}</p>}
+                {location && <p className="mt-1 text-sm text-gray-400">{location}</p>}
               </div>
               <div className="flex shrink-0 flex-col items-end gap-2 text-right">
                 <div>
-                  <p className="text-[9px] uppercase tracking-wider text-slate-400">Availability</p>
-                  <span className={`mt-0.5 inline-block rounded-full border px-3 py-1 text-xs font-semibold ${AVAILABILITY_BADGE[candidate.availabilityStatus] ?? "bg-gray-100 text-gray-600 border-gray-200"}`}>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Availability</p>
+                  <span className={`mt-1 inline-block rounded-full border px-3 py-1 text-xs font-semibold ${AVAILABILITY_BADGE[candidate.availabilityStatus] ?? "bg-gray-100 text-gray-600 border-gray-200"}`}>
                     {candidate.availabilityStatus}
                   </span>
                 </div>
                 <div>
-                  <p className="text-[9px] uppercase tracking-wider text-slate-400">Source</p>
-                  <span className="mt-0.5 inline-block text-xs text-slate-300">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Source</p>
+                  <span className="mt-1 inline-block text-sm text-gray-600">
                     {candidate.source?.replace(/_/g, " ") ?? "unknown"}
                   </span>
                 </div>
@@ -206,23 +209,23 @@ export default function CandidateDetailPage() {
             </div>
           </div>
 
-          {/* Quick actions bar — resume + key contact */}
-          <div className="flex flex-wrap items-center gap-4 border-b border-gray-100 bg-gray-50 px-6 py-3">
+          {/* Quick actions bar */}
+          <div className="flex flex-wrap items-center gap-4 border-b border-gray-200 bg-white px-6 py-4">
             {candidate.email && (
-              <a href={`mailto:${candidate.email}`} className="flex items-center gap-1.5 text-sm font-medium text-emerald-600 hover:text-emerald-700">
+              <a href={`mailto:${candidate.email}`} className="flex items-center gap-1.5 text-sm font-medium text-cbl-navy hover:text-cbl-blue">
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" /></svg>
                 {candidate.email}
               </a>
             )}
             {bestPhone && (
-              <a href={`tel:${bestPhone}`} className="flex items-center gap-1.5 text-sm font-medium text-emerald-600 hover:text-emerald-700">
+              <a href={`tel:${bestPhone}`} className="flex items-center gap-1.5 text-sm font-medium text-cbl-navy hover:text-cbl-blue">
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z" /></svg>
                 {bestPhone}
               </a>
             )}
             {resumeUrlStr && (
               <a href={resumeUrlStr} target="_blank" rel="noopener noreferrer"
-                className="flex items-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-100">
+                className="flex items-center gap-1.5 rounded-lg border border-cbl-blue/40 bg-cbl-blue/10 px-3 py-1.5 text-sm font-medium text-cbl-blue hover:bg-cbl-blue/20">
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
                 View Resume
               </a>
@@ -270,7 +273,7 @@ export default function CandidateDetailPage() {
               <Section title="Skills">
                 <div className="flex flex-wrap gap-2">
                   {skillsList.map((s, i) => (
-                    <span key={i} className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">{s}</span>
+                    <span key={i} className="rounded-full border border-cbl-blue/30 bg-cbl-blue/10 px-2.5 py-1 text-xs font-medium text-cbl-blue">{s}</span>
                   ))}
                 </div>
               </Section>
@@ -281,7 +284,7 @@ export default function CandidateDetailPage() {
               <Section title="Certifications">
                 <div className="flex flex-wrap gap-2">
                   {certsList.map((c, i) => (
-                    <span key={i} className="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">{c}</span>
+                    <span key={i} className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">{c}</span>
                   ))}
                 </div>
               </Section>
@@ -292,7 +295,7 @@ export default function CandidateDetailPage() {
               <Section title="Aircraft Experience">
                 <div className="flex flex-wrap gap-2">
                   {aircraftList.map((a, i) => (
-                    <span key={i} className="rounded-md border border-orange-200 bg-orange-50 px-2.5 py-1 text-xs font-medium text-orange-700">{a}</span>
+                    <span key={i} className="rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-xs font-medium text-orange-700">{a}</span>
                   ))}
                 </div>
               </Section>
@@ -348,7 +351,14 @@ export default function CandidateDetailPage() {
             )}
           </div>
         </div>
-      </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="bg-cbl-dark">
+        <div className="mx-auto max-w-6xl px-6 py-4">
+          <p className="text-sm text-cbl-light/60">CBL Aero &middot; Enterprise Portal</p>
+        </div>
+      </footer>
     </div>
   );
 }

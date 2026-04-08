@@ -229,9 +229,9 @@ export default function CsvUploadWizard() {
 
   return (
     <div className="space-y-3">
-      <section className="rounded-lg border border-slate-200 bg-white p-4">
-        <p className="text-[10px] uppercase tracking-[0.15em] text-slate-400">Step 1 - File Select</p>
-        <div className="mt-2 rounded-lg border border-dashed border-slate-300 p-3">
+      <section className="rounded-xl border border-gray-200 bg-white p-5">
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Step 1 - File Select</p>
+        <div className="mt-2 rounded-lg border border-dashed border-gray-300 p-4">
           <input
             type="file"
             accept=".csv,text/csv"
@@ -239,14 +239,14 @@ export default function CsvUploadWizard() {
               const selected = event.target.files?.[0] ?? null;
               void onFileSelected(selected);
             }}
-            className="text-xs text-slate-600"
+            className="text-xs text-gray-600"
           />
-          <p className="mt-1.5 text-[11px] text-slate-400">
+          <p className="mt-1.5 text-sm text-gray-400">
             Max {MAX_ROWS.toLocaleString()} rows per upload.
           </p>
-          {file ? <p className="mt-1.5 text-[11px] text-slate-500">Selected: {file.name}</p> : null}
+          {file ? <p className="mt-1.5 text-sm text-gray-500">Selected: {file.name}</p> : null}
           {softLimitWarning ? (
-            <p className="mt-1.5 text-[11px] text-amber-600">
+            <p className="mt-1.5 text-sm text-amber-600">
               This file appears to exceed {MAX_ROWS.toLocaleString()} rows and will be rejected on upload.
             </p>
           ) : null}
@@ -254,22 +254,22 @@ export default function CsvUploadWizard() {
       </section>
 
       {step >= 2 ? (
-        <section className="rounded-lg border border-slate-200 bg-white p-4">
-          <p className="text-[10px] uppercase tracking-[0.15em] text-slate-400">Step 2 - Column Mapping</p>
-          <p className="mt-1.5 text-[11px] text-slate-400">
+        <section className="rounded-xl border border-gray-200 bg-white p-5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Step 2 - Column Mapping</p>
+          <p className="mt-1.5 text-sm text-gray-400">
             Columns mapped as <b>Additional Attribute</b> are stored under candidate extra_attributes.
           </p>
           <div className="mt-3 grid gap-2 md:grid-cols-2 lg:grid-cols-3">
             {parsed.headers.map((header) => (
-              <label key={header} className="flex items-center justify-between gap-2 text-[11px]">
-                <span className="truncate text-slate-600">{header}</span>
+              <label key={header} className="flex items-center justify-between gap-2 text-sm">
+                <span className="truncate text-gray-600">{header}</span>
                 <select
                   value={mapping[header] ?? "(ignore)"}
                   onChange={(event) => {
                     const value = event.target.value as CanonicalField;
                     setMapping((current) => ({ ...current, [header]: value }));
                   }}
-                  className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] text-slate-700"
+                  className="rounded-lg border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-sm text-gray-700"
                 >
                   {FIELD_OPTIONS.map((option) => (
                     <option key={option} value={option}>
@@ -282,15 +282,15 @@ export default function CsvUploadWizard() {
           </div>
 
           {!requiredMappingsSatisfied(mapping) ? (
-            <p className="mt-2 text-[11px] text-amber-600">
+            <p className="mt-2 text-sm text-amber-600">
               Required: First Name, Last Name, and at least one of Email or Mobile.
             </p>
           ) : null}
 
           <div className="mt-3 overflow-x-auto">
-            <table className="min-w-full text-[11px] text-slate-500">
+            <table className="min-w-full text-sm text-gray-500">
               <thead>
-                <tr className="text-left text-slate-400 border-b border-slate-100">
+                <tr className="text-left text-gray-400 border-b border-gray-100">
                   {parsed.headers.map((header) => (
                     <th key={header} className="pr-3 pb-1 font-medium">
                       {header}
@@ -302,7 +302,7 @@ export default function CsvUploadWizard() {
                 {previewRows.map((row, index) => (
                   <tr key={`${index}-${row[parsed.headers[0]] ?? "row"}`}>
                     {parsed.headers.map((header) => (
-                      <td key={`${index}-${header}`} className="pr-3 py-0.5 align-top text-slate-600">
+                      <td key={`${index}-${header}`} className="pr-3 py-0.5 align-top text-gray-600">
                         {row[header] ?? ""}
                       </td>
                     ))}
@@ -316,7 +316,7 @@ export default function CsvUploadWizard() {
             type="button"
             onClick={() => setStep(3)}
             disabled={!requiredMappingsSatisfied(mapping)}
-            className="mt-3 rounded-md border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+            className="mt-3 rounded-lg border border-gray-300 bg-gray-50 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Next: Validation Preview
           </button>
@@ -324,24 +324,24 @@ export default function CsvUploadWizard() {
       ) : null}
 
       {step >= 3 ? (
-        <section className="rounded-lg border border-slate-200 bg-white p-4">
-          <p className="text-[10px] uppercase tracking-[0.15em] text-slate-400">Step 3 - Validation Preview</p>
-          <div className="mt-2 grid gap-1.5 text-xs text-slate-600 md:grid-cols-2">
+        <section className="rounded-xl border border-gray-200 bg-white p-5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Step 3 - Validation Preview</p>
+          <div className="mt-2 grid gap-1.5 text-xs text-gray-600 md:grid-cols-2">
             <p>
-              Total rows: <span className="font-medium text-slate-800">{validationSummary.totalRows.toLocaleString()}</span>
+              Total rows: <span className="font-medium text-gray-800">{validationSummary.totalRows.toLocaleString()}</span>
             </p>
             <p>
-              Valid rows: <span className="font-medium text-emerald-600">{validationSummary.validRows.toLocaleString()}</span>
+              Valid rows: <span className="font-medium text-cbl-navy">{validationSummary.validRows.toLocaleString()}</span>
             </p>
             <p>
               Invalid rows: <span className="font-medium text-amber-600">{validationSummary.invalidRows.toLocaleString()}</span>
             </p>
             <p>
-              Duplicates detected: <span className="font-medium text-slate-800">{validationSummary.duplicateDetectedCount.toLocaleString()}</span>
+              Duplicates detected: <span className="font-medium text-gray-800">{validationSummary.duplicateDetectedCount.toLocaleString()}</span>
             </p>
           </div>
 
-          <div className="mt-2 text-[11px] text-slate-400">
+          <div className="mt-2 text-sm text-gray-400">
             <p>missing_identity: {validationSummary.byErrorCode.missing_identity}</p>
             <p>invalid_format: {validationSummary.byErrorCode.invalid_format}</p>
             <p>row_limit_exceeded: {validationSummary.byErrorCode.row_limit_exceeded}</p>
@@ -355,7 +355,7 @@ export default function CsvUploadWizard() {
             onClick={() => {
               void onUpload();
             }}
-            className="mt-3 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-3 rounded-lg border border-cbl-blue/40 bg-cbl-blue/10 px-3 py-1.5 text-xs text-cbl-blue hover:bg-cbl-blue/20 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {uploading ? "Uploading..." : "Upload CSV"}
           </button>

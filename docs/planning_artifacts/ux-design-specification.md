@@ -131,6 +131,21 @@ Sarah opts in → system immediately connects Mike via live call within 2 minute
 **6. Mutual Match Reveal**
 Both Mike and Sarah confirm interest before contact info is shared. Mike sees: "Sarah is evaluating 2 other opportunities — here's why you're her best option." Sarah sees Mike's reputation. Match only happens on mutual confirmation.
 
+### Dashboard Visual Design System
+
+All dashboard pages (`/dashboard/**`) follow a unified design system documented in [`cblaero/docs/dashboard-ui-standards.md`](../../cblaero/docs/dashboard-ui-standards.md). Key design decisions:
+
+- **White backgrounds** across all dashboard screens for a clean, professional appearance
+- **Sticky headers** with breadcrumb navigation at 16px (`text-base`) for clear wayfinding
+- **Consistent footer** ("CBL Aero · Enterprise Portal") on every page
+- **Emerald accent** (`emerald-600`) as the primary interactive color; `gray-*` for all neutrals
+- **Minimum 12px** (`text-xs`) font size — no text smaller than this for accessibility and readability
+- **`max-w-6xl` container** — wide enough for data-dense tables, narrow enough for comfortable reading
+- **`rounded-xl` cards**, `rounded-lg` buttons, `rounded-full` badges for consistent visual rhythm
+- **No dark mode** — single light theme for this enterprise internal tool
+
+This design system is enforced via development-standards.md §27 and validated during code reviews for any `src/app/dashboard/` changes.
+
 ### Critical Assumptions Requiring Tier 1 Validation
 
 | #   | Assumption                                   | Risk                                                       | Validation                                           |

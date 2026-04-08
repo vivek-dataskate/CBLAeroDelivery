@@ -1223,7 +1223,18 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 | `MigrationStatusCard` | `src/app/dashboard/admin/MigrationStatusCard.tsx` | Display import batch status. Accepts `tenantId`, `actorId`. |
 | `BatchProgressCard` | `src/app/dashboard/recruiter/upload/BatchProgressCard.tsx` | Real-time batch progress with polling. Accepts `batchId`. |
 | `AiCostDashboard` | `src/app/dashboard/admin/AiCostDashboard.tsx` | AI cost dashboard with daily spend chart, budget alert, prompt version comparison. Client component, self-fetching. |
-| `DedupReviewDashboard` | `src/app/dashboard/admin/dedup/page.tsx` | Dedup review queue with stats, side-by-side comparison, merge/reject actions, bulk operations. Shows merged record after approval. Light theme. |
+| `DedupReviewDashboard` | `src/app/dashboard/admin/dedup/page.tsx` | Dedup review queue with stats, side-by-side comparison, merge/reject actions, bulk operations. Shows merged record after approval. |
+
+### Dashboard UI Standards
+
+All dashboard pages follow a unified design system documented in [`cblaero/docs/dashboard-ui-standards.md`](../../cblaero/docs/dashboard-ui-standards.md). Key constraints:
+
+- White background, sticky header with `text-base` breadcrumbs, consistent footer on every page
+- `max-w-6xl` container, `rounded-xl` cards, `rounded-lg` buttons
+- `gray-*` neutrals only (no `slate-*`), `emerald-*` accent (no `cyan-*`)
+- Minimum font size `text-xs` (12px) — no arbitrary pixel values like `text-[10px]`
+- Dev agents creating or modifying dashboard pages MUST read the full standards doc first
+- Code review validates UI standards compliance for any `src/app/dashboard/` changes (see development-standards.md §27)
 
 ## Architecture Resilience Decisions
 

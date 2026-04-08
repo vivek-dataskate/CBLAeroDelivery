@@ -45,3 +45,7 @@ input_file_patterns:
     sharded_index: "{planning_artifacts}/*epic*/index.md"
     sharded_single: "{planning_artifacts}/*epic*/epic-{{epic_num}}.md"
     load_strategy: "SELECTIVE_LOAD"
+  dashboard_ui_standards:
+    description: "Dashboard UI design standards — load when reviewing src/app/dashboard/ changes"
+    whole: "**/dashboard-ui-standards.md"
+    load_strategy: "SELECTIVE_LOAD"

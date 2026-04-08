@@ -254,10 +254,10 @@ export default function ResumeUploadWizard() {
   return (
     <div className="space-y-6">
       {/* Step 1: File Select */}
-      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        <p className="text-xs uppercase tracking-[0.15em] text-slate-400">Step 1 - Select Resumes</p>
+      <section className="rounded-xl border border-gray-200 bg-white p-5">
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Step 1 - Select Resumes</p>
 
-        <div className="mt-3 rounded-lg border border-dashed border-slate-300 p-5">
+        <div className="mt-3 rounded-xl border border-dashed border-gray-300 p-5">
           <input
             ref={fileInputRef}
             type="file"
@@ -268,27 +268,27 @@ export default function ResumeUploadWizard() {
               // Reset input so the same files can be re-selected if needed
               if (e.target) e.target.value = "";
             }}
-            className="text-sm text-slate-700"
+            className="text-sm text-gray-700"
           />
-          <p className="mt-2 text-xs text-slate-400">
+          <p className="mt-2 text-xs text-gray-400">
             PDF files only. Select files from multiple folders — each selection adds to the list.
           </p>
-          <p className="mt-1 text-xs text-slate-400">
+          <p className="mt-1 text-xs text-gray-400">
             Have Word, RTF, or other formats? Convert to PDF first. For paper resumes, take a photo or scan and save as PDF — our system can read scanned images too.
           </p>
         </div>
 
         {files.length > 0 && (
           <div className="mt-3">
-            <p className="text-sm text-slate-600">{files.length} resume{files.length !== 1 ? "s" : ""} selected</p>
+            <p className="text-sm text-gray-600">{files.length} resume{files.length !== 1 ? "s" : ""} selected</p>
             <div className="mt-1 max-h-40 overflow-y-auto space-y-0.5">
               {files.map((f) => (
-                <div key={f.name} className="flex items-center justify-between text-xs text-slate-500">
+                <div key={f.name} className="flex items-center justify-between text-xs text-gray-500">
                   <span className="truncate">{f.name}</span>
                   <button
                     type="button"
                     onClick={() => removeFile(f.name)}
-                    className="ml-2 shrink-0 text-slate-300 hover:text-rose-500"
+                    className="ml-2 shrink-0 text-gray-300 hover:text-rose-500"
                     title="Remove"
                   >
                     x
@@ -305,7 +305,7 @@ export default function ResumeUploadWizard() {
           type="button"
           disabled={files.length === 0 || uploading}
           onClick={() => void onUpload()}
-          className="mt-4 rounded-lg border border-emerald-600 bg-emerald-50 px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+          className="mt-4 rounded-lg border border-cbl-navy bg-cbl-blue/10 px-4 py-2 text-sm text-cbl-blue hover:bg-cbl-blue/20 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {uploading ? "Uploading & Extracting..." : "Upload & Extract"}
         </button>
@@ -313,17 +313,17 @@ export default function ResumeUploadWizard() {
 
       {/* Step 2: Extraction Progress */}
       {step >= 2 && results.length > 0 && (
-        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-xs uppercase tracking-[0.15em] text-slate-400">Step 2 - Extraction Results</p>
-          <div className="mt-3 grid gap-2 text-sm text-slate-600 md:grid-cols-3">
-            <p>Total: <span className="font-medium text-slate-800">{results.length}</span></p>
-            <p>Complete: <span className="font-medium text-emerald-600">{completeCount}</span></p>
+        <section className="rounded-xl border border-gray-200 bg-white p-5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Step 2 - Extraction Results</p>
+          <div className="mt-3 grid gap-2 text-sm text-gray-600 md:grid-cols-3">
+            <p>Total: <span className="font-medium text-gray-800">{results.length}</span></p>
+            <p>Complete: <span className="font-medium text-cbl-navy">{completeCount}</span></p>
             <p>Failed: <span className="font-medium text-rose-600">{failedCount}</span></p>
           </div>
 
           {failedCount > 0 && (
             <div className="mt-3 space-y-1">
-              <p className="text-xs uppercase text-slate-400">Failed Files:</p>
+              <p className="text-xs uppercase text-gray-400">Failed Files:</p>
               {results.filter((r) => r.status === "failed").map((r) => (
                 <div key={r.filename} className="rounded-lg border border-rose-200 bg-rose-50 p-2 text-xs">
                   <span className="font-medium text-rose-700">{r.filename}</span>
@@ -337,9 +337,9 @@ export default function ResumeUploadWizard() {
 
       {/* Step 3: Review & Confirm */}
       {step >= 3 && !summary && cards.length > 0 && (
-        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-xs uppercase tracking-[0.15em] text-slate-400">Step 3 - Review & Confirm</p>
-          <p className="mt-2 text-xs text-slate-400">
+        <section className="rounded-xl border border-gray-200 bg-white p-5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Step 3 - Review & Confirm</p>
+          <p className="mt-2 text-xs text-gray-400">
             Review extracted candidates. Edit fields if needed, then accept or reject each.
           </p>
 
@@ -351,20 +351,20 @@ export default function ResumeUploadWizard() {
                   card.rejected
                     ? "border-rose-200 bg-rose-50 opacity-60"
                     : card.accepted
-                    ? "border-emerald-200 bg-emerald-50"
-                    : "border-slate-200 bg-slate-50"
+                    ? "border-cbl-blue/30 bg-cbl-blue/10"
+                    : "border-gray-200 bg-gray-50"
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-slate-700">{card.filename}</p>
+                  <p className="text-sm font-medium text-gray-700">{card.filename}</p>
                   <div className="flex gap-2">
                     <button
                       type="button"
                       onClick={() => toggleCard(index, "accept")}
                       className={`rounded px-3 py-1 text-xs ${
                         card.accepted
-                          ? "bg-emerald-100 text-emerald-700 border border-emerald-300"
-                          : "text-slate-400 hover:text-emerald-600"
+                          ? "bg-cbl-blue/20 text-cbl-blue border border-cbl-blue/40"
+                          : "text-gray-400 hover:text-cbl-navy"
                       }`}
                     >
                       Accept
@@ -375,7 +375,7 @@ export default function ResumeUploadWizard() {
                       className={`rounded px-3 py-1 text-xs ${
                         card.rejected
                           ? "bg-rose-100 text-rose-700 border border-rose-300"
-                          : "text-slate-400 hover:text-rose-600"
+                          : "text-gray-400 hover:text-rose-600"
                       }`}
                     >
                       Reject
@@ -396,12 +396,12 @@ export default function ResumeUploadWizard() {
                         : "";
                       return (
                         <label key={key} className="text-xs">
-                          <span className="text-slate-400">{label}</span>
+                          <span className="text-gray-400">{label}</span>
                           <input
                             type="text"
                             defaultValue={value}
                             onChange={(e) => editCardField(index, key, e.target.value)}
-                            className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
+                            className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700"
                           />
                         </label>
                       );
@@ -424,7 +424,7 @@ export default function ResumeUploadWizard() {
             type="button"
             disabled={confirming || cards.filter((c) => c.accepted).length === 0}
             onClick={() => void onConfirm()}
-            className="mt-4 rounded-lg border border-emerald-600 bg-emerald-50 px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-4 rounded-lg border border-cbl-navy bg-cbl-blue/10 px-4 py-2 text-sm text-cbl-blue hover:bg-cbl-blue/20 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {confirming ? "Confirming..." : `Confirm ${cards.filter((c) => c.accepted).length} Candidates`}
           </button>
@@ -433,17 +433,17 @@ export default function ResumeUploadWizard() {
 
       {/* Summary */}
       {summary && (
-        <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
-          <p className="text-xs uppercase tracking-[0.15em] text-emerald-600">Upload Complete</p>
-          <div className="mt-3 grid gap-2 text-sm text-slate-600 md:grid-cols-3">
-            <p>Imported: <span className="font-medium text-emerald-600">{summary.imported}</span></p>
+        <section className="rounded-xl border border-cbl-blue/30 bg-cbl-blue/10 p-5">
+          <p className="text-xs uppercase tracking-[0.15em] text-cbl-navy">Upload Complete</p>
+          <div className="mt-3 grid gap-2 text-sm text-gray-600 md:grid-cols-3">
+            <p>Imported: <span className="font-medium text-cbl-navy">{summary.imported}</span></p>
             <p>Skipped: <span className="font-medium text-amber-600">{summary.skipped}</span></p>
             <p>Errors: <span className="font-medium text-rose-600">{summary.errors}</span></p>
           </div>
           <button
             type="button"
             onClick={onStartNew}
-            className="mt-4 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
+            className="mt-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
           >
             Upload More Resumes
           </button>

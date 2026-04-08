@@ -58,8 +58,8 @@ export default function AiCostDashboard() {
 
   useEffect(() => { fetchUsage(); }, [fetchUsage]);
 
-  if (loading) return <p className="text-[11px] text-gray-400">Loading usage data...</p>;
-  if (error) return <p className="text-[11px] text-red-500">{error}</p>;
+  if (loading) return <p className="text-sm text-gray-400">Loading usage data...</p>;
+  if (error) return <p className="text-sm text-red-500">{error}</p>;
   if (!data) return null;
 
   const dateGroups = new Map<string, { models: Map<string, number>; total: number }>();
@@ -74,7 +74,7 @@ export default function AiCostDashboard() {
   const maxDailyCost = Math.max(...[...dateGroups.values()].map((g) => g.total), 0.01);
   const allModels = [...new Set(data.daily.map((r) => r.model))];
   const modelColors: Record<string, string> = {};
-  const colorPalette = ["bg-blue-400", "bg-violet-400", "bg-amber-400", "bg-emerald-400", "bg-rose-400"];
+  const colorPalette = ["bg-blue-400", "bg-violet-400", "bg-amber-400", "bg-cbl-blue", "bg-rose-400"];
   allModels.forEach((m, i) => { modelColors[m] = colorPalette[i % colorPalette.length]; });
 
   const promptVersionMap = new Map<string, { version: string; callCount: number; estimatedCostUsd: number; inputTokens: number; outputTokens: number }>();
@@ -97,7 +97,7 @@ export default function AiCostDashboard() {
             <button
               key={d}
               onClick={() => setDays(d)}
-              className={`rounded-full border px-2 py-0.5 text-[10px] transition ${
+              className={`rounded-full border px-2 py-0.5 text-xs transition ${
                 days === d ? "border-blue-300 bg-blue-50 font-medium text-blue-700" : "border-gray-200 text-gray-500 hover:border-blue-200"
               }`}
             >
@@ -106,7 +106,7 @@ export default function AiCostDashboard() {
           ))}
         </div>
         {data.budget.exceeded && (
-          <span className="rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+          <span className="rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-xs font-medium text-amber-700">
             Over budget: ${data.budget.dailyCostUsd.toFixed(2)}/{data.budget.threshold.toFixed(2)}
           </span>
         )}
@@ -123,11 +123,11 @@ export default function AiCostDashboard() {
       {/* Daily bar chart */}
       {dateGroups.size > 0 && (
         <div>
-          <p className="mb-1.5 text-[10px] font-medium text-gray-400">Daily Cost by Model</p>
+          <p className="mb-1.5 text-xs font-medium text-gray-400">Daily Cost by Model</p>
           <div className="space-y-1">
             {[...dateGroups.entries()].map(([date, group]) => (
               <div key={date} className="flex items-center gap-2">
-                <span className="w-12 text-[10px] text-gray-400">{date.slice(5)}</span>
+                <span className="w-12 text-xs text-gray-400">{date.slice(5)}</span>
                 <div className="flex flex-1 gap-px">
                   {allModels.map((model) => {
                     const cost = group.models.get(model) ?? 0;
@@ -136,14 +136,14 @@ export default function AiCostDashboard() {
                     return <div key={model} className={`${modelColors[model]} h-3 rounded-sm`} style={{ width: `${widthPct}%` }} title={`${model}: $${cost.toFixed(4)}`} />;
                   })}
                 </div>
-                <span className="w-14 text-right text-[10px] text-gray-400">${group.total.toFixed(4)}</span>
+                <span className="w-14 text-right text-xs text-gray-400">${group.total.toFixed(4)}</span>
               </div>
             ))}
           </div>
           {allModels.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-2">
               {allModels.map((model) => (
-                <span key={model} className="flex items-center gap-1 text-[10px] text-gray-400">
+                <span key={model} className="flex items-center gap-1 text-xs text-gray-400">
                   <span className={`${modelColors[model]} inline-block h-2 w-2 rounded-sm`} />
                   {model.replace("claude-", "").replace("-20251001", "")}
                 </span>
@@ -156,8 +156,8 @@ export default function AiCostDashboard() {
       {/* Prompt version table */}
       {promptVersionMap.size > 0 && (
         <div>
-          <p className="mb-1.5 text-[10px] font-medium text-gray-400">Prompt Versions</p>
-          <table className="w-full text-left text-[10px] text-gray-600">
+          <p className="mb-1.5 text-xs font-medium text-gray-400">Prompt Versions</p>
+          <table className="w-full text-left text-xs text-gray-600">
             <thead>
               <tr className="border-b border-gray-100 text-gray-400">
                 <th className="pb-1 pr-3">Prompt</th>
@@ -172,7 +172,7 @@ export default function AiCostDashboard() {
                 return (
                   <tr key={key} className="border-b border-gray-50">
                     <td className="py-1 pr-3 font-mono">{promptName}</td>
-                    <td className="py-1 pr-3"><span className="rounded bg-gray-100 px-1 py-px text-blue-600">{entry.version}</span></td>
+                    <td className="py-1 pr-3"><span className="rounded-full bg-gray-100 px-1 py-px text-blue-600">{entry.version}</span></td>
                     <td className="py-1 pr-3 text-right">{entry.callCount}</td>
                     <td className="py-1 text-right">${entry.estimatedCostUsd.toFixed(4)}</td>
                   </tr>
@@ -188,8 +188,8 @@ export default function AiCostDashboard() {
 
 function MiniStat({ label, value, alert }: { label: string; value: string; alert?: boolean }) {
   return (
-    <div className={`rounded-md border p-2 ${alert ? "border-amber-200 bg-amber-50" : "border-gray-100 bg-gray-50"}`}>
-      <p className="text-[9px] uppercase tracking-wider text-gray-400">{label}</p>
+    <div className={`rounded-xl border p-2 ${alert ? "border-amber-200 bg-amber-50" : "border-gray-100 bg-gray-50"}`}>
+      <p className="text-xs uppercase tracking-wider text-gray-400">{label}</p>
       <p className={`text-sm font-semibold ${alert ? "text-amber-700" : "text-gray-800"}`}>{value}</p>
     </div>
   );
