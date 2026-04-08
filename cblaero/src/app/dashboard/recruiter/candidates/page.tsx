@@ -106,15 +106,24 @@ export default function CandidatesPage() {
         if (cursor) params.set("cursor", cursor);
         params.set("limit", "500");
 
-        const res = await fetch(`/api/internal/candidates?${params.toString()}`);
+        const url = `/api/internal/candidates?${params.toString()}`;
+        console.log("[CandidateSearch] Fetching:", url);
+        console.log("[CandidateSearch] Active filters:", JSON.stringify(activeFilters));
+
+        const res = await fetch(url);
+        console.log("[CandidateSearch] Response status:", res.status);
+
         const json = await res.json();
+        console.log("[CandidateSearch] Response body:", JSON.stringify(json).slice(0, 500));
 
         if (!res.ok) {
+          console.error("[CandidateSearch] API error:", json.error);
           setError(json.error?.message ?? "Search failed.");
           return;
         }
 
         const items = json.data as CandidateRow[];
+        console.log("[CandidateSearch] Got", items.length, "candidates, nextCursor:", json.meta?.nextCursor ? "yes" : "no");
         if (cursor) {
           setCandidates((prev) => [...prev, ...items]);
         } else {
@@ -123,7 +132,8 @@ export default function CandidatesPage() {
         }
         setNextCursor(json.meta?.nextCursor ?? null);
         setSortedBy(json.meta?.sortedBy ?? "");
-      } catch {
+      } catch (err) {
+        console.error("[CandidateSearch] Network/parse error:", err);
         setError("Network error. Please check your connection.");
       } finally {
         setLoading(false);
