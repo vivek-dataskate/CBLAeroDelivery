@@ -442,7 +442,7 @@ export const GET = withAuth(async ({ session, request, traceId }) => {
     createdAfter: createdAfter ?? undefined,
     createdBefore: createdBefore ?? undefined,
     sortBy: (sortBy as import("@/features/candidate-management/contracts/candidate").SortByField) ?? undefined,
-    sortDir: (sortDir === "asc" || sortDir === "desc") ? sortDir : undefined,
+    sortDir: (sortDir === "asc" || sortDir === "desc") ? sortDir as "asc" | "desc" : undefined,
     cursor,
     limit,
   };
