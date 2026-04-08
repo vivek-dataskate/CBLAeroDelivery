@@ -59,6 +59,7 @@ export type CandidateDetail = CandidateListItem & {
   callAvailability: string | null;
   interviewAvailability: string | null;
   veteranStatus: string | null;
+  resumeUrl: string | null;
 };
 
 export type CandidateListParams = {
