@@ -312,6 +312,7 @@ Enable candidates to securely self-serve profile, status, and document workflows
 - Story 2.3: M
 - Story 2.4: S
 - Story 2.4a: S
+- Story 2.4b: M
 - Story 2.5: M
 - Story 2.6: S
 - Story 2.7: M
@@ -393,7 +394,7 @@ This mapping is reference-only for decomposition visibility. Planning, ownership
 | X2      | Authorization and Admin Controls                          | Epic 1      | 1.3, 1.4       |
 | X3      | Security Hardening and Client Safety                      | Epic 1      | 1.5, 1.6, 1.7  |
 | X4      | Initial Migration Path                                    | Epic 2      | 2.1            |
-| X5      | CSV/Resume Ingestion and Indexing                         | Epic 2      | 2.2, 2.2a, 2.4, 2.4a |
+| X5      | CSV/Resume Ingestion and Indexing                         | Epic 2      | 2.2, 2.2a, 2.4, 2.4a, 2.4b |
 | X6      | External Sync and Deduplication                           | Epic 2      | 2.3, 2.5       |
 | X7      | Availability Lifecycle, Refresh, and Scheduler Foundation | Epic 2      | 2.6, 2.7       |
 | X8      | Outbound Messaging Foundations                            | Epic 3      | 3.1, 3.2       |
@@ -651,6 +652,19 @@ so that the application feels professional and I can navigate confidently across
 **When** the page renders
 **Then** the background is white, the header is sticky with `text-base` breadcrumb navigation, a consistent footer is present, all content uses `max-w-6xl` container, minimum font size is `text-xs` (12px), colors use `gray-*`/`emerald-*` palette, and cards use `rounded-xl` borders
 **And** the full design system is documented in `cblaero/docs/dashboard-ui-standards.md` and enforced via development-standards.md §27 and code-review workflow checks
+
+### Story 2.4b: Sync Run Summary and Error Management
+
+As an admin,
+I want batch-level sync run summaries on the dashboard with drill-down into individual errors per run,
+so that I can understand which ingestion runs failed and why.
+
+**Acceptance Criteria:**
+
+**Given** any ingestion job runs
+**When** the job completes
+**Then** a `sync_runs` row tracks source, status, counts, and timestamps; the admin dashboard shows current month's runs in a SyncRunSummaryCard; failed runs link to a detail page with errors grouped by type
+**And** run tracking never blocks ingestion (returns null on failure), both tables auto-prune after 30 days
 
 ### Story 2.5: Implement Deterministic Deduplication and Manual Review Queue
 
