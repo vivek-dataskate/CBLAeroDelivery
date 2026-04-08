@@ -107,7 +107,19 @@
       9. **§20 Capability Registry**: New reusable code is registered in architecture.md and dev-standards.md §18.
       10. **§17 Correlation IDs**: New request paths propagate trace ID through logs and audit events.
       11. **§26 AI Incident Response**: LLM failures degrade gracefully (skip + log), never persist corrupted data.
-      12. **§27 Audit Immutability**: Audit tables are append-only. No UPDATE/DELETE on audit rows in production code.
+      12. **§28 Audit Immutability**: Audit tables are append-only. No UPDATE/DELETE on audit rows in production code.
+    </action>
+
+    <!-- Dashboard UI Standards Compliance (§27) -->
+    <action if="changes touch src/app/dashboard/">Validate against development-standards.md §27 and cblaero/docs/dashboard-ui-standards.md:
+      1. **Background**: Page uses `bg-white`, not `bg-gray-50` or `bg-slate-*` at page level
+      2. **Layout**: `flex min-h-screen flex-col bg-white` with sticky header, flex-1 content, footer
+      3. **Breadcrumbs**: `text-base font-medium` (16px) with emerald links and `/` separators
+      4. **Footer**: Present with "CBL Aero · Enterprise Portal"
+      5. **Container**: `max-w-6xl mx-auto px-6` — not max-w-4xl/5xl/7xl
+      6. **Typography**: No `text-[Npx]` arbitrary values. Minimum font `text-xs` (12px)
+      7. **Colors**: `gray-*` neutrals (no `slate-*`), `emerald-*` accent (no `cyan-*`)
+      8. **Cards**: `rounded-xl` cards, `rounded-lg` buttons, `rounded-full` badges
     </action>
 
     <!-- Reusability Check -->

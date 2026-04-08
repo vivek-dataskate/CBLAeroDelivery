@@ -75,50 +75,56 @@ export default async function DashboardPage({
   const effectiveRole = await resolveEffectiveRole(session.actorId, session.role);
 
   return (
-    <div className="min-h-screen bg-slate-950 px-6 py-10 text-slate-100 md:px-10">
-      <main className="mx-auto w-full max-w-5xl rounded-3xl border border-emerald-300/20 bg-slate-900/60 p-8 md:p-12">
-        <header className="flex flex-wrap items-center justify-between gap-3">
+    <div className="flex min-h-screen flex-col bg-white">
+      {/* Header */}
+      <header className="sticky top-0 z-10 bg-cbl-navy shadow-md">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-emerald-200">CBL AERO</p>
-            <h1 className="mt-2 text-3xl font-semibold text-white">Operations Dashboard</h1>
+            <p className="text-xs font-semibold uppercase tracking-widest text-cbl-light/70">CBL Aero</p>
+            <h1 className="mt-1 text-xl font-bold text-white">Operations Dashboard</h1>
           </div>
           <form action="/api/auth/logout" method="post">
             <button
               type="submit"
-              className="rounded-xl border border-emerald-200/45 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:border-emerald-100 hover:bg-emerald-500/10"
+              className="rounded-lg border border-white/30 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/10"
             >
               Sign Out
             </button>
           </form>
-        </header>
+        </div>
+      </header>
 
-        <section className="mt-8 grid gap-4 md:grid-cols-3">
-          <article className="rounded-2xl border border-white/10 bg-slate-950/65 p-5">
-            <p className="text-xs uppercase tracking-[0.15em] text-slate-400">Email</p>
-            <p className="mt-2 text-sm text-white">{session.email}</p>
+      {/* Content */}
+      <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-6">
+        {/* Info cards */}
+        <section className="grid gap-4 sm:grid-cols-3">
+          <article className="rounded-xl border border-gray-200 bg-gray-50 p-5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Email</p>
+            <p className="mt-2 text-sm font-medium text-gray-900">{session.email}</p>
           </article>
-          <article className="rounded-2xl border border-white/10 bg-slate-950/65 p-5">
-            <p className="text-xs uppercase tracking-[0.15em] text-slate-400">Role</p>
-            <p className="mt-2 text-sm text-white">{effectiveRole}</p>
+          <article className="rounded-xl border border-gray-200 bg-gray-50 p-5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Role</p>
+            <p className="mt-2 text-sm font-medium text-gray-900">{effectiveRole}</p>
           </article>
-          <article className="rounded-2xl border border-white/10 bg-slate-950/65 p-5">
-            <p className="text-xs uppercase tracking-[0.15em] text-slate-400">Active Client</p>
-            <p className="mt-2 text-sm text-white">{activeClientId}</p>
+          <article className="rounded-xl border border-gray-200 bg-gray-50 p-5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Active Client</p>
+            <p className="mt-2 text-sm font-medium text-gray-900">{activeClientId}</p>
           </article>
         </section>
 
+        {/* Client switcher */}
         {allowedClientIds.length > 1 ? (
-          <div className="mt-5 rounded-2xl border border-white/10 bg-slate-950/65 p-4">
-            <p className="text-xs uppercase tracking-[0.12em] text-slate-400">Switch Active Client</p>
-            <div className="mt-3 flex flex-wrap gap-2 text-xs">
+          <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Switch Active Client</p>
+            <div className="mt-3 flex flex-wrap gap-2">
               {allowedClientIds.map((clientId) => (
                 <Link
                   key={clientId}
                   href={`/dashboard?activeClientId=${encodeURIComponent(clientId)}`}
-                  className={`rounded-full border px-3 py-1 transition ${
+                  className={`rounded-full border px-3 py-1 text-sm transition ${
                     clientId === activeClientId
-                      ? "border-emerald-200/70 bg-emerald-500/20 text-emerald-100"
-                      : "border-white/20 text-slate-200 hover:border-emerald-200/50 hover:text-emerald-100"
+                      ? "border-cbl-blue bg-cbl-blue/10 font-medium text-cbl-blue"
+                      : "border-gray-300 text-gray-600 hover:border-cbl-blue hover:text-cbl-blue"
                   }`}
                 >
                   {clientId}
@@ -128,14 +134,17 @@ export default async function DashboardPage({
           </div>
         ) : null}
 
-        <div className="mt-8 rounded-2xl border border-emerald-300/20 bg-emerald-400/10 p-5 text-sm text-emerald-50">
+        {/* Status banner */}
+        <div className="mt-6 rounded-xl border border-cbl-blue/30 bg-cbl-blue/10 p-5 text-sm text-cbl-navy">
           Enterprise access is active. Continue to module workflows and API operations from
           this protected workspace.
         </div>
 
-        <div className="mt-6">
-          <div className="flex flex-wrap gap-5 text-sm font-medium">
-            <Link href="/" className="text-emerald-200 hover:text-emerald-100">
+        {/* Navigation links */}
+        <nav className="mt-6 rounded-xl border border-gray-200 p-5">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Quick Links</p>
+          <div className="flex flex-wrap gap-4">
+            <Link href="/" className="text-base font-medium text-cbl-blue hover:text-cbl-blue/80">
               Return to Home
             </Link>
             {effectiveRole === "recruiter" ||
@@ -144,13 +153,13 @@ export default async function DashboardPage({
               <>
                 <Link
                   href="/dashboard/recruiter/candidates"
-                  className="text-emerald-200 hover:text-emerald-100"
+                  className="text-base font-medium text-cbl-blue hover:text-cbl-blue/80"
                 >
                   Candidates
                 </Link>
                 <Link
                   href={`/dashboard/recruiter/upload?activeClientId=${encodeURIComponent(activeClientId)}`}
-                  className="text-emerald-200 hover:text-emerald-100"
+                  className="text-base font-medium text-cbl-blue hover:text-cbl-blue/80"
                 >
                   Candidate Upload
                 </Link>
@@ -159,14 +168,21 @@ export default async function DashboardPage({
             {effectiveRole === "admin" ? (
               <Link
                 href={`/dashboard/admin?activeClientId=${encodeURIComponent(activeClientId)}`}
-                className="text-emerald-200 hover:text-emerald-100"
+                className="text-base font-medium text-cbl-blue hover:text-cbl-blue/80"
               >
-                Open Admin Console
+                Admin Console
               </Link>
             ) : null}
           </div>
-        </div>
+        </nav>
       </main>
+
+      {/* Footer */}
+      <footer className="bg-cbl-dark">
+        <div className="mx-auto max-w-6xl px-6 py-4">
+          <p className="text-sm text-cbl-light/60">CBL Aero &middot; Enterprise Portal</p>
+        </div>
+      </footer>
     </div>
   );
 }

@@ -123,16 +123,16 @@ export default function AdminGovernanceConsole({ tenantId, initialPayload }: Pro
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-gray-800">User Management</h2>
         <button type="button" onClick={handleRefresh} disabled={busy}
-          className="rounded border border-gray-300 px-2 py-0.5 text-[10px] text-gray-500 hover:bg-gray-50 disabled:opacity-50">
+          className="rounded-lg border border-gray-300 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-50 disabled:opacity-50">
           Refresh
         </button>
       </div>
 
-      {message && <p className="rounded border border-green-200 bg-green-50 px-3 py-1.5 text-[11px] text-green-700">{message}</p>}
+      {message && <p className="rounded-xl border border-green-200 bg-green-50 px-3 py-1.5 text-sm text-green-700">{message}</p>}
       {error && (
-        <div className="rounded border border-red-200 bg-red-50 px-3 py-1.5 text-[11px] text-red-700">
+        <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-sm text-red-700">
           <p>{error}</p>
-          {stepUpUrl && <p className="mt-1 text-[10px]">Re-authenticate: <a href={stepUpUrl} className="underline text-red-600">Continue to SSO</a></p>}
+          {stepUpUrl && <p className="mt-1 text-xs">Re-authenticate: <a href={stepUpUrl} className="underline text-red-600">Continue to SSO</a></p>}
         </div>
       )}
 
@@ -141,15 +141,15 @@ export default function AdminGovernanceConsole({ tenantId, initialPayload }: Pro
         <form onSubmit={handleInvite} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
           <h3 className="text-xs font-semibold text-gray-700">Invite User</h3>
           <input value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} required type="email" placeholder="email@cblsolutions.com"
-            className="mt-2 w-full rounded border border-gray-300 bg-white px-2 py-1 text-[11px] text-gray-800 placeholder:text-gray-400" />
+            className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm text-gray-800 placeholder:text-gray-400" />
           <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value as SessionRole)}
-            className="mt-1.5 w-full rounded border border-gray-300 bg-white px-2 py-1 text-[11px] text-gray-800">
+            className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm text-gray-800">
             {ALL_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
           <input value={inviteTeams} onChange={(e) => setInviteTeams(e.target.value)} placeholder="team-east, team-red"
-            className="mt-1.5 w-full rounded border border-gray-300 bg-white px-2 py-1 text-[11px] text-gray-800 placeholder:text-gray-400" />
+            className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm text-gray-800 placeholder:text-gray-400" />
           <button disabled={busy} type="submit"
-            className="mt-2 rounded bg-blue-600 px-2.5 py-1 text-[10px] font-medium text-white hover:bg-blue-500 disabled:opacity-50">
+            className="mt-2 rounded-lg bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-50">
             Send Invite
           </button>
         </form>
@@ -157,13 +157,13 @@ export default function AdminGovernanceConsole({ tenantId, initialPayload }: Pro
         <form onSubmit={handleAssignRole} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
           <h3 className="text-xs font-semibold text-gray-700">Assign Role</h3>
           <input list="known-actor-ids" value={roleTargetActorId} onChange={(e) => setRoleTargetActorId(e.target.value)} required placeholder="actor-id"
-            className="mt-2 w-full rounded border border-gray-300 bg-white px-2 py-1 text-[11px] text-gray-800 placeholder:text-gray-400" />
+            className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm text-gray-800 placeholder:text-gray-400" />
           <select value={roleValue} onChange={(e) => setRoleValue(e.target.value as SessionRole)}
-            className="mt-1.5 w-full rounded border border-gray-300 bg-white px-2 py-1 text-[11px] text-gray-800">
+            className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm text-gray-800">
             {ALL_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
           <button disabled={busy} type="submit"
-            className="mt-2 rounded bg-blue-600 px-2.5 py-1 text-[10px] font-medium text-white hover:bg-blue-500 disabled:opacity-50">
+            className="mt-2 rounded-lg bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-50">
             Apply
           </button>
         </form>
@@ -171,11 +171,11 @@ export default function AdminGovernanceConsole({ tenantId, initialPayload }: Pro
         <form onSubmit={handleTeams} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
           <h3 className="text-xs font-semibold text-gray-700">Update Teams</h3>
           <input list="known-actor-ids" value={teamTargetActorId} onChange={(e) => setTeamTargetActorId(e.target.value)} required placeholder="actor-id"
-            className="mt-2 w-full rounded border border-gray-300 bg-white px-2 py-1 text-[11px] text-gray-800 placeholder:text-gray-400" />
+            className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm text-gray-800 placeholder:text-gray-400" />
           <input value={teamValues} onChange={(e) => setTeamValues(e.target.value)} placeholder="team-east, team-red"
-            className="mt-1.5 w-full rounded border border-gray-300 bg-white px-2 py-1 text-[11px] text-gray-800 placeholder:text-gray-400" />
+            className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm text-gray-800 placeholder:text-gray-400" />
           <button disabled={busy} type="submit"
-            className="mt-2 rounded bg-blue-600 px-2.5 py-1 text-[10px] font-medium text-white hover:bg-blue-500 disabled:opacity-50">
+            className="mt-2 rounded-lg bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-50">
             Save
           </button>
         </form>
@@ -188,12 +188,12 @@ export default function AdminGovernanceConsole({ tenantId, initialPayload }: Pro
       {/* Users + Invitations side by side */}
       <div className="grid gap-3 lg:grid-cols-2">
         <div>
-          <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+          <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-gray-400">
             Users ({payload.users.length})
           </h3>
-          <table className="w-full text-left text-[11px] text-gray-700">
+          <table className="w-full text-left text-sm text-gray-700">
             <thead>
-              <tr className="border-b border-gray-200 text-[10px] uppercase text-gray-400">
+              <tr className="border-b border-gray-200 text-xs uppercase text-gray-400">
                 <th className="pb-1 pr-2">Email</th>
                 <th className="pb-1 pr-2">Role</th>
                 <th className="pb-1 pr-2">Teams</th>
@@ -214,12 +214,12 @@ export default function AdminGovernanceConsole({ tenantId, initialPayload }: Pro
         </div>
 
         <div>
-          <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+          <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-gray-400">
             Pending Invitations ({payload.invitations.length})
           </h3>
-          <table className="w-full text-left text-[11px] text-gray-700">
+          <table className="w-full text-left text-sm text-gray-700">
             <thead>
-              <tr className="border-b border-gray-200 text-[10px] uppercase text-gray-400">
+              <tr className="border-b border-gray-200 text-xs uppercase text-gray-400">
                 <th className="pb-1 pr-2">Email</th>
                 <th className="pb-1 pr-2">Role</th>
                 <th className="pb-1">Expires</th>
@@ -232,7 +232,7 @@ export default function AdminGovernanceConsole({ tenantId, initialPayload }: Pro
                 <tr key={inv.invitationId} className="border-b border-gray-100">
                   <td className="py-1.5 pr-2">{inv.email}</td>
                   <td className="py-1.5 pr-2 font-medium">{inv.role}</td>
-                  <td className="py-1.5 text-[10px] text-gray-400">{inv.expiresAtIso?.slice(0, 10)}</td>
+                  <td className="py-1.5 text-xs text-gray-400">{inv.expiresAtIso?.slice(0, 10)}</td>
                 </tr>
               ))}
             </tbody>

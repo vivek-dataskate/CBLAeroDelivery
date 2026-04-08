@@ -23,11 +23,11 @@ export default function SyncErrorStatusCard({ errors }: Props) {
           Ingestion Errors {errors.length > 0 && <span className="ml-1 text-red-500">({errors.length})</span>}
         </h3>
         {totalPages > 1 && (
-          <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
+          <div className="flex items-center gap-1.5 text-xs text-gray-400">
             <button
               disabled={page === 0}
               onClick={() => setPage((p) => p - 1)}
-              className="rounded px-1.5 py-0.5 hover:bg-gray-100 disabled:opacity-30"
+              className="rounded-lg px-1.5 py-0.5 hover:bg-gray-100 disabled:opacity-30"
             >
               Prev
             </button>
@@ -35,7 +35,7 @@ export default function SyncErrorStatusCard({ errors }: Props) {
             <button
               disabled={page >= totalPages - 1}
               onClick={() => setPage((p) => p + 1)}
-              className="rounded px-1.5 py-0.5 hover:bg-gray-100 disabled:opacity-30"
+              className="rounded-lg px-1.5 py-0.5 hover:bg-gray-100 disabled:opacity-30"
             >
               Next
             </button>
@@ -44,7 +44,7 @@ export default function SyncErrorStatusCard({ errors }: Props) {
       </div>
 
       {errors.length === 0 ? (
-        <p className="mt-2 text-[11px] text-gray-400">No sync errors reported.</p>
+        <p className="mt-2 text-sm text-gray-400">No sync errors reported.</p>
       ) : (
         <ul className="mt-2 divide-y divide-gray-100">
           {visible.map((err) => {
@@ -57,16 +57,16 @@ export default function SyncErrorStatusCard({ errors }: Props) {
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full bg-red-400" />
-                    <span className="truncate text-[11px] font-medium text-gray-700">
+                    <span className="truncate text-sm font-medium text-gray-700">
                       [{err.source}] {err.recordId?.slice(0, 20) ?? "unknown"}
                     </span>
                   </div>
-                  <span className="ml-2 flex-shrink-0 text-[10px] text-gray-400">
+                  <span className="ml-2 flex-shrink-0 text-xs text-gray-400">
                     {err.timestamp?.slice(5, 16).replace("T", " ") ?? ""}
                   </span>
                 </button>
                 {isExpanded && (
-                  <div className="mt-1 ml-4 rounded bg-red-50 p-2 text-[11px] text-red-700">
+                  <div className="mt-1 ml-4 rounded-xl bg-red-50 p-2 text-sm text-red-700">
                     {err.message || "No details available"}
                   </div>
                 )}
