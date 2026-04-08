@@ -419,7 +419,7 @@ export const GET = withAuth(async ({ session, request, traceId }) => {
   const limitRaw = sp.get("limit");
   const limit = limitRaw ? Math.max(1, Math.min(500, parseInt(limitRaw, 10) || 25)) : undefined;
 
-  const result = await listCandidates({
+  const listParams = {
     tenantId: session.tenantId,
     availabilityStatus: availabilityStatus ?? undefined,
     location: location ?? undefined,
@@ -445,6 +445,23 @@ export const GET = withAuth(async ({ session, request, traceId }) => {
     sortDir: (sortDir === "asc" || sortDir === "desc") ? sortDir : undefined,
     cursor,
     limit,
+  };
+
+  console.log("[CandidatesAPI] GET request", {
+    traceId,
+    tenantId: session.tenantId,
+    filters: { jobTitle, search, email, skills, city, stateGeo, source, availabilityStatus, workAuthorization },
+    limit,
+    cursor: cursor ? "yes" : "no",
+  });
+
+  const result = await listCandidates(listParams);
+
+  console.log("[CandidatesAPI] Result:", {
+    traceId,
+    itemCount: result.items.length,
+    hasNextCursor: !!result.nextCursor,
+    sortedBy: result.sortedBy,
   });
 
   return NextResponse.json({
