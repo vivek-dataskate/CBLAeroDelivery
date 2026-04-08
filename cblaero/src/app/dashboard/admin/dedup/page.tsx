@@ -119,8 +119,8 @@ export default function DedupReviewDashboard() {
     }
   };
 
-  const handleBulkApprove = async () => {
-    for (const id of [...selected]) { await handleResolve(id, "approved"); }
+  const handleBulkAction = async (decision: "approved" | "rejected") => {
+    for (const id of [...selected]) { await handleResolve(id, decision); }
     setSelected(new Set());
   };
 
@@ -223,9 +223,14 @@ export default function DedupReviewDashboard() {
                 Select all &ge;90%
               </button>
               {selected.size > 0 && (
-                <button onClick={handleBulkApprove} className="rounded bg-green-600 px-3 py-1 text-[10px] font-medium text-white hover:bg-green-500">
-                  Merge {selected.size} selected
-                </button>
+                <>
+                  <button onClick={() => handleBulkAction("approved")} className="rounded bg-green-600 px-3 py-1 text-[10px] font-medium text-white hover:bg-green-500">
+                    Merge {selected.size} selected
+                  </button>
+                  <button onClick={() => handleBulkAction("rejected")} className="rounded border border-gray-300 px-3 py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-100">
+                    Keep Separate {selected.size} selected
+                  </button>
+                </>
               )}
             </div>
           </div>
