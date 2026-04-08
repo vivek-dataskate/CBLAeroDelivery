@@ -189,18 +189,19 @@ export default function CandidateDetailPage() {
                 {candidate.currentCompany && <p className="text-sm text-slate-400">at {candidate.currentCompany}</p>}
                 {location && <p className="mt-1 text-xs text-slate-400">{location}</p>}
               </div>
-              <div className="flex shrink-0 flex-col items-end gap-2">
-                <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${AVAILABILITY_BADGE[candidate.availabilityStatus] ?? "bg-gray-100 text-gray-600 border-gray-200"}`}>
-                  {candidate.availabilityStatus}
-                </span>
-                <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-600">
-                  {candidate.ingestionState.replace(/_/g, " ")}
-                </span>
-                {candidate.source && (
-                  <span className="rounded-full border border-slate-500 bg-slate-600 px-3 py-1 text-xs font-medium text-slate-200">
-                    {candidate.source}
+              <div className="flex shrink-0 flex-col items-end gap-2 text-right">
+                <div>
+                  <p className="text-[9px] uppercase tracking-wider text-slate-400">Availability</p>
+                  <span className={`mt-0.5 inline-block rounded-full border px-3 py-1 text-xs font-semibold ${AVAILABILITY_BADGE[candidate.availabilityStatus] ?? "bg-gray-100 text-gray-600 border-gray-200"}`}>
+                    {candidate.availabilityStatus}
                   </span>
-                )}
+                </div>
+                <div>
+                  <p className="text-[9px] uppercase tracking-wider text-slate-400">Source</p>
+                  <span className="mt-0.5 inline-block text-xs text-slate-300">
+                    {candidate.source?.replace(/_/g, " ") ?? "unknown"}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
