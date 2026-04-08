@@ -10,11 +10,9 @@ import {
 } from "@/modules/admin";
 import { listAdminActionEvents, listStepUpAttemptEvents } from "@/modules/audit";
 
-import { listRecentSyncErrors } from "@/modules/ingestion";
-
 import AdminGovernanceConsole from "./AdminGovernanceConsole";
 import AiCostDashboard from "./AiCostDashboard";
-import SyncErrorStatusCard from "./SyncErrorStatusCard";
+import SyncRunSummaryCard from "./SyncRunSummaryCard";
 
 type AdminDashboardSearchParams = {
   activeClientId?: string | string[];
@@ -76,13 +74,6 @@ export default async function AdminDashboardPage({
     .filter((event) => event.tenantId === activeClientId)
     .slice(-50)
     .reverse();
-  let syncErrors: Awaited<ReturnType<typeof listRecentSyncErrors>> = [];
-  try {
-    syncErrors = await listRecentSyncErrors();
-  } catch (err) {
-    console.error('[AdminDashboard] Failed to load sync errors:', err instanceof Error ? err.message : err);
-  }
-
   const traceId = crypto.randomUUID();
   const auditCount = adminActions.length + stepUpAttempts.length;
 
@@ -129,15 +120,12 @@ export default async function AdminDashboardPage({
           <span className="text-gray-300">|</span>
           <AuditLink count={auditCount} adminActions={adminActions} stepUpAttempts={stepUpAttempts} />
           <span className="flex-1" />
-          <span className="text-sm text-gray-500">
-            {syncErrors.length > 0 ? <span className="font-medium text-red-600">{syncErrors.length} sync errors</span> : <span className="text-green-600">No errors</span>}
-          </span>
         </div>
 
         {/* Two-column: Errors + AI costs */}
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
           <Card>
-            <SyncErrorStatusCard errors={syncErrors} />
+            <SyncRunSummaryCard />
           </Card>
           <Card>
             <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">AI Costs</h3>

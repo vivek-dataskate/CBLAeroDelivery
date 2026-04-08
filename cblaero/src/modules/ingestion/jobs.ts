@@ -3,7 +3,7 @@ import { MicrosoftGraphEmailParser } from '../email';
 import { acquireGraphToken } from '../email/graph-auth';
 import { isSupabaseConfigured } from '../persistence';
 import { extractCandidateFromDocument } from '../../features/candidate-management/application/candidate-extraction';
-import { recordSyncFailure, upsertCandidateFromEmailFull, batchUpsertCandidatesFromATS, DEFAULT_TENANT_ID, mapToCandidateRow } from './index';
+import { recordSyncFailure, createSyncRun, completeSyncRun, failSyncRun, upsertCandidateFromEmailFull, batchUpsertCandidatesFromATS, DEFAULT_TENANT_ID, mapToCandidateRow } from './index';
 import { fetchWithRetry } from './fetch-with-retry';
 import {
   computeFileHash,
@@ -39,6 +39,7 @@ export class EmailIngestionJob implements SchedulerJob {
   }
 
   async run() {
+    const runId = await createSyncRun('email');
     try {
       // Fingerprint gate: safety net for any emails that slip past the isRead filter
       const processedIds = await loadRecentFingerprints(DEFAULT_TENANT_ID, 'email_message_id', 3650);
@@ -58,8 +59,10 @@ export class EmailIngestionJob implements SchedulerJob {
       );
 
       console.log(`[EmailIngestionJob] Complete: ${processed} processed, ${skipped} skipped, ${failed} failed`);
+      await completeSyncRun(runId, { succeeded: processed, failed, total: processed + skipped + failed });
     } catch (err) {
-      recordSyncFailure('email', 'polling', err);
+      recordSyncFailure('email', 'polling', err, runId);
+      await failSyncRun(runId, err instanceof Error ? (err.stack ?? err.message) : String(err));
     }
   }
 }
@@ -72,6 +75,7 @@ export class CeipalIngestionJob implements SchedulerJob {
   name = 'CeipalIngestionJob';
 
   async run(params?: { startPage?: number; maxPages?: number; since?: Date }) {
+    const runId = await createSyncRun('ceipal');
     try {
       const startPage = params?.startPage ?? 1;
       const maxPages = params?.maxPages ?? 50;
@@ -97,7 +101,10 @@ export class CeipalIngestionJob implements SchedulerJob {
 
       console.log(`[CeipalIngestionJob] Fetched ${applicants.length} applicants (page ${startPage}, maxPages ${maxPages}${since ? `, since ${since.toISOString()}` : ''})`);
 
-      if (applicants.length === 0) return;
+      if (applicants.length === 0) {
+        await completeSyncRun(runId, { succeeded: 0, failed: 0, total: 0 });
+        return;
+      }
 
       const candidates = applicants.map(mapCeipalApplicantToCandidate);
 
@@ -116,6 +123,7 @@ export class CeipalIngestionJob implements SchedulerJob {
 
       if (newCandidates.length === 0) {
         console.log(`[CeipalIngestionJob] All ${candidates.length} applicants already fingerprinted — skipping`);
+        await completeSyncRun(runId, { succeeded: 0, failed: 0, total: candidates.length });
         return;
       }
 
@@ -137,13 +145,15 @@ export class CeipalIngestionJob implements SchedulerJob {
           console.log(`[CeipalIngestionJob] Recorded ${fingerprintEntries.length} fingerprints`);
         } catch (fpErr) {
           console.error('[CeipalIngestionJob] Fingerprint batch recording failed:', fpErr instanceof Error ? fpErr.message : fpErr);
-          recordSyncFailure('ceipal', 'fingerprint-batch', fpErr);
+          recordSyncFailure('ceipal', 'fingerprint-batch', fpErr, runId);
         }
       }
 
       console.log(`[CeipalIngestionJob] ${inserted} upserted, ${failed} failed`);
+      await completeSyncRun(runId, { succeeded: inserted, failed, total: newCandidates.length });
     } catch (err) {
-      recordSyncFailure('ceipal', 'polling', err);
+      recordSyncFailure('ceipal', 'polling', err, runId);
+      await failSyncRun(runId, err instanceof Error ? (err.stack ?? err.message) : String(err));
     }
   }
 }
@@ -191,6 +201,7 @@ export class OneDriveResumePollerJob implements SchedulerJob {
   }
 
   async run() {
+   const runId = await createSyncRun('onedrive');
    try {
     const token = await acquireGraphToken();
     const allFiles = await this.listPdfFiles(token);
@@ -213,6 +224,7 @@ export class OneDriveResumePollerJob implements SchedulerJob {
 
     if (files.length === 0) {
       console.log('[OneDrivePoller] No PDF files found in folder');
+      await completeSyncRun(runId, { succeeded: 0, failed: 0, total: 0 });
       return;
     }
 
@@ -237,6 +249,7 @@ export class OneDriveResumePollerJob implements SchedulerJob {
 
     let imported = 0;
     let failed = 0;
+    let skipped = 0;
     const PARALLEL_CHUNK = 10;
 
     for (let start = 0; start < files.length; start += PARALLEL_CHUNK) {
@@ -273,7 +286,7 @@ export class OneDriveResumePollerJob implements SchedulerJob {
             if (result.error || !result.extraction) {
               console.warn(`[OneDrivePoller] Extraction failed for ${file.name}: ${result.error}`);
               await recordFingerprint({ tenantId: DEFAULT_TENANT_ID, type: 'file_sha256', hash: fileHash, source: 'onedrive', status: 'failed' });
-              recordSyncFailure('onedrive', file.name, result.error ?? 'Extraction returned no data');
+              recordSyncFailure('onedrive', file.name, result.error ?? 'Extraction returned no data', runId);
               if (storageUrl) {
                 await this.deleteFromOneDrive(token, file.id, file.name);
               } else {
@@ -294,7 +307,7 @@ export class OneDriveResumePollerJob implements SchedulerJob {
 
             return { status: 'ok' as const, file, extraction: ext, storageUrl };
           } catch (err) {
-            recordSyncFailure('onedrive', file.name, err);
+            recordSyncFailure('onedrive', file.name, err, runId);
             return { status: 'failed' as const, file, storageUrl: '' };
           }
         })
@@ -302,7 +315,9 @@ export class OneDriveResumePollerJob implements SchedulerJob {
 
       // Batch-persist successful extractions via single RPC call per chunk
       const successes = chunkResults.filter((r) => r.status === 'ok' && r.extraction);
+      const chunkSkipped = chunkResults.filter((r) => r.status === 'skipped').length;
       const chunkFailed = chunkResults.filter((r) => r.status === 'failed').length;
+      skipped += chunkSkipped;
       failed += chunkFailed;
 
       if (isSupabaseConfigured() && batchId && successes.length > 0) {
@@ -351,9 +366,11 @@ export class OneDriveResumePollerJob implements SchedulerJob {
     // Clean up empty subfolders after processing
     await this.deleteEmptySubfolders(token);
 
-    console.log(`[OneDrivePoller] Complete: ${imported} imported, ${failed} failed out of ${files.length} files`);
+    console.log(`[OneDrivePoller] Complete: ${imported} imported, ${skipped} skipped, ${failed} failed out of ${files.length} files`);
+    await completeSyncRun(runId, { succeeded: imported + skipped, failed, total: files.length });
    } catch (err) {
-    recordSyncFailure('onedrive', 'polling', err);
+    recordSyncFailure('onedrive', 'polling', err, runId);
+    await failSyncRun(runId, err instanceof Error ? (err.stack ?? err.message) : String(err));
    }
   }
 
@@ -533,6 +550,9 @@ export class SavedSearchDigestJob implements SchedulerJob {
   name = 'SavedSearchDigestJob';
 
   async run() {
+    const runId = await createSyncRun('saved_search_digest');
+    let succeeded = 0;
+    let failed = 0;
     try {
       const { listDigestEnabledSearches } = await import(
         '../../features/candidate-management/infrastructure/saved-search-repository'
@@ -563,6 +583,7 @@ export class SavedSearchDigestJob implements SchedulerJob {
           const result = await listCandidates(params as Parameters<typeof listCandidates>[0]);
           if (result.items.length === 0) {
             console.log(`[SavedSearchDigestJob] No candidates for "${search.name}" — skipping email`);
+            succeeded++;
             continue;
           }
 
@@ -630,15 +651,19 @@ export class SavedSearchDigestJob implements SchedulerJob {
           }
 
           console.log(`[SavedSearchDigestJob] Sent digest for "${search.name}" to ${search.actorEmail}`);
+          succeeded++;
           // Throttle between sends to avoid Graph API rate limits
           await new Promise((r) => setTimeout(r, INTER_SEND_DELAY_MS));
         } catch (err) {
           console.error(`[SavedSearchDigestJob] Failed for search "${search.name}":`, err);
-          recordSyncFailure('saved_search_digest', search.id, err);
+          failed++;
+          recordSyncFailure('saved_search_digest', search.id, err, runId);
         }
       }
+      await completeSyncRun(runId, { succeeded, failed, total: searches.length });
     } catch (err) {
       console.error('[SavedSearchDigestJob] Fatal error:', err);
+      await failSyncRun(runId, err instanceof Error ? (err.stack ?? err.message) : String(err));
     }
   }
 }
@@ -662,10 +687,12 @@ export class DedupWorkerJob implements SchedulerJob {
       updateCandidateIngestionState,
     } = await import('../../features/candidate-management/infrastructure/dedup-repository');
 
+    const runId = await createSyncRun('dedup');
     try {
       const candidates = await listPendingDedupCandidates(DEFAULT_TENANT_ID, 100);
       if (candidates.length === 0) {
         console.log('[DedupWorkerJob] No pending_dedup candidates');
+        await completeSyncRun(runId, { succeeded: 0, failed: 0, total: 0 });
         return;
       }
 
@@ -810,7 +837,7 @@ export class DedupWorkerJob implements SchedulerJob {
         } catch (err) {
           errors++;
           console.error(`[DedupWorkerJob] Error processing candidate ${candidate.id}:`, err instanceof Error ? err.message : err);
-          recordSyncFailure('dedup', candidate.id, err);
+          recordSyncFailure('dedup', candidate.id, err, runId);
         }
       }
 
@@ -824,8 +851,10 @@ export class DedupWorkerJob implements SchedulerJob {
         keptSeparate,
         errors,
       }));
+      await completeSyncRun(runId, { succeeded: candidates.length - errors, failed: errors, total: candidates.length });
     } catch (err) {
       console.error('[DedupWorkerJob] Fatal error:', err);
+      await failSyncRun(runId, err instanceof Error ? (err.stack ?? err.message) : String(err));
     }
   }
 }

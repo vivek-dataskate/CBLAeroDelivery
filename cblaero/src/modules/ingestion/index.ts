@@ -11,14 +11,20 @@ import {
   batchInsertCandidatesNoEmail,
 } from '@/features/candidate-management/infrastructure/candidate-repository';
 
-// Re-export sync error functions from centralized repository for backward compatibility
+// Re-export sync error/run functions from centralized repository for backward compatibility
 export {
   recordSyncFailure,
   listRecentSyncErrors,
   clearSyncErrorsForTest,
+  createSyncRun,
+  completeSyncRun,
+  failSyncRun,
+  listSyncRunsCurrentMonth,
+  listSyncErrorsByRun,
 } from '@/features/candidate-management/infrastructure/sync-error-repository';
-export type { SyncError } from '@/features/candidate-management/infrastructure/sync-error-repository';
+export type { SyncError, SyncRun } from '@/features/candidate-management/infrastructure/sync-error-repository';
 
+// Local import for use within this barrel module (re-export above makes it available to consumers)
 import { recordSyncFailure } from '@/features/candidate-management/infrastructure/sync-error-repository';
 
 export type IngestionSource = "csv" | "ats" | "email" | "ceipal" | "resume_upload";

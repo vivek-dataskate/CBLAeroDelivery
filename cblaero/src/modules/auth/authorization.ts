@@ -17,6 +17,8 @@ export type ProtectedAction =
   | "admin:read-ai-usage"
   | "admin:read-prompt-registry"
   | "admin:manage-prompt-registry"
+  | "admin:view-sync-runs"
+  | "admin:view-sync-errors"
   | "compliance:read-data-residency";
 
 type AuthorizationAllow = {
@@ -58,6 +60,8 @@ const ROLE_ACTION_MAP: Record<SessionRole, ReadonlySet<ProtectedAction>> = {
     "admin:read-ai-usage",
     "admin:read-prompt-registry",
     "admin:manage-prompt-registry",
+    "admin:view-sync-runs",
+    "admin:view-sync-errors",
     "compliance:read-data-residency",
   ]),
   "compliance-officer": new Set([
