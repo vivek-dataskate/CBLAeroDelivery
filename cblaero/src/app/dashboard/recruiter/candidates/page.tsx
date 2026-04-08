@@ -198,28 +198,27 @@ export default function CandidatesPage() {
   const sortLabel = sortedBy === "relevance" ? "Best Match" : sortedBy === "created_at:desc" ? "Most Recent" : sortedBy || "";
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="flex min-h-screen flex-col bg-white">
       {/* Header */}
-      <header className="sticky top-0 z-10 border-b border-gray-200 bg-white px-6 py-3 shadow-sm">
-        <div className="mx-auto flex max-w-7xl items-center justify-between">
+      <header className="sticky top-0 z-10 bg-cbl-navy shadow-md">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <div>
-            <p className="text-xs text-gray-400">
-              <Link href="/dashboard" className="hover:text-emerald-600">Dashboard</Link>
-              {" / "}
-              <span className="font-medium text-gray-700">Candidates</span>
-            </p>
-            <h1 className="text-lg font-bold text-gray-900">Candidate Search</h1>
+            <nav className="flex items-center gap-2 text-base font-medium">
+              <Link href="/dashboard" className="text-cbl-light hover:text-white">Dashboard</Link>
+              <span className="text-cbl-light/40">/</span>
+              <span className="text-white">Candidates</span>
+            </nav>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={() => { setShowSavedPanel(!showSavedPanel); if (!showSavedPanel) loadSavedSearches(); }}
-              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+              className="rounded-lg border border-white/30 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/10"
             >
               Saved Searches
             </button>
             <form action="/api/auth/logout" method="post">
-              <button type="submit" className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50">
+              <button type="submit" className="rounded-lg border border-white/30 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/10">
                 Sign Out
               </button>
             </form>
@@ -227,16 +226,16 @@ export default function CandidatesPage() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-7xl px-6 py-4">
+      <div className="mx-auto w-full max-w-6xl flex-1 px-6 py-6">
         {/* Saved searches panel */}
         {showSavedPanel && savedSearches.length > 0 && (
-          <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Saved Searches</h3>
+          <div className="mb-4 rounded-xl border border-gray-200 bg-white p-5">
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Saved Searches</h3>
             <div className="space-y-2">
               {savedSearches.map((s) => (
-                <div key={s.id} className="flex items-center justify-between rounded-md border border-gray-100 bg-gray-50 px-3 py-2">
+                <div key={s.id} className="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
                   <div className="flex items-center gap-3">
-                    <button type="button" onClick={() => handleLoadSavedSearch(s)} className="text-sm font-medium text-emerald-600 hover:text-emerald-700">
+                    <button type="button" onClick={() => handleLoadSavedSearch(s)} className="text-sm font-medium text-cbl-navy hover:text-cbl-blue">
                       {s.name}
                     </button>
                     <span className="text-xs text-gray-400">
@@ -245,7 +244,7 @@ export default function CandidatesPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <button type="button" onClick={() => handleToggleDigest(s.id, s.digestEnabled)}
-                      className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${s.digestEnabled ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-500"}`}>
+                      className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${s.digestEnabled ? "bg-cbl-blue/20 text-cbl-blue" : "bg-gray-200 text-gray-500"}`}>
                       {s.digestEnabled ? "Digest On" : "Digest Off"}
                     </button>
                     <button type="button" onClick={() => handleDeleteSaved(s.id)} className="text-xs text-red-400 hover:text-red-600">Remove</button>
@@ -256,32 +255,32 @@ export default function CandidatesPage() {
           </div>
         )}
         {showSavedPanel && savedSearches.length === 0 && (
-          <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4 text-center text-sm text-gray-400 shadow-sm">
+          <div className="mb-4 rounded-xl border border-gray-200 bg-white p-5 text-center text-sm text-gray-400">
             No saved searches yet. Search for candidates and click &quot;Save Search&quot; to create one.
           </div>
         )}
 
         {/* Filter panel */}
-        <form onSubmit={(e) => { e.preventDefault(); handleSearch(); }} className="mb-4 rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+        <form onSubmit={(e) => { e.preventDefault(); handleSearch(); }} className="mb-4 rounded-xl border border-gray-200 bg-white p-5">
           {/* Row 1: Quick search */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
             <label className="sm:col-span-2">
               <span className="text-xs font-medium text-gray-600">Search by Name</span>
               <input type="text" value={filters.search ?? ""} onChange={(e) => setFilter("search", e.target.value)}
                 placeholder="e.g. John Smith"
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-cbl-blue focus:outline-none focus:ring-1 focus:ring-cbl-blue" />
             </label>
             <label>
               <span className="text-xs font-medium text-gray-600">Job Title</span>
               <input type="text" value={filters.job_title ?? ""} onChange={(e) => setFilter("job_title", e.target.value)}
                 placeholder="e.g. Mechanic"
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-cbl-blue focus:outline-none focus:ring-1 focus:ring-cbl-blue" />
             </label>
             <label>
               <span className="text-xs font-medium text-gray-600">Skills</span>
               <input type="text" value={filters.skills ?? ""} onChange={(e) => setFilter("skills", e.target.value)}
                 placeholder="e.g. Aviation, Welding"
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-cbl-blue focus:outline-none focus:ring-1 focus:ring-cbl-blue" />
             </label>
           </div>
 
@@ -291,18 +290,18 @@ export default function CandidatesPage() {
               <span className="text-xs font-medium text-gray-600">City</span>
               <input type="text" value={filters.city ?? ""} onChange={(e) => setFilter("city", e.target.value)}
                 placeholder="e.g. Houston"
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-cbl-blue focus:outline-none focus:ring-1 focus:ring-cbl-blue" />
             </label>
             <label>
               <span className="text-xs font-medium text-gray-600">State</span>
               <input type="text" value={filters.state ?? ""} onChange={(e) => setFilter("state", e.target.value)}
                 placeholder="e.g. TX"
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-cbl-blue focus:outline-none focus:ring-1 focus:ring-cbl-blue" />
             </label>
             <label>
               <span className="text-xs font-medium text-gray-600">Availability</span>
               <select value={filters.availability_status ?? ""} onChange={(e) => setFilter("availability_status", e.target.value)}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500">
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-cbl-blue focus:outline-none focus:ring-1 focus:ring-cbl-blue">
                 <option value="">Any</option>
                 <option value="active">Active</option>
                 <option value="passive">Passive</option>
@@ -313,18 +312,18 @@ export default function CandidatesPage() {
               <span className="text-xs font-medium text-gray-600">Min Experience</span>
               <input type="number" min="0" value={filters.years_of_experience ?? ""} onChange={(e) => setFilter("years_of_experience", e.target.value)}
                 placeholder="Years"
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-cbl-blue focus:outline-none focus:ring-1 focus:ring-cbl-blue" />
             </label>
             <label>
               <span className="text-xs font-medium text-gray-600">Work Auth</span>
               <input type="text" value={filters.work_authorization ?? ""} onChange={(e) => setFilter("work_authorization", e.target.value)}
                 placeholder="e.g. US Citizen"
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-cbl-blue focus:outline-none focus:ring-1 focus:ring-cbl-blue" />
             </label>
             <label>
               <span className="text-xs font-medium text-gray-600">Source</span>
               <select value={filters.source ?? ""} onChange={(e) => setFilter("source", e.target.value)}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500">
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-cbl-blue focus:outline-none focus:ring-1 focus:ring-cbl-blue">
                 <option value="">Any</option>
                 <option value="ceipal">Ceipal ATS</option>
                 <option value="csv_upload">CSV Upload</option>
@@ -339,25 +338,25 @@ export default function CandidatesPage() {
             <label>
               <span className="text-xs font-medium text-gray-600">Added After</span>
               <input type="date" value={filters.created_after ?? ""} onChange={(e) => setFilter("created_after", e.target.value)}
-                className="mt-1 block rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                className="mt-1 block rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-cbl-blue focus:outline-none focus:ring-1 focus:ring-cbl-blue" />
             </label>
             <label>
               <span className="text-xs font-medium text-gray-600">Added Before</span>
               <input type="date" value={filters.created_before ?? ""} onChange={(e) => setFilter("created_before", e.target.value)}
-                className="mt-1 block rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                className="mt-1 block rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-cbl-blue focus:outline-none focus:ring-1 focus:ring-cbl-blue" />
             </label>
             <div className="flex gap-2 pb-0.5">
               <button type="submit" disabled={!hasActiveFilters || loading}
-                className="rounded-md bg-emerald-600 px-5 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50">
+                className="rounded-lg bg-cbl-navy px-5 py-2 text-sm font-medium text-white shadow-sm hover:bg-cbl-blue disabled:opacity-50">
                 {loading ? "Searching..." : "Search"}
               </button>
               <button type="button" onClick={handleClear}
-                className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
                 Clear
               </button>
               {hasActiveFilters && (
                 <button type="button" onClick={() => setShowSaveModal(true)}
-                  className="rounded-md border border-emerald-300 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50">
+                  className="rounded-lg border border-cbl-blue/40 px-4 py-2 text-sm font-medium text-cbl-blue hover:bg-cbl-blue/10">
                   Save Search
                 </button>
               )}
@@ -368,9 +367,9 @@ export default function CandidatesPage() {
           {hasActiveFilters && (
             <div className="mt-3 flex flex-wrap gap-1.5 border-t border-gray-100 pt-3">
               {Object.entries(filters).filter(([, v]) => v).map(([k, v]) => (
-                <span key={k} className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                <span key={k} className="inline-flex items-center gap-1 rounded-full bg-cbl-blue/10 px-2.5 py-1 text-xs font-medium text-cbl-blue">
                   {FILTER_LABELS[k] ?? k}: {v}
-                  <button type="button" onClick={() => setFilter(k, "")} className="ml-0.5 text-emerald-400 hover:text-emerald-600">&times;</button>
+                  <button type="button" onClick={() => setFilter(k, "")} className="ml-0.5 text-cbl-blue hover:text-cbl-navy">&times;</button>
                 </span>
               ))}
             </div>
@@ -379,7 +378,7 @@ export default function CandidatesPage() {
 
         {/* Error */}
         {error && (
-          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
             {error}
           </div>
         )}
@@ -394,7 +393,7 @@ export default function CandidatesPage() {
           const canLoadMore = isLastPage && nextCursor;
 
           return (
-            <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
               {/* Results header */}
               <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
                 <div className="flex items-center gap-3">
@@ -406,7 +405,7 @@ export default function CandidatesPage() {
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-gray-500">Rows per page:</span>
                   <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
-                    className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700">
+                    className="rounded-lg border border-gray-300 px-2 py-1 text-xs text-gray-700">
                     <option value={25}>25</option>
                     <option value={50}>50</option>
                     <option value={100}>100</option>
@@ -431,7 +430,7 @@ export default function CandidatesPage() {
                   <tbody className="divide-y divide-gray-100">
                     {pageRows.map((c) => (
                       <tr key={c.id} onClick={() => window.open(`/dashboard/recruiter/candidates/${c.id}`, '_blank')}
-                        className="cursor-pointer text-sm text-gray-700 transition-colors hover:bg-emerald-50/40">
+                        className="cursor-pointer text-sm text-gray-700 transition-colors hover:bg-cbl-blue/10/40">
                         <td className="px-5 py-2.5">
                           <div className="font-medium text-gray-900">{c.firstName} {c.lastName}</div>
                           <div className="text-xs text-gray-400">{c.email ?? "—"}</div>
@@ -462,7 +461,7 @@ export default function CandidatesPage() {
                 <div className="flex items-center gap-2">
                   {/* Page navigation */}
                   <button type="button" onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={currentPage <= 1}
-                    className="rounded border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-30">
+                    className="rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-30">
                     Prev
                   </button>
                   {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
@@ -473,19 +472,19 @@ export default function CandidatesPage() {
                     else { page = currentPage - 3 + i; }
                     return (
                       <button key={page} type="button" onClick={() => setCurrentPage(page)}
-                        className={`rounded px-2.5 py-1 text-xs font-medium ${page === currentPage ? "bg-emerald-600 text-white" : "border border-gray-300 text-gray-600 hover:bg-gray-50"}`}>
+                        className={`rounded px-2.5 py-1 text-xs font-medium ${page === currentPage ? "bg-cbl-navy text-white" : "border border-gray-300 text-gray-600 hover:bg-gray-50"}`}>
                         {page}
                       </button>
                     );
                   })}
                   <button type="button" onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages}
-                    className="rounded border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-30">
+                    className="rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-30">
                     Next
                   </button>
                   {/* Load more from DB */}
                   {canLoadMore && (
                     <button type="button" onClick={handleLoadMore} disabled={loading}
-                      className="ml-2 rounded-md bg-emerald-600 px-4 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
+                      className="ml-2 rounded-lg bg-cbl-navy px-4 py-1 text-xs font-medium text-white hover:bg-cbl-blue disabled:opacity-50">
                       {loading ? "Loading..." : "Load 500 More"}
                     </button>
                   )}
@@ -497,14 +496,14 @@ export default function CandidatesPage() {
 
         {/* Empty states */}
         {!loading && !error && candidates.length === 0 && hasActiveFilters && (
-          <div className="rounded-lg border border-gray-200 bg-white py-16 text-center shadow-sm">
-            <p className="text-gray-500">No candidates found matching your filters.</p>
+          <div className="rounded-xl border border-gray-200 bg-gray-50 py-16 text-center">
+            <p className="text-sm text-gray-500">No candidates found matching your filters.</p>
             <p className="mt-1 text-sm text-gray-400">Try broadening your search criteria.</p>
           </div>
         )}
 
         {!hasActiveFilters && candidates.length === 0 && !loading && (
-          <div className="rounded-lg border border-gray-200 bg-white py-16 text-center shadow-sm">
+          <div className="rounded-xl border border-gray-200 bg-gray-50 py-16 text-center">
             <p className="text-lg font-medium text-gray-700">Search for Candidates</p>
             <p className="mt-1 text-sm text-gray-400">Use the filters above to find candidates by name, skills, location, or other criteria.</p>
           </div>
@@ -516,19 +515,26 @@ export default function CandidatesPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowSaveModal(false)}>
           <div className="w-96 rounded-xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-base font-semibold text-gray-900">Save This Search</h3>
-            <p className="mt-1 text-xs text-gray-500">Give your search a name to quickly run it again later.</p>
+            <p className="mt-1 text-sm text-gray-500">Give your search a name to quickly run it again later.</p>
             <input type="text" value={saveName} onChange={(e) => setSaveName(e.target.value)} placeholder="e.g. Houston A&P Mechanics"
-              className="mt-4 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              className="mt-4 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-cbl-blue focus:outline-none focus:ring-1 focus:ring-cbl-blue"
               autoFocus onKeyDown={(e) => { if (e.key === "Enter") handleSaveSearch(); }} />
-            <p className="mt-2 text-xs text-gray-400">Daily email digest with top 5 matching candidates will be enabled by default.</p>
-            <div className="mt-5 flex justify-end gap-2">
-              <button type="button" onClick={() => setShowSaveModal(false)} className="rounded-md px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900">Cancel</button>
+            <p className="mt-2 text-sm text-gray-400">Daily email digest with top 5 matching candidates will be enabled by default.</p>
+            <div className="mt-5 flex justify-end gap-3">
+              <button type="button" onClick={() => setShowSaveModal(false)} className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900">Cancel</button>
               <button type="button" onClick={handleSaveSearch} disabled={!saveName.trim()}
-                className="rounded-md bg-emerald-600 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">Save</button>
+                className="rounded-lg bg-cbl-navy px-5 py-2 text-sm font-medium text-white hover:bg-cbl-blue disabled:opacity-50">Save</button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Footer */}
+      <footer className="bg-cbl-dark">
+        <div className="mx-auto max-w-6xl px-6 py-4">
+          <p className="text-sm text-cbl-light/60">CBL Aero &middot; Enterprise Portal</p>
+        </div>
+      </footer>
     </div>
   );
 }

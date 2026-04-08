@@ -26,3 +26,7 @@ input_file_patterns:
     description: "Mandatory implementation rules and patterns for all stories"
     whole: "{planning_artifacts}/*development-standards*.md"
     load_strategy: "FULL_LOAD"
+  dashboard_ui_standards:
+    description: "Dashboard UI design standards — mandatory for any story touching src/app/dashboard/"
+    whole: "**/dashboard-ui-standards.md"
+    load_strategy: "SELECTIVE_LOAD"

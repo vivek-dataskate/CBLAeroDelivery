@@ -54,3 +54,7 @@ input_file_patterns:
     whole: "{planning_artifacts}/*epic*.md"
     sharded: "{planning_artifacts}/*epic*/*.md"
     load_strategy: "SELECTIVE_LOAD" # Only load needed epic
+  dashboard_ui_standards:
+    description: "Dashboard UI design standards — include in Dev Notes when story touches dashboard pages"
+    whole: "**/dashboard-ui-standards.md"
+    load_strategy: "SELECTIVE_LOAD"

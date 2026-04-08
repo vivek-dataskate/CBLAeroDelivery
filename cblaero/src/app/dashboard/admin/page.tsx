@@ -87,53 +87,58 @@ export default async function AdminDashboardPage({
   const auditCount = adminActions.length + stepUpAttempts.length;
 
   return (
-    <div className="min-h-screen bg-gray-50 px-4 py-5 text-gray-800 md:px-8">
-      <main className="mx-auto w-full max-w-5xl">
-
-        {/* Compact header */}
-        <header className="flex items-center justify-between pb-3">
-          <div className="flex items-center gap-3">
-            <h1 className="text-sm font-semibold text-gray-900">Admin Console</h1>
-            <span className="text-[10px] text-gray-400">{session.email} &middot; {session.role}</span>
+    <div className="flex min-h-screen flex-col bg-white">
+      {/* Header */}
+      <header className="sticky top-0 z-10 bg-cbl-navy shadow-md">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+          <div>
+            <nav className="flex items-center gap-2 text-base font-medium">
+              <Link href={`/dashboard?activeClientId=${encodeURIComponent(activeClientId)}`} className="text-cbl-light hover:text-white">Dashboard</Link>
+              <span className="text-cbl-light/40">/</span>
+              <span className="text-white">Admin Console</span>
+            </nav>
+            <p className="mt-1 text-sm text-cbl-light/70">{session.email} &middot; {session.role}</p>
           </div>
-          <div className="flex items-center gap-2 text-[10px]">
+          <div className="flex items-center gap-3">
             {allowedClientIds.length > 1 && allowedClientIds.map((cid) => (
               <Link
                 key={cid}
                 href={`/dashboard/admin?activeClientId=${encodeURIComponent(cid)}`}
-                className={`rounded-full border px-2 py-px ${cid === activeClientId ? "border-blue-300 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-400"}`}
+                className={`rounded-full border px-3 py-1 text-sm transition ${cid === activeClientId ? "border-cbl-blue/40 bg-cbl-blue/10 font-medium text-cbl-blue" : "border-gray-300 text-gray-500 hover:border-cbl-blue/40"}`}
               >{cid}</Link>
             ))}
-            <Link href={`/dashboard?activeClientId=${encodeURIComponent(activeClientId)}`} className="text-blue-500 hover:text-blue-700">Dashboard</Link>
           </div>
-        </header>
+        </div>
+      </header>
 
+      {/* Content */}
+      <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-6">
         {/* Quick links row */}
-        <div className="flex items-center gap-3 border-y border-gray-200 py-2 text-[11px]">
-          <Link href="/dashboard/recruiter/candidates" className="text-blue-600 hover:text-blue-800">Candidates</Link>
+        <nav className="flex items-center gap-4 rounded-xl border border-gray-200 px-5 py-3">
+          <Link href="/dashboard/recruiter/candidates" className="text-sm font-medium text-cbl-navy hover:text-cbl-blue">Candidates</Link>
           <span className="text-gray-300">|</span>
-          <Link href="/dashboard/admin/dedup" className="text-blue-600 hover:text-blue-800">Dedup Review</Link>
+          <Link href="/dashboard/admin/dedup" className="text-sm font-medium text-cbl-navy hover:text-cbl-blue">Dedup Review</Link>
           <span className="text-gray-300">|</span>
           <AuditLink count={auditCount} adminActions={adminActions} stepUpAttempts={stepUpAttempts} />
           <span className="flex-1" />
-          <span className="text-gray-400">
-            {syncErrors.length > 0 ? <span className="text-red-500">{syncErrors.length} sync errors</span> : <span className="text-green-500">No errors</span>}
+          <span className="text-sm text-gray-500">
+            {syncErrors.length > 0 ? <span className="font-medium text-red-600">{syncErrors.length} sync errors</span> : <span className="text-green-600">No errors</span>}
           </span>
-        </div>
+        </nav>
 
         {/* Two-column: Errors + AI costs */}
-        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
           <Card>
             <SyncErrorStatusCard errors={syncErrors} />
           </Card>
           <Card>
-            <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400">AI Costs</h3>
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">AI Costs</h3>
             <AiCostDashboard />
           </Card>
         </div>
 
-        {/* User governance — the primary admin tool */}
-        <div className="mt-3">
+        {/* User governance */}
+        <div className="mt-4">
           <Card>
             <AdminGovernanceConsole
               tenantId={activeClientId}
@@ -141,38 +146,44 @@ export default async function AdminDashboardPage({
             />
           </Card>
         </div>
-
       </main>
+
+      {/* Footer */}
+      <footer className="bg-cbl-dark">
+        <div className="mx-auto max-w-6xl px-6 py-4">
+          <p className="text-sm text-cbl-light/60">CBL Aero &middot; Enterprise Portal</p>
+        </div>
+      </footer>
     </div>
   );
 }
 
 function Card({ children }: { children: React.ReactNode }) {
-  return <section className="rounded-lg border border-gray-200 bg-white p-3">{children}</section>;
+  return <section className="rounded-xl border border-gray-200 bg-white p-5">{children}</section>;
 }
 
 function AuditLink({ count, adminActions, stepUpAttempts }: { count: number; adminActions: unknown[]; stepUpAttempts: unknown[] }) {
   return (
     <details className="relative inline-block">
-      <summary className="cursor-pointer text-blue-600 hover:text-blue-800">
+      <summary className="cursor-pointer text-sm font-medium text-cbl-navy hover:text-cbl-blue">
         Audit Trail ({count})
       </summary>
-      <div className="absolute left-0 top-6 z-50 w-80 max-h-60 overflow-y-auto rounded-lg border border-gray-200 bg-white p-3 shadow-lg">
-        <p className="text-[10px] font-semibold text-gray-500 mb-1">Recent Admin Actions ({adminActions.length})</p>
+      <div className="absolute left-0 top-8 z-50 w-80 max-h-60 overflow-y-auto rounded-xl border border-gray-200 bg-white p-4 shadow-lg">
+        <p className="text-xs font-semibold text-gray-500 mb-1">Recent Admin Actions ({adminActions.length})</p>
         {adminActions.length === 0 ? (
-          <p className="text-[10px] text-gray-400">None</p>
+          <p className="text-xs text-gray-400">None</p>
         ) : (
-          <ul className="space-y-0.5 text-[10px] text-gray-600">
+          <ul className="space-y-0.5 text-xs text-gray-600">
             {(adminActions as Array<{ action: string; actorId: string; occurredAt: string }>).slice(0, 10).map((a, i) => (
               <li key={i}><span className="text-gray-400">{a.occurredAt?.slice(5, 16).replace("T", " ")}</span> {a.action} <span className="text-gray-400">by {a.actorId?.slice(0, 12)}</span></li>
             ))}
           </ul>
         )}
-        <p className="text-[10px] font-semibold text-gray-500 mt-2 mb-1">Step-Up Attempts ({stepUpAttempts.length})</p>
+        <p className="text-xs font-semibold text-gray-500 mt-2 mb-1">Step-Up Attempts ({stepUpAttempts.length})</p>
         {stepUpAttempts.length === 0 ? (
-          <p className="text-[10px] text-gray-400">None</p>
+          <p className="text-xs text-gray-400">None</p>
         ) : (
-          <ul className="space-y-0.5 text-[10px] text-gray-600">
+          <ul className="space-y-0.5 text-xs text-gray-600">
             {(stepUpAttempts as Array<{ method: string; actorId: string; occurredAt: string; success: boolean }>).slice(0, 10).map((a, i) => (
               <li key={i}>
                 <span className="text-gray-400">{a.occurredAt?.slice(5, 16).replace("T", " ")}</span>{" "}

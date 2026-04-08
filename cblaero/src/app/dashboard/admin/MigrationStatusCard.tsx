@@ -77,7 +77,7 @@ export default async function MigrationStatusCard({
   }
 
   if (!batch) {
-    return <p className="text-[11px] text-gray-400">No migration data available.</p>;
+    return <p className="text-sm text-gray-400">No migration data available.</p>;
   }
 
   const pct = progressPercent(batch.imported, batch.totalRows);
@@ -90,7 +90,7 @@ export default async function MigrationStatusCard({
         <span className={`text-xs font-medium ${statusColor}`}>{statusLabel}</span>
         <Link
           href={`/api/internal/admin/import-batches/${batch.id}`}
-          className="text-[10px] text-blue-500 hover:text-blue-700"
+          className="text-xs text-blue-500 hover:text-blue-700"
         >
           Details
         </Link>
@@ -107,7 +107,7 @@ export default async function MigrationStatusCard({
         />
       </div>
 
-      <div className="mt-1.5 flex flex-wrap gap-3 text-[10px] text-gray-400">
+      <div className="mt-1.5 flex flex-wrap gap-3 text-xs text-gray-400">
         <span><span className="font-medium text-gray-700">{batch.imported.toLocaleString()}</span> imported</span>
         <span><span className="font-medium text-gray-700">{batch.totalRows.toLocaleString()}</span> total</span>
         {batch.errors > 0 && (

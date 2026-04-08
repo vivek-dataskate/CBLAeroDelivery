@@ -33,25 +33,37 @@ export default async function RecruiterUploadPage() {
   const session = await requireUploadSession();
 
   return (
-    <div className="min-h-screen bg-white px-4 py-6 text-slate-700 md:px-8">
-      <main className="mx-auto w-full max-w-5xl rounded-xl border border-slate-200 bg-white p-5 shadow-sm md:p-8">
-        <header className="flex flex-wrap items-center justify-between gap-2">
+    <div className="flex min-h-screen flex-col bg-white">
+      {/* Header */}
+      <header className="sticky top-0 z-10 bg-cbl-navy shadow-md">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">CBL AERO</p>
-            <h1 className="mt-1 text-xl font-semibold text-slate-800">Candidate Upload</h1>
-            <p className="mt-1 text-xs text-slate-500">
+            <nav className="flex items-center gap-2 text-base font-medium">
+              <Link href="/dashboard" className="text-cbl-light hover:text-white">Dashboard</Link>
+              <span className="text-cbl-light/40">/</span>
+              <span className="text-white">Candidate Upload</span>
+            </nav>
+            <p className="mt-1 text-sm text-cbl-light/70">
               Signed in as {session.email}. Upload candidate data via CSV or PDF resumes.
             </p>
           </div>
-          <Link href="/dashboard" className="text-xs text-slate-500 hover:text-slate-700">
-            Return to Dashboard
+          <Link href="/dashboard" className="rounded-lg border border-white/30 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/10">
+            Dashboard
           </Link>
-        </header>
-
-        <div className="mt-5">
-          <UploadModeSelector />
         </div>
+      </header>
+
+      {/* Content */}
+      <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-6">
+        <UploadModeSelector />
       </main>
+
+      {/* Footer */}
+      <footer className="bg-cbl-dark">
+        <div className="mx-auto max-w-6xl px-6 py-4">
+          <p className="text-sm text-cbl-light/60">CBL Aero &middot; Enterprise Portal</p>
+        </div>
+      </footer>
     </div>
   );
 }

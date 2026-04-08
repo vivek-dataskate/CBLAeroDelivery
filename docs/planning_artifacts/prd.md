@@ -818,6 +818,8 @@ This approach balances speed (still ~14 weeks, not 20+) with proof of differenti
 
 ### Metrics & Reporting
 
+> **Dashboard Visual Standards:** All dashboard pages follow a unified design system (white backgrounds, consistent headers/footers, standardized typography and colors). See [`cblaero/docs/dashboard-ui-standards.md`](../../cblaero/docs/dashboard-ui-standards.md) and development-standards.md §27.
+
 - **FR46 [MVP Tier 1]:** Dashboard displays operational metrics (candidates delivered, SMS response rate, interview request rate, conversion rate, time-to-fill) with refresh interval <=4 hours
 - **FR47 [MVP Tier 1]:** Dashboard shows per-recruiter metrics (productivity, conversion rate, attendance rate, cost-per-hire) with 30/60/90-day trend views
 - **FR48 [MVP Tier 1]:** Dashboard shows per-customer metrics (placements/month, revenue/recruiter/week, cost-per-hire, churn rate) with month-over-month delta
