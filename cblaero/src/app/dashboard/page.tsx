@@ -157,12 +157,20 @@ export default async function DashboardPage({
               </>
             ) : null}
             {effectiveRole === "admin" ? (
-              <Link
-                href={`/dashboard/admin?activeClientId=${encodeURIComponent(activeClientId)}`}
-                className="text-emerald-200 hover:text-emerald-100"
-              >
-                Open Admin Console
-              </Link>
+              <>
+                <Link
+                  href={`/dashboard/admin?activeClientId=${encodeURIComponent(activeClientId)}`}
+                  className="text-emerald-200 hover:text-emerald-100"
+                >
+                  Open Admin Console
+                </Link>
+                <Link
+                  href="/dashboard/admin/dedup"
+                  className="text-emerald-200 hover:text-emerald-100"
+                >
+                  Dedup Review Queue
+                </Link>
+              </>
             ) : null}
           </div>
         </div>

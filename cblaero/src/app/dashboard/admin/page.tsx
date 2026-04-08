@@ -14,7 +14,6 @@ import { listRecentSyncErrors } from "@/modules/ingestion";
 
 import AdminGovernanceConsole from "./AdminGovernanceConsole";
 import AiCostDashboard from "./AiCostDashboard";
-import MigrationStatusCard from "./MigrationStatusCard";
 import SyncErrorStatusCard from "./SyncErrorStatusCard";
 
 type AdminDashboardSearchParams = {
@@ -36,11 +35,7 @@ function pickActiveClientId(
     ? searchParams.activeClientId[0]
     : searchParams.activeClientId;
   const requested = typeof requestedRaw === "string" ? requestedRaw.trim() : "";
-
-  if (requested.length > 0 && allowed.has(requested)) {
-    return requested;
-  }
-
+  if (requested.length > 0 && allowed.has(requested)) return requested;
   return session.tenantId;
 }
 
@@ -50,26 +45,12 @@ async function requireAdminSession() {
   const session = await validateActiveSession(sessionToken);
 
   if (!session) {
-    await authorizeAccess({
-      session: null,
-      action: "dashboard:admin",
-      path: "/dashboard/admin",
-      method: "GET",
-    });
+    await authorizeAccess({ session: null, action: "dashboard:admin", path: "/dashboard/admin", method: "GET" });
     redirect("/api/auth/login?next=%2Fdashboard%2Fadmin");
   }
 
-  const authz = await authorizeAccess({
-    session,
-    action: "dashboard:admin",
-    path: "/dashboard/admin",
-    method: "GET",
-  });
-
-  if (!authz.allowed) {
-    redirect("/dashboard?error=admin-forbidden");
-  }
-
+  const authz = await authorizeAccess({ session, action: "dashboard:admin", path: "/dashboard/admin", method: "GET" });
+  if (!authz.allowed) redirect("/dashboard?error=admin-forbidden");
   return session;
 }
 
@@ -103,85 +84,104 @@ export default async function AdminDashboardPage({
   }
 
   const traceId = crypto.randomUUID();
+  const auditCount = adminActions.length + stepUpAttempts.length;
 
   return (
-    <div className="min-h-screen bg-slate-950 px-6 py-10 text-slate-100 md:px-10">
-      <main className="mx-auto w-full max-w-5xl rounded-3xl border border-cyan-300/20 bg-slate-900/60 p-8 md:p-12">
-        <header className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-cyan-200">CBL AERO</p>
-            <h1 className="mt-2 text-3xl font-semibold text-white">Admin Authorization Zone</h1>
+    <div className="min-h-screen bg-gray-50 px-4 py-5 text-gray-800 md:px-8">
+      <main className="mx-auto w-full max-w-5xl">
+
+        {/* Compact header */}
+        <header className="flex items-center justify-between pb-3">
+          <div className="flex items-center gap-3">
+            <h1 className="text-sm font-semibold text-gray-900">Admin Console</h1>
+            <span className="text-[10px] text-gray-400">{session.email} &middot; {session.role}</span>
           </div>
-          <span className="rounded-full border border-cyan-200/40 px-3 py-1 text-xs text-cyan-100">
-            Admin Only
-          </span>
+          <div className="flex items-center gap-2 text-[10px]">
+            {allowedClientIds.length > 1 && allowedClientIds.map((cid) => (
+              <Link
+                key={cid}
+                href={`/dashboard/admin?activeClientId=${encodeURIComponent(cid)}`}
+                className={`rounded-full border px-2 py-px ${cid === activeClientId ? "border-blue-300 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-400"}`}
+              >{cid}</Link>
+            ))}
+            <Link href={`/dashboard?activeClientId=${encodeURIComponent(activeClientId)}`} className="text-blue-500 hover:text-blue-700">Dashboard</Link>
+          </div>
         </header>
 
-        <section className="mt-8 grid gap-4 md:grid-cols-3">
-          <article className="rounded-2xl border border-white/10 bg-slate-950/65 p-5">
-            <p className="text-xs uppercase tracking-[0.15em] text-slate-400">Actor</p>
-            <p className="mt-2 text-sm text-white">{session.email}</p>
-          </article>
-          <article className="rounded-2xl border border-white/10 bg-slate-950/65 p-5">
-            <p className="text-xs uppercase tracking-[0.15em] text-slate-400">Role</p>
-            <p className="mt-2 text-sm text-white">{session.role}</p>
-          </article>
-          <article className="rounded-2xl border border-white/10 bg-slate-950/65 p-5">
-            <p className="text-xs uppercase tracking-[0.15em] text-slate-400">Active Client</p>
-            <p className="mt-2 text-sm text-white">{activeClientId}</p>
-          </article>
-        </section>
-
-        {allowedClientIds.length > 1 ? (
-          <div className="mt-5 rounded-2xl border border-white/10 bg-slate-950/65 p-4">
-            <p className="text-xs uppercase tracking-[0.12em] text-slate-400">Switch Active Client</p>
-            <div className="mt-3 flex flex-wrap gap-2 text-xs">
-              {allowedClientIds.map((clientId) => (
-                <Link
-                  key={clientId}
-                  href={`/dashboard/admin?activeClientId=${encodeURIComponent(clientId)}`}
-                  className={`rounded-full border px-3 py-1 transition ${
-                    clientId === activeClientId
-                      ? "border-cyan-200/70 bg-cyan-500/20 text-cyan-100"
-                      : "border-white/20 text-slate-200 hover:border-cyan-200/50 hover:text-cyan-100"
-                  }`}
-                >
-                  {clientId}
-                </Link>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
-        <div className="mt-8 rounded-2xl border border-cyan-300/20 bg-cyan-500/10 p-5 text-sm text-cyan-50">
-          This route is protected by role-based authorization checks and now includes
-          user invitation, role transition governance, and team assignment controls with
-          auditable action tracking.
+        {/* Quick links row */}
+        <div className="flex items-center gap-3 border-y border-gray-200 py-2 text-[11px]">
+          <Link href="/dashboard/recruiter/candidates" className="text-blue-600 hover:text-blue-800">Candidates</Link>
+          <span className="text-gray-300">|</span>
+          <Link href="/dashboard/admin/dedup" className="text-blue-600 hover:text-blue-800">Dedup Review</Link>
+          <span className="text-gray-300">|</span>
+          <AuditLink count={auditCount} adminActions={adminActions} stepUpAttempts={stepUpAttempts} />
+          <span className="flex-1" />
+          <span className="text-gray-400">
+            {syncErrors.length > 0 ? <span className="text-red-500">{syncErrors.length} sync errors</span> : <span className="text-green-500">No errors</span>}
+          </span>
         </div>
 
-        <SyncErrorStatusCard errors={syncErrors} />
-        <AiCostDashboard />
-        <MigrationStatusCard tenantId={activeClientId} actorId={session.actorId} traceId={traceId} />
-
-        <AdminGovernanceConsole
-          tenantId={activeClientId}
-          initialPayload={{
-            users,
-            invitations,
-            adminActions,
-            stepUpAttempts,
-          }}
-        />
-
-        <div className="mt-6 text-sm font-medium">
-          <Link
-            href={`/dashboard?activeClientId=${encodeURIComponent(activeClientId)}`}
-            className="text-cyan-200 hover:text-cyan-100"
-          >
-            Return to Dashboard
-          </Link>
+        {/* Two-column: Errors + AI costs */}
+        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+          <Card>
+            <SyncErrorStatusCard errors={syncErrors} />
+          </Card>
+          <Card>
+            <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400">AI Costs</h3>
+            <AiCostDashboard />
+          </Card>
         </div>
+
+        {/* User governance — the primary admin tool */}
+        <div className="mt-3">
+          <Card>
+            <AdminGovernanceConsole
+              tenantId={activeClientId}
+              initialPayload={{ users, invitations, adminActions, stepUpAttempts }}
+            />
+          </Card>
+        </div>
+
       </main>
     </div>
+  );
+}
+
+function Card({ children }: { children: React.ReactNode }) {
+  return <section className="rounded-lg border border-gray-200 bg-white p-3">{children}</section>;
+}
+
+function AuditLink({ count, adminActions, stepUpAttempts }: { count: number; adminActions: unknown[]; stepUpAttempts: unknown[] }) {
+  return (
+    <details className="relative inline-block">
+      <summary className="cursor-pointer text-blue-600 hover:text-blue-800">
+        Audit Trail ({count})
+      </summary>
+      <div className="absolute left-0 top-6 z-50 w-80 max-h-60 overflow-y-auto rounded-lg border border-gray-200 bg-white p-3 shadow-lg">
+        <p className="text-[10px] font-semibold text-gray-500 mb-1">Recent Admin Actions ({adminActions.length})</p>
+        {adminActions.length === 0 ? (
+          <p className="text-[10px] text-gray-400">None</p>
+        ) : (
+          <ul className="space-y-0.5 text-[10px] text-gray-600">
+            {(adminActions as Array<{ action: string; actorId: string; occurredAt: string }>).slice(0, 10).map((a, i) => (
+              <li key={i}><span className="text-gray-400">{a.occurredAt?.slice(5, 16).replace("T", " ")}</span> {a.action} <span className="text-gray-400">by {a.actorId?.slice(0, 12)}</span></li>
+            ))}
+          </ul>
+        )}
+        <p className="text-[10px] font-semibold text-gray-500 mt-2 mb-1">Step-Up Attempts ({stepUpAttempts.length})</p>
+        {stepUpAttempts.length === 0 ? (
+          <p className="text-[10px] text-gray-400">None</p>
+        ) : (
+          <ul className="space-y-0.5 text-[10px] text-gray-600">
+            {(stepUpAttempts as Array<{ method: string; actorId: string; occurredAt: string; success: boolean }>).slice(0, 10).map((a, i) => (
+              <li key={i}>
+                <span className="text-gray-400">{a.occurredAt?.slice(5, 16).replace("T", " ")}</span>{" "}
+                {a.method} {a.success ? <span className="text-green-500">ok</span> : <span className="text-red-500">fail</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </details>
   );
 }
