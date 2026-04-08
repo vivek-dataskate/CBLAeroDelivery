@@ -71,6 +71,15 @@ export function withAuth<T = Record<string, string>>(
     });
 
     if (!authz.allowed) {
+      console.warn("[withAuth] Access denied", {
+        traceId,
+        action: options.action,
+        reason: authz.reason,
+        status: authz.status,
+        path: request.nextUrl.pathname,
+        hasSession: !!session,
+        sessionTenantId: session?.tenantId ?? null,
+      });
       return NextResponse.json(
         {
           error: {
