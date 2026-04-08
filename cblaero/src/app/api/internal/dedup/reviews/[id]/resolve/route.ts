@@ -71,5 +71,12 @@ export const POST = withAuth<{ id: string }>(async ({ session, request, params }
     await updateCandidateIngestionState(review.candidateBId, "active");
   }
 
-  return NextResponse.json({ data: { reviewId, decision, resolvedBy: session.actorId } });
+  // Return the merged/winner candidate so UI can display the result
+  let mergedCandidate = null;
+  if (decision === "approved") {
+    mergedCandidate = await loadCandidateForDedup(session.tenantId, review.candidateAId)
+      ?? await loadCandidateForDedup(session.tenantId, review.candidateBId);
+  }
+
+  return NextResponse.json({ data: { reviewId, decision, resolvedBy: session.actorId, mergedCandidate } });
 }, { action: "candidate:write" });
