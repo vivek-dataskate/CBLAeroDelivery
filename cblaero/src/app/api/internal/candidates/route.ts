@@ -417,7 +417,7 @@ export const GET = withAuth(async ({ session, request, traceId }) => {
 
   const cursor = sp.get("cursor") ?? undefined;
   const limitRaw = sp.get("limit");
-  const limit = limitRaw ? Math.max(1, Math.min(100, parseInt(limitRaw, 10) || 25)) : undefined;
+  const limit = limitRaw ? Math.max(1, Math.min(500, parseInt(limitRaw, 10) || 25)) : undefined;
 
   const result = await listCandidates({
     tenantId: session.tenantId,
