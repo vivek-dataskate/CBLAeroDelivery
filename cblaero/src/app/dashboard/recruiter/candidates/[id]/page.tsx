@@ -39,6 +39,7 @@ type CandidateDetail = {
   callAvailability: string | null;
   interviewAvailability: string | null;
   veteranStatus: string | null;
+  resumeUrl: string | null;
   source: string;
   ceipalId: string | null;
   submittedBy: string | null;
@@ -156,9 +157,8 @@ export default function CandidateDetailPage() {
   // Extra attributes
   const extraEntries = Object.entries(candidate.extraAttributes ?? {}).filter(([, v]) => v !== null && v !== undefined && v !== "");
 
-  // Resolve resume URL from extra_attributes (camelCase or PascalCase key)
-  const resumeUrl = candidate.extraAttributes?.resumeUrl ?? candidate.extraAttributes?.ResumeUrl;
-  const resumeUrlStr = resumeUrl ? String(resumeUrl) : null;
+  // Resolve resume URL: prefer top-level column, fall back to extra_attributes
+  const resumeUrlStr = candidate.resumeUrl || (candidate.extraAttributes?.resumeUrl ? String(candidate.extraAttributes.resumeUrl) : null) || (candidate.extraAttributes?.ResumeUrl ? String(candidate.extraAttributes.ResumeUrl) : null);
 
   // Best available phone
   const bestPhone = candidate.phone || candidate.homePhone || candidate.workPhone;
