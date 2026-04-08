@@ -254,7 +254,7 @@ export default function CandidatesPage() {
         )}
 
         {/* Filter panel */}
-        <div className="mb-4 rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+        <form onSubmit={(e) => { e.preventDefault(); handleSearch(); }} className="mb-4 rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
           {/* Row 1: Quick search */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
             <label className="sm:col-span-2">
@@ -339,7 +339,7 @@ export default function CandidatesPage() {
                 className="mt-1 block rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500" />
             </label>
             <div className="flex gap-2 pb-0.5">
-              <button type="button" onClick={handleSearch} disabled={!hasActiveFilters || loading}
+              <button type="submit" disabled={!hasActiveFilters || loading}
                 className="rounded-md bg-emerald-600 px-5 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50">
                 {loading ? "Searching..." : "Search"}
               </button>
@@ -367,7 +367,7 @@ export default function CandidatesPage() {
               ))}
             </div>
           )}
-        </div>
+        </form>
 
         {/* Error */}
         {error && (
