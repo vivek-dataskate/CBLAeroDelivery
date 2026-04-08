@@ -1,5 +1,5 @@
 export type AvailabilityStatus = "active" | "passive" | "unavailable";
-export type IngestionState = "pending_dedup" | "pending_enrichment" | "active" | "rejected";
+export type IngestionState = "pending_dedup" | "pending_enrichment" | "active" | "rejected" | "pending_review" | "merged";
 
 export type SortByField = 'created_at' | 'years_of_experience' | 'availability_status' | 'first_name' | 'last_name' | 'location' | 'job_title';
 export type SortDir = 'asc' | 'desc';

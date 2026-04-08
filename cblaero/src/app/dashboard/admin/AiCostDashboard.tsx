@@ -56,73 +56,31 @@ export default function AiCostDashboard() {
     }
   }, [days]);
 
-  useEffect(() => {
-    fetchUsage();
-  }, [fetchUsage]);
+  useEffect(() => { fetchUsage(); }, [fetchUsage]);
 
-  if (loading) {
-    return (
-      <div className="mt-6 rounded-2xl border border-white/10 bg-slate-950/65 p-6">
-        <h2 className="text-lg font-semibold text-cyan-200">AI Cost Dashboard</h2>
-        <p className="mt-2 text-sm text-slate-400">Loading usage data...</p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="mt-6 rounded-2xl border border-rose-300/20 bg-slate-950/65 p-6">
-        <h2 className="text-lg font-semibold text-rose-300">AI Cost Dashboard</h2>
-        <p className="mt-2 text-sm text-rose-200">{error}</p>
-      </div>
-    );
-  }
-
+  if (loading) return <p className="text-[11px] text-gray-400">Loading usage data...</p>;
+  if (error) return <p className="text-[11px] text-red-500">{error}</p>;
   if (!data) return null;
 
-  // Group daily data by date for the bar chart
   const dateGroups = new Map<string, { models: Map<string, number>; total: number }>();
   for (const row of data.daily) {
     let group = dateGroups.get(row.date);
-    if (!group) {
-      group = { models: new Map(), total: 0 };
-      dateGroups.set(row.date, group);
-    }
+    if (!group) { group = { models: new Map(), total: 0 }; dateGroups.set(row.date, group); }
     const prev = group.models.get(row.model) ?? 0;
     group.models.set(row.model, prev + row.estimatedCostUsd);
     group.total += row.estimatedCostUsd;
   }
 
   const maxDailyCost = Math.max(...[...dateGroups.values()].map((g) => g.total), 0.01);
-
-  // Unique models for color coding
   const allModels = [...new Set(data.daily.map((r) => r.model))];
   const modelColors: Record<string, string> = {};
-  const colorPalette = [
-    "bg-cyan-500",
-    "bg-violet-500",
-    "bg-amber-500",
-    "bg-emerald-500",
-    "bg-rose-500",
-  ];
-  allModels.forEach((m, i) => {
-    modelColors[m] = colorPalette[i % colorPalette.length];
-  });
+  const colorPalette = ["bg-blue-400", "bg-violet-400", "bg-amber-400", "bg-emerald-400", "bg-rose-400"];
+  allModels.forEach((m, i) => { modelColors[m] = colorPalette[i % colorPalette.length]; });
 
-  // Per-prompt version comparison (AC 4)
-  const promptVersionMap = new Map<
-    string,
-    { version: string; callCount: number; estimatedCostUsd: number; inputTokens: number; outputTokens: number }
-  >();
+  const promptVersionMap = new Map<string, { version: string; callCount: number; estimatedCostUsd: number; inputTokens: number; outputTokens: number }>();
   for (const row of data.daily) {
     const key = `${row.promptName ?? "unknown"}|${row.promptVersion ?? "?"}`;
-    const entry = promptVersionMap.get(key) ?? {
-      version: row.promptVersion ?? "?",
-      callCount: 0,
-      estimatedCostUsd: 0,
-      inputTokens: 0,
-      outputTokens: 0,
-    };
+    const entry = promptVersionMap.get(key) ?? { version: row.promptVersion ?? "?", callCount: 0, estimatedCostUsd: 0, inputTokens: 0, outputTokens: 0 };
     entry.callCount += row.callCount;
     entry.estimatedCostUsd += row.estimatedCostUsd;
     entry.inputTokens += row.inputTokens;
@@ -131,164 +89,108 @@ export default function AiCostDashboard() {
   }
 
   return (
-    <div className="mt-6 space-y-4">
-      {/* Header + controls */}
-      <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-950/65 p-5">
-        <h2 className="text-lg font-semibold text-cyan-200">AI Cost Dashboard</h2>
-        <div className="flex gap-2">
+    <div className="space-y-3">
+      {/* Controls */}
+      <div className="flex items-center justify-between">
+        <div className="flex gap-1">
           {[1, 7, 14, 30].map((d) => (
             <button
               key={d}
               onClick={() => setDays(d)}
-              className={`rounded-full border px-3 py-1 text-xs transition ${
-                days === d
-                  ? "border-cyan-200/70 bg-cyan-500/20 text-cyan-100"
-                  : "border-white/20 text-slate-300 hover:border-cyan-200/50"
+              className={`rounded-full border px-2 py-0.5 text-[10px] transition ${
+                days === d ? "border-blue-300 bg-blue-50 font-medium text-blue-700" : "border-gray-200 text-gray-500 hover:border-blue-200"
               }`}
             >
               {d}d
             </button>
           ))}
         </div>
+        {data.budget.exceeded && (
+          <span className="rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+            Over budget: ${data.budget.dailyCostUsd.toFixed(2)}/{data.budget.threshold.toFixed(2)}
+          </span>
+        )}
       </div>
 
-      {/* Budget alert */}
-      {data.budget.exceeded && (
-        <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm text-amber-200">
-          Budget alert: Today&apos;s AI spend (${data.budget.dailyCostUsd.toFixed(2)}) exceeds threshold ($
-          {data.budget.threshold.toFixed(2)}/day)
-        </div>
-      )}
-
-      {/* Total spend summary */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <SummaryCard label="Total Calls" value={data.totals.callCount.toLocaleString()} />
-        <SummaryCard label="Input Tokens" value={data.totals.inputTokens.toLocaleString()} />
-        <SummaryCard label="Output Tokens" value={data.totals.outputTokens.toLocaleString()} />
-        <SummaryCard
-          label="Est. Cost"
-          value={`$${data.totals.estimatedCostUsd.toFixed(4)}`}
-          highlight={data.budget.exceeded}
-        />
+      {/* Summary row */}
+      <div className="grid grid-cols-4 gap-2">
+        <MiniStat label="Calls" value={data.totals.callCount.toLocaleString()} />
+        <MiniStat label="In Tokens" value={data.totals.inputTokens.toLocaleString()} />
+        <MiniStat label="Out Tokens" value={data.totals.outputTokens.toLocaleString()} />
+        <MiniStat label="Est. Cost" value={`$${data.totals.estimatedCostUsd.toFixed(4)}`} alert={data.budget.exceeded} />
       </div>
 
-      {/* Daily cost bar chart (CSS-based, no chart library needed) */}
-      <div className="rounded-2xl border border-white/10 bg-slate-950/65 p-5">
-        <h3 className="mb-3 text-sm font-medium text-slate-300">Daily Cost by Model</h3>
-        {dateGroups.size === 0 ? (
-          <p className="text-sm text-slate-500">No usage data for this period.</p>
-        ) : (
-          <div className="space-y-2">
+      {/* Daily bar chart */}
+      {dateGroups.size > 0 && (
+        <div>
+          <p className="mb-1.5 text-[10px] font-medium text-gray-400">Daily Cost by Model</p>
+          <div className="space-y-1">
             {[...dateGroups.entries()].map(([date, group]) => (
-              <div key={date} className="flex items-center gap-3">
-                <span className="w-20 text-xs text-slate-400">{date.slice(5)}</span>
-                <div className="flex flex-1 gap-0.5">
+              <div key={date} className="flex items-center gap-2">
+                <span className="w-12 text-[10px] text-gray-400">{date.slice(5)}</span>
+                <div className="flex flex-1 gap-px">
                   {allModels.map((model) => {
                     const cost = group.models.get(model) ?? 0;
                     if (cost === 0) return null;
-                    const widthPct = Math.max((cost / maxDailyCost) * 100, 2);
-                    return (
-                      <div
-                        key={model}
-                        className={`${modelColors[model]} h-5 rounded-sm`}
-                        style={{ width: `${widthPct}%` }}
-                        title={`${model}: $${cost.toFixed(4)}`}
-                      />
-                    );
+                    const widthPct = Math.max((cost / maxDailyCost) * 100, 3);
+                    return <div key={model} className={`${modelColors[model]} h-3 rounded-sm`} style={{ width: `${widthPct}%` }} title={`${model}: $${cost.toFixed(4)}`} />;
                   })}
                 </div>
-                <span className="w-20 text-right text-xs text-slate-400">
-                  ${group.total.toFixed(4)}
-                </span>
+                <span className="w-14 text-right text-[10px] text-gray-400">${group.total.toFixed(4)}</span>
               </div>
             ))}
           </div>
-        )}
-        {/* Legend */}
-        {allModels.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-3">
-            {allModels.map((model) => (
-              <span key={model} className="flex items-center gap-1 text-xs text-slate-400">
-                <span className={`${modelColors[model]} inline-block h-2.5 w-2.5 rounded-sm`} />
-                {model.replace("claude-", "").replace("-20251001", "")}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
+          {allModels.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              {allModels.map((model) => (
+                <span key={model} className="flex items-center gap-1 text-[10px] text-gray-400">
+                  <span className={`${modelColors[model]} inline-block h-2 w-2 rounded-sm`} />
+                  {model.replace("claude-", "").replace("-20251001", "")}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
-      {/* Per-prompt version comparison (AC 4) */}
+      {/* Prompt version table */}
       {promptVersionMap.size > 0 && (
-        <div className="rounded-2xl border border-white/10 bg-slate-950/65 p-5">
-          <h3 className="mb-3 text-sm font-medium text-slate-300">
-            Prompt Version Comparison
-          </h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-300">
-              <thead>
-                <tr className="border-b border-white/10 text-slate-500">
-                  <th className="pb-2 pr-4">Prompt</th>
-                  <th className="pb-2 pr-4">Version</th>
-                  <th className="pb-2 pr-4 text-right">Calls</th>
-                  <th className="pb-2 pr-4 text-right">Input Tokens</th>
-                  <th className="pb-2 pr-4 text-right">Output Tokens</th>
-                  <th className="pb-2 text-right">Est. Cost</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...promptVersionMap.entries()].map(([key, entry]) => {
-                  const [promptName] = key.split("|");
-                  return (
-                    <tr key={key} className="border-b border-white/5">
-                      <td className="py-1.5 pr-4 font-mono">{promptName}</td>
-                      <td className="py-1.5 pr-4">
-                        <span className="rounded bg-slate-800 px-1.5 py-0.5 text-cyan-200">
-                          {entry.version}
-                        </span>
-                      </td>
-                      <td className="py-1.5 pr-4 text-right">{entry.callCount}</td>
-                      <td className="py-1.5 pr-4 text-right">
-                        {entry.inputTokens.toLocaleString()}
-                      </td>
-                      <td className="py-1.5 pr-4 text-right">
-                        {entry.outputTokens.toLocaleString()}
-                      </td>
-                      <td className="py-1.5 text-right">
-                        ${entry.estimatedCostUsd.toFixed(4)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+        <div>
+          <p className="mb-1.5 text-[10px] font-medium text-gray-400">Prompt Versions</p>
+          <table className="w-full text-left text-[10px] text-gray-600">
+            <thead>
+              <tr className="border-b border-gray-100 text-gray-400">
+                <th className="pb-1 pr-3">Prompt</th>
+                <th className="pb-1 pr-3">Ver</th>
+                <th className="pb-1 pr-3 text-right">Calls</th>
+                <th className="pb-1 text-right">Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...promptVersionMap.entries()].map(([key, entry]) => {
+                const [promptName] = key.split("|");
+                return (
+                  <tr key={key} className="border-b border-gray-50">
+                    <td className="py-1 pr-3 font-mono">{promptName}</td>
+                    <td className="py-1 pr-3"><span className="rounded bg-gray-100 px-1 py-px text-blue-600">{entry.version}</span></td>
+                    <td className="py-1 pr-3 text-right">{entry.callCount}</td>
+                    <td className="py-1 text-right">${entry.estimatedCostUsd.toFixed(4)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
   );
 }
 
-function SummaryCard({
-  label,
-  value,
-  highlight,
-}: {
-  label: string;
-  value: string;
-  highlight?: boolean;
-}) {
+function MiniStat({ label, value, alert }: { label: string; value: string; alert?: boolean }) {
   return (
-    <article
-      className={`rounded-2xl border p-4 ${
-        highlight
-          ? "border-amber-400/30 bg-amber-500/10"
-          : "border-white/10 bg-slate-950/65"
-      }`}
-    >
-      <p className="text-xs uppercase tracking-[0.15em] text-slate-400">{label}</p>
-      <p className={`mt-1 text-lg font-semibold ${highlight ? "text-amber-200" : "text-white"}`}>
-        {value}
-      </p>
-    </article>
+    <div className={`rounded-md border p-2 ${alert ? "border-amber-200 bg-amber-50" : "border-gray-100 bg-gray-50"}`}>
+      <p className="text-[9px] uppercase tracking-wider text-gray-400">{label}</p>
+      <p className={`text-sm font-semibold ${alert ? "text-amber-700" : "text-gray-800"}`}>{value}</p>
+    </div>
   );
 }

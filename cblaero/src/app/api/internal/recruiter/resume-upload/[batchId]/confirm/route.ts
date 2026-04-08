@@ -104,7 +104,7 @@ export const POST = withAuth<{ batchId: string }>(async ({ session, request, par
     const baseRow = mapToCandidateRow(
       { ...merged, createdByActorId: session.actorId },
       'resume_upload',
-      { ingestion_state: 'pending_enrichment' },
+      { ingestion_state: 'pending_dedup' },
     );
     const email = baseRow.email;
 

@@ -73,7 +73,7 @@ export type CsvCandidateRow = {
   alternate_email: string | null;
   skills: string[];
   availability_status: "active" | "passive" | "unavailable";
-  ingestion_state: "pending_enrichment";
+  ingestion_state: "pending_dedup";
   source: "csv_upload";
   source_batch_id: string;
   created_by_actor_id: string | null;
