@@ -99,22 +99,30 @@ export default async function AdminDashboardPage({
             </nav>
             <p className="mt-1 text-sm text-cbl-light/70">{session.email} &middot; {session.role}</p>
           </div>
-          <div className="flex items-center gap-3">
-            {allowedClientIds.length > 1 && allowedClientIds.map((cid) => (
-              <Link
-                key={cid}
-                href={`/dashboard/admin?activeClientId=${encodeURIComponent(cid)}`}
-                className={`rounded-full border px-3 py-1 text-sm transition ${cid === activeClientId ? "border-cbl-blue/40 bg-cbl-blue/10 font-medium text-cbl-blue" : "border-gray-300 text-gray-500 hover:border-cbl-blue/40"}`}
-              >{cid}</Link>
-            ))}
-          </div>
+          <form action="/api/auth/logout" method="post">
+            <button type="submit" className="rounded-lg border border-white/30 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/10">
+              Sign Out
+            </button>
+          </form>
         </div>
       </header>
 
       {/* Content */}
       <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-6">
-        {/* Quick links row */}
-        <nav className="flex items-center gap-4 rounded-xl border border-gray-200 px-5 py-3">
+        {/* Client switcher + Quick links row */}
+        <div className="flex flex-wrap items-center gap-4 rounded-xl border border-gray-200 px-5 py-3">
+          {allowedClientIds.length > 1 && (
+            <div className="flex items-center gap-2">
+              {allowedClientIds.map((cid) => (
+                <Link
+                  key={cid}
+                  href={`/dashboard/admin?activeClientId=${encodeURIComponent(cid)}`}
+                  className={`rounded-full border px-3 py-1 text-sm transition ${cid === activeClientId ? "border-cbl-blue/40 bg-cbl-blue/10 font-medium text-cbl-blue" : "border-gray-300 text-gray-500 hover:border-cbl-blue/40"}`}
+                >{cid}</Link>
+              ))}
+              <span className="text-gray-300">|</span>
+            </div>
+          )}
           <Link href="/dashboard/recruiter/candidates" className="text-sm font-medium text-cbl-navy hover:text-cbl-blue">Candidates</Link>
           <span className="text-gray-300">|</span>
           <Link href="/dashboard/admin/dedup" className="text-sm font-medium text-cbl-navy hover:text-cbl-blue">Dedup Review</Link>
@@ -124,7 +132,7 @@ export default async function AdminDashboardPage({
           <span className="text-sm text-gray-500">
             {syncErrors.length > 0 ? <span className="font-medium text-red-600">{syncErrors.length} sync errors</span> : <span className="text-green-600">No errors</span>}
           </span>
-        </nav>
+        </div>
 
         {/* Two-column: Errors + AI costs */}
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
