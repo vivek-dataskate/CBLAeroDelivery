@@ -3,7 +3,6 @@ import Link from "next/link";
 import { recordImportBatchAccessEvent } from "@/modules/audit";
 import {
   getLatestMigrationBatch,
-  type ImportBatch,
 } from "@/features/candidate-management/infrastructure/import-batch-repository";
 
 type MigrationStatusCardProps = {
@@ -16,16 +15,16 @@ const STATUS_LABELS: Record<string, string> = {
   running: "Running",
   validating: "Validating",
   complete: "Complete",
-  paused_on_error_threshold: "Paused — error threshold exceeded",
+  paused_on_error_threshold: "Paused",
   rolled_back: "Rolled back",
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  running: "text-cyan-300",
-  validating: "text-slate-300",
-  complete: "text-emerald-300",
-  paused_on_error_threshold: "text-amber-300",
-  rolled_back: "text-slate-400",
+  running: "text-blue-600",
+  validating: "text-gray-600",
+  complete: "text-green-600",
+  paused_on_error_threshold: "text-amber-600",
+  rolled_back: "text-gray-400",
 };
 
 function progressPercent(imported: number, totalRows: number): number {
@@ -35,26 +34,15 @@ function progressPercent(imported: number, totalRows: number): number {
 
 function formatElapsedMs(startedAt: string, completedAt: string | null): string {
   const startedMs = Number(new Date(startedAt));
-  if (!Number.isFinite(startedMs)) {
-    return "N/A";
-  }
-
+  if (!Number.isFinite(startedMs)) return "N/A";
   const endMs = completedAt ? Number(new Date(completedAt)) : Date.now();
-  if (!Number.isFinite(endMs) || endMs < startedMs) {
-    return "N/A";
-  }
-
+  if (!Number.isFinite(endMs) || endMs < startedMs) return "N/A";
   const elapsedSec = Math.floor((endMs - startedMs) / 1000);
   const hours = Math.floor(elapsedSec / 3600);
   const minutes = Math.floor((elapsedSec % 3600) / 60);
   const seconds = elapsedSec % 60;
-
-  if (hours > 0) {
-    return `${hours}h ${minutes}m ${seconds}s`;
-  }
-  if (minutes > 0) {
-    return `${minutes}m ${seconds}s`;
-  }
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
   return `${seconds}s`;
 }
 
@@ -63,29 +51,17 @@ export default async function MigrationStatusCard({
   actorId,
   traceId: parentTraceId,
 }: MigrationStatusCardProps) {
-  // Use parent page's traceId for correlation chain; fall back to component-level UUID
   const traceId = parentTraceId ?? crypto.randomUUID();
 
-  // Audit BEFORE data fetch so access is recorded even if fetch fails
   if (actorId) {
     try {
       await recordImportBatchAccessEvent({
-        traceId,
-        actorId,
-        tenantId,
-        batchId: null,
-        action: "list_import_batches",
+        traceId, actorId, tenantId, batchId: null, action: "list_import_batches",
       });
     } catch (error) {
       console.error(JSON.stringify({
-        level: "error",
-        module: "dashboard/admin/MigrationStatusCard",
-        action: "audit_event_persist",
-        traceId,
-        actorId,
-        tenantId,
-        error: error instanceof Error ? error.message : String(error),
-        timestamp: new Date().toISOString(),
+        level: "error", module: "MigrationStatusCard", action: "audit_event_persist",
+        traceId, error: error instanceof Error ? error.message : String(error),
       }));
     }
   }
@@ -95,77 +71,51 @@ export default async function MigrationStatusCard({
     batch = await getLatestMigrationBatch(tenantId);
   } catch (error) {
     console.error(JSON.stringify({
-      level: "error",
-      module: "dashboard/admin/MigrationStatusCard",
-      action: "fetch_latest_migration_batch",
-      traceId,
-      tenantId,
-      error: error instanceof Error ? error.message : String(error),
-      timestamp: new Date().toISOString(),
+      level: "error", module: "MigrationStatusCard", action: "fetch_latest_migration_batch",
+      traceId, error: error instanceof Error ? error.message : String(error),
     }));
   }
 
   if (!batch) {
-    return (
-      <section className="mt-8 rounded-2xl border border-white/10 bg-slate-950/65 p-5">
-        <p className="text-xs uppercase tracking-[0.15em] text-slate-400">Initial Migration</p>
-        <p className="mt-2 text-sm text-slate-400">No migration data available.</p>
-        <p className="mt-1 text-xs text-slate-500">
-          The system is awaiting initial data import. Please contact your administrator if this message persists.
-        </p>
-      </section>
-    );
+    return <p className="text-[11px] text-gray-400">No migration data available.</p>;
   }
 
   const pct = progressPercent(batch.imported, batch.totalRows);
   const statusLabel = STATUS_LABELS[batch.status] ?? batch.status;
-  const statusColor = STATUS_COLORS[batch.status] ?? "text-slate-300";
-  const elapsedLabel = formatElapsedMs(batch.startedAt, batch.completedAt);
+  const statusColor = STATUS_COLORS[batch.status] ?? "text-gray-500";
 
   return (
-    <section className="mt-8 rounded-2xl border border-white/10 bg-slate-950/65 p-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs uppercase tracking-[0.15em] text-slate-400">Initial Migration</p>
-        {/* Links to the JSON API detail endpoint — intentional for MVP.
-            Replace href with a dedicated UI route when a batch detail page is built. */}
+    <div>
+      <div className="flex items-center justify-between">
+        <span className={`text-xs font-medium ${statusColor}`}>{statusLabel}</span>
         <Link
           href={`/api/internal/admin/import-batches/${batch.id}`}
-          className="text-xs text-cyan-300 hover:text-cyan-200"
+          className="text-[10px] text-blue-500 hover:text-blue-700"
         >
-          View detail →
+          Details
         </Link>
       </div>
 
-      <p className={`mt-2 text-sm font-medium ${statusColor}`}>{statusLabel}</p>
-
-      <div className="mt-3 h-2 w-full rounded-full bg-slate-800">
+      <div className="mt-2 h-1.5 w-full rounded-full bg-gray-100">
         <div
-          className="h-2 rounded-full bg-cyan-500 transition-all"
+          className="h-1.5 rounded-full bg-blue-500 transition-all"
           style={{ width: `${pct}%` }}
+          role="progressbar"
           aria-valuenow={pct}
           aria-valuemin={0}
           aria-valuemax={100}
-          role="progressbar"
         />
       </div>
 
-      <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-400">
-        <span>
-          <span className="text-white">{batch.imported.toLocaleString()}</span> imported
-        </span>
-        <span>
-          <span className="text-white">{batch.totalRows.toLocaleString()}</span> total
-        </span>
+      <div className="mt-1.5 flex flex-wrap gap-3 text-[10px] text-gray-400">
+        <span><span className="font-medium text-gray-700">{batch.imported.toLocaleString()}</span> imported</span>
+        <span><span className="font-medium text-gray-700">{batch.totalRows.toLocaleString()}</span> total</span>
         {batch.errors > 0 && (
-          <span>
-            <span className="text-amber-300">{batch.errors.toLocaleString()}</span> errors
-          </span>
+          <span><span className="font-medium text-amber-600">{batch.errors.toLocaleString()}</span> errors</span>
         )}
-        <span>
-          <span className="text-white">{elapsedLabel}</span> elapsed
-        </span>
-        <span className="ml-auto text-slate-500">Batch {batch.id.slice(0, 8)}…</span>
+        <span>{formatElapsedMs(batch.startedAt, batch.completedAt)} elapsed</span>
+        <span className="ml-auto text-gray-300">Batch {batch.id.slice(0, 8)}</span>
       </div>
-    </section>
+    </div>
   );
 }

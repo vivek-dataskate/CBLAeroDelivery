@@ -643,11 +643,199 @@ export class SavedSearchDigestJob implements SchedulerJob {
   }
 }
 
+// Story 2.5: Dedup worker — processes pending_dedup candidates
+export class DedupWorkerJob implements SchedulerJob {
+  name = 'DedupWorkerJob';
+
+  async run(): Promise<void> {
+    const { computeIdentityHash } = await import('../../features/candidate-management/infrastructure/fingerprint-repository');
+    const { computeIdentityConfidence, routeDedupDecision } = await import('../../features/candidate-management/application/dedup-scoring');
+    const { selectWinner, computeMergedFields, computeFieldDiffs } = await import('../../features/candidate-management/application/dedup-merge');
+    const {
+      listPendingDedupCandidates,
+      findIdentityMatches,
+      findRawFieldMatches,
+      loadCandidateForDedup,
+      callMergeCandidatesRpc,
+      createReviewItem,
+      recordDedupDecision,
+      updateCandidateIngestionState,
+    } = await import('../../features/candidate-management/infrastructure/dedup-repository');
+
+    try {
+      const candidates = await listPendingDedupCandidates(DEFAULT_TENANT_ID, 100);
+      if (candidates.length === 0) {
+        console.log('[DedupWorkerJob] No pending_dedup candidates');
+        return;
+      }
+
+      let autoMerged = 0, sentToReview = 0, keptSeparate = 0, errors = 0;
+
+      for (const candidate of candidates) {
+        try {
+          // Compute identity hash for this candidate
+          const identityHash = computeIdentityHash(
+            candidate.email,
+            candidate.firstName,
+            candidate.lastName,
+            candidate.phone,
+          );
+
+          let bestMatch: { matchedCandidate: import('../../features/candidate-management/contracts/dedup').CandidateForDedup; confidence: import('../../features/candidate-management/contracts/dedup').ConfidenceResult } | null = null;
+
+          // Pass 1: Fingerprint hash lookup (fast — email exact or name+phone exact)
+          if (identityHash) {
+            const matchedIds = await findIdentityMatches(DEFAULT_TENANT_ID, identityHash, candidate.id);
+            for (const matchId of matchedIds) {
+              const matched = await loadCandidateForDedup(DEFAULT_TENANT_ID, matchId);
+              if (!matched || matched.ingestionState === 'merged') continue;
+              const confidence = computeIdentityConfidence(candidate, matched);
+              if (!bestMatch || confidence.score > bestMatch.confidence.score) {
+                bestMatch = { matchedCandidate: matched, confidence };
+              }
+            }
+          }
+
+          // Pass 2: Raw field query for phone/name matches (catches borderline cases)
+          if (!bestMatch || bestMatch.confidence.score < 70) {
+            const normalizedPhone = (candidate.phone ?? '').replace(/\D/g, '');
+            const rawMatches = await findRawFieldMatches(
+              DEFAULT_TENANT_ID,
+              normalizedPhone,
+              candidate.firstName ?? '',
+              candidate.lastName ?? '',
+              candidate.id,
+            );
+            for (const matched of rawMatches) {
+              if (matched.ingestionState === 'merged') continue;
+              const confidence = computeIdentityConfidence(candidate, matched);
+              if (!bestMatch || confidence.score > bestMatch.confidence.score) {
+                bestMatch = { matchedCandidate: matched, confidence };
+              }
+            }
+          }
+
+          // Route the decision
+          if (!bestMatch || bestMatch.confidence.score === 0) {
+            // No match — promote to active
+            await updateCandidateIngestionState(candidate.id, 'active');
+            // Record identity fingerprint for future matching
+            if (identityHash) {
+              await recordFingerprint({
+                tenantId: DEFAULT_TENANT_ID,
+                type: 'candidate_identity',
+                hash: identityHash,
+                source: 'dedup',
+                candidateId: candidate.id,
+              });
+            }
+            keptSeparate++;
+            continue;
+          }
+
+          const route = routeDedupDecision(bestMatch.confidence.score);
+
+          if (route === 'auto_merge') {
+            const { winner, loser } = selectWinner(candidate, bestMatch.matchedCandidate);
+            const mergedFields = computeMergedFields(winner, loser);
+            await callMergeCandidatesRpc(winner.id, loser.id, mergedFields, {
+              decision_type: 'auto_merge',
+              confidence_score: bestMatch.confidence.score,
+              rationale: bestMatch.confidence.rationale,
+            });
+            // H2 fix: record fingerprint for WINNER (merge RPC migrates loser's fingerprints to winner)
+            if (identityHash) {
+              await recordFingerprint({
+                tenantId: DEFAULT_TENANT_ID,
+                type: 'candidate_identity',
+                hash: identityHash,
+                source: 'dedup',
+                candidateId: winner.id,
+              }).catch(() => {});
+            }
+            autoMerged++;
+          } else if (route === 'manual_review') {
+            const fieldDiffs = computeFieldDiffs(candidate, bestMatch.matchedCandidate);
+            await createReviewItem(
+              DEFAULT_TENANT_ID,
+              candidate.id,
+              bestMatch.matchedCandidate.id,
+              bestMatch.confidence.score,
+              fieldDiffs,
+            );
+            await updateCandidateIngestionState(candidate.id, 'pending_review');
+            // M4 fix: record audit for manual_review routing (AC5 requires every decision logged)
+            await recordDedupDecision({
+              tenantId: DEFAULT_TENANT_ID,
+              candidateAId: candidate.id,
+              candidateBId: bestMatch.matchedCandidate.id,
+              decisionType: 'keep_separate', // routed to review, not yet merged
+              confidenceScore: bestMatch.confidence.score,
+              rationale: `Routed to manual review: ${bestMatch.confidence.rationale}`,
+            });
+            // Record fingerprint for candidate being processed
+            if (identityHash) {
+              await recordFingerprint({
+                tenantId: DEFAULT_TENANT_ID,
+                type: 'candidate_identity',
+                hash: identityHash,
+                source: 'dedup',
+                candidateId: candidate.id,
+              }).catch(() => {});
+            }
+            sentToReview++;
+          } else {
+            // keep_separate
+            await updateCandidateIngestionState(candidate.id, 'active');
+            await recordDedupDecision({
+              tenantId: DEFAULT_TENANT_ID,
+              candidateAId: candidate.id,
+              candidateBId: bestMatch.matchedCandidate.id,
+              decisionType: 'keep_separate',
+              confidenceScore: bestMatch.confidence.score,
+              rationale: bestMatch.confidence.rationale,
+            });
+            // Record fingerprint for candidate being processed
+            if (identityHash) {
+              await recordFingerprint({
+                tenantId: DEFAULT_TENANT_ID,
+                type: 'candidate_identity',
+                hash: identityHash,
+                source: 'dedup',
+                candidateId: candidate.id,
+              }).catch(() => {});
+            }
+            keptSeparate++;
+          }
+        } catch (err) {
+          errors++;
+          console.error(`[DedupWorkerJob] Error processing candidate ${candidate.id}:`, err instanceof Error ? err.message : err);
+          recordSyncFailure('dedup', candidate.id, err);
+        }
+      }
+
+      console.log(JSON.stringify({
+        level: 'info',
+        module: 'DedupWorkerJob',
+        action: 'batch_complete',
+        processed: candidates.length,
+        autoMerged,
+        sentToReview,
+        keptSeparate,
+        errors,
+      }));
+    } catch (err) {
+      console.error('[DedupWorkerJob] Fatal error:', err);
+    }
+  }
+}
+
 export function registerIngestionJobs(scheduler: { register(job: SchedulerJob): void }) {
   scheduler.register(new CeipalIngestionJob());
   scheduler.register(new EmailIngestionJob());
   scheduler.register(new OneDriveResumePollerJob());
   scheduler.register(new SavedSearchDigestJob());
+  scheduler.register(new DedupWorkerJob());
 }
 
 // GlobalScheduler stub removed — deferred to Story 2.7. Use registerIngestionJobs() with a real scheduler.

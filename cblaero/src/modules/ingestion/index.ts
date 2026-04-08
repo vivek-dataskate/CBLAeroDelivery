@@ -251,7 +251,7 @@ export function mapToCandidateRow(record: Record<string, unknown>, source: strin
     skills: Array.isArray(record.skills) ? record.skills : [],
     certifications: Array.isArray(record.certifications) ? record.certifications : [],
     availability_status: 'active',
-    ingestion_state: overrides?.ingestion_state ?? 'pending_enrichment',
+    ingestion_state: overrides?.ingestion_state ?? 'pending_dedup',
     created_by_actor_id: str('createdByActorId'),
     extra_attributes: record.additionalFields && typeof record.additionalFields === 'object'
       ? record.additionalFields

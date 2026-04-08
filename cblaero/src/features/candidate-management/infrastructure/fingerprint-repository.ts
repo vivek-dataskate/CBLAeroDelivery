@@ -21,7 +21,8 @@ export type FingerprintSource =
   | "csv"
   | "ceipal"
   | "resume_upload"
-  | "onedrive";
+  | "onedrive"
+  | "dedup";
 
 export type FingerprintStatus = "processed" | "failed";
 

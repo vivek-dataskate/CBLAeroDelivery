@@ -277,7 +277,7 @@ function prepareRows(input: {
       alternate_email: alternateEmail || null,
       skills: parseSkills(mappedValues.skills ?? ""),
       availability_status: normalizeAvailabilityStatus(mappedValues.availability_status ?? ""),
-      ingestion_state: "pending_enrichment",
+      ingestion_state: "pending_dedup",
       source: "csv_upload",
       source_batch_id: input.batchId,
       created_by_actor_id: input.actorId,

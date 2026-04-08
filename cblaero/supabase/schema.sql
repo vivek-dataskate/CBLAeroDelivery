@@ -239,7 +239,7 @@ create table if not exists cblaero_app.candidates (
   experience jsonb not null default '[]'::jsonb,
   extra_attributes jsonb not null default '{}'::jsonb,
   availability_status text not null default 'passive' check (availability_status in ('active', 'passive', 'unavailable')),
-  ingestion_state text not null default 'pending_dedup' check (ingestion_state in ('pending_dedup', 'pending_enrichment', 'active', 'rejected')),
+  ingestion_state text not null default 'pending_dedup' check (ingestion_state in ('pending_dedup', 'pending_enrichment', 'active', 'rejected', 'pending_review', 'merged')),
   source text not null,
   source_batch_id uuid references cblaero_app.import_batch (id),
   created_by_actor_id text,
@@ -613,7 +613,10 @@ begin
           experience = excluded.experience,
           extra_attributes = excluded.extra_attributes,
           availability_status = excluded.availability_status,
-          ingestion_state = excluded.ingestion_state,
+          ingestion_state = case
+            when candidates.ingestion_state in ('active', 'pending_review') then candidates.ingestion_state
+            else excluded.ingestion_state
+          end,
           source = excluded.source,
           source_batch_id = excluded.source_batch_id,
           created_by_actor_id = coalesce(candidates.created_by_actor_id, excluded.created_by_actor_id),
@@ -659,7 +662,11 @@ begin
           certifications = excluded.certifications, experience = excluded.experience,
           extra_attributes = excluded.extra_attributes,
           availability_status = excluded.availability_status,
-          ingestion_state = excluded.ingestion_state, source = excluded.source,
+          ingestion_state = case
+            when candidates.ingestion_state in ('active', 'pending_review') then candidates.ingestion_state
+            else excluded.ingestion_state
+          end,
+          source = excluded.source,
           source_batch_id = excluded.source_batch_id,
           created_by_actor_id = coalesce(candidates.created_by_actor_id, excluded.created_by_actor_id),
           resume_url = coalesce(excluded.resume_url, candidates.resume_url),
@@ -863,7 +870,11 @@ begin
       job_title = coalesce(excluded.job_title, cblaero_app.candidates.job_title),
       skills = case when excluded.skills != '[]'::jsonb then excluded.skills else cblaero_app.candidates.skills end,
       certifications = case when excluded.certifications != '[]'::jsonb then excluded.certifications else cblaero_app.candidates.certifications end,
-      availability_status = excluded.availability_status, ingestion_state = excluded.ingestion_state,
+      availability_status = excluded.availability_status,
+      ingestion_state = case
+        when cblaero_app.candidates.ingestion_state in ('active', 'pending_review') then cblaero_app.candidates.ingestion_state
+        else excluded.ingestion_state
+      end,
       source = excluded.source, source_batch_id = excluded.source_batch_id, updated_at = now()
     returning id into v_id;
   else
@@ -896,7 +907,11 @@ begin
         job_title = coalesce(excluded.job_title, cblaero_app.candidates.job_title),
         skills = case when excluded.skills != '[]'::jsonb then excluded.skills else cblaero_app.candidates.skills end,
         certifications = case when excluded.certifications != '[]'::jsonb then excluded.certifications else cblaero_app.candidates.certifications end,
-        availability_status = excluded.availability_status, ingestion_state = excluded.ingestion_state,
+        availability_status = excluded.availability_status,
+        ingestion_state = case
+          when cblaero_app.candidates.ingestion_state in ('active', 'pending_review') then cblaero_app.candidates.ingestion_state
+          else excluded.ingestion_state
+        end,
         source = excluded.source, source_batch_id = excluded.source_batch_id, updated_at = now();
       if v_existing_id is not null then v_updated := v_updated + 1;
       else v_inserted := v_inserted + 1; end if;
@@ -1107,7 +1122,7 @@ create table if not exists cblaero_app.content_fingerprints (
     'file_sha256', 'email_message_id', 'csv_row_hash', 'ats_external_id', 'candidate_identity'
   )),
   fingerprint_hash text not null,
-  source text not null check (source in ('email', 'ats', 'csv', 'ceipal', 'resume_upload', 'onedrive')),
+  source text not null check (source in ('email', 'ats', 'csv', 'ceipal', 'resume_upload', 'onedrive', 'dedup')),
   status text not null default 'processed' check (status in ('processed', 'failed')),
   candidate_id uuid references cblaero_app.candidates(id) on delete set null,
   metadata jsonb not null default '{}'::jsonb,
@@ -1193,3 +1208,180 @@ grant select on cblaero_app.llm_usage_log
 
 grant select, insert on cblaero_app.llm_usage_log
   to service_role;
+
+-- Story 2.5: Dedup decisions audit table (append-only — no UPDATE/DELETE grants)
+create table if not exists cblaero_app.dedup_decisions (
+  id bigint generated always as identity primary key,
+  tenant_id text not null,
+  candidate_a_id uuid not null references cblaero_app.candidates(id),
+  candidate_b_id uuid not null references cblaero_app.candidates(id),
+  decision_type text not null check (decision_type in ('auto_merge', 'manual_merge', 'manual_reject', 'keep_separate')),
+  confidence_score numeric(5,2) not null,
+  rationale text not null,
+  actor text not null default 'system',
+  trace_id text,
+  metadata jsonb default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_dedup_decisions_tenant
+  on cblaero_app.dedup_decisions (tenant_id, created_at desc);
+
+create index if not exists idx_dedup_decisions_candidates
+  on cblaero_app.dedup_decisions (candidate_a_id, candidate_b_id);
+
+grant insert, select on cblaero_app.dedup_decisions
+  to authenticated, service_role;
+
+-- Story 2.5: Manual review queue for borderline dedup cases (70-94% confidence)
+create table if not exists cblaero_app.dedup_review_queue (
+  id bigint generated always as identity primary key,
+  tenant_id text not null,
+  candidate_a_id uuid not null references cblaero_app.candidates(id),
+  candidate_b_id uuid not null references cblaero_app.candidates(id),
+  confidence_score numeric(5,2) not null,
+  field_diffs jsonb not null default '{}'::jsonb,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  resolved_by text,
+  resolved_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_dedup_review_tenant_status
+  on cblaero_app.dedup_review_queue (tenant_id, status) where status = 'pending';
+
+grant select, insert, update on cblaero_app.dedup_review_queue
+  to authenticated, service_role;
+
+-- Story 2.5: Atomic merge RPC — merges two candidate records into one
+-- Handles: winner field update, loser nulling (unique constraints), reference migration,
+-- loser state change, and audit decision insert — all in a single transaction.
+create or replace function cblaero_app.merge_candidates(
+  p_winner_id uuid,
+  p_loser_id uuid,
+  p_merged_fields jsonb,
+  p_decision jsonb
+)
+returns void language plpgsql as $$
+declare
+  v_winner_tenant text;
+  v_loser_tenant text;
+begin
+  -- Verify both candidates exist and belong to same tenant
+  select tenant_id into v_winner_tenant from cblaero_app.candidates where id = p_winner_id;
+  select tenant_id into v_loser_tenant from cblaero_app.candidates where id = p_loser_id;
+  if v_winner_tenant is null or v_loser_tenant is null then
+    raise exception 'Candidate not found: winner=% loser=%', p_winner_id, p_loser_id;
+  end if;
+  if v_winner_tenant != v_loser_tenant then
+    raise exception 'Cannot merge candidates from different tenants';
+  end if;
+
+  -- Step 1: NULL out loser's email and phone to release unique constraints
+  -- Preserve originals in extra_attributes before nulling
+  update cblaero_app.candidates set
+    extra_attributes = extra_attributes
+      || jsonb_build_object('original_email', email)
+      || jsonb_build_object('original_phone', phone)
+      || jsonb_build_object('merged_into', p_winner_id::text),
+    email = null,
+    phone = null,
+    ingestion_state = 'merged',
+    updated_at = now()
+  where id = p_loser_id;
+
+  -- Step 2: Update winner with merged field values (no `name` column — was dropped)
+  update cblaero_app.candidates set
+    first_name = coalesce(p_merged_fields->>'first_name', first_name),
+    last_name = coalesce(p_merged_fields->>'last_name', last_name),
+    phone = coalesce(p_merged_fields->>'phone', phone),
+    email = coalesce(p_merged_fields->>'email', email),
+    job_title = coalesce(p_merged_fields->>'job_title', job_title),
+    location = coalesce(p_merged_fields->>'location', location),
+    city = coalesce(p_merged_fields->>'city', city),
+    state = coalesce(p_merged_fields->>'state', state),
+    resume_url = coalesce(p_merged_fields->>'resume_url', resume_url),
+    years_of_experience = coalesce((p_merged_fields->>'years_of_experience')::numeric, years_of_experience),
+    skills = coalesce(p_merged_fields->'skills', skills),
+    certifications = coalesce(p_merged_fields->'certifications', certifications),
+    aircraft_experience = coalesce(p_merged_fields->'aircraft_experience', aircraft_experience),
+    extra_attributes = coalesce(p_merged_fields->'extra_attributes', extra_attributes),
+    ingestion_state = 'active',
+    updated_at = now()
+  where id = p_winner_id;
+
+  -- Step 3: Migrate references from loser to winner
+  update cblaero_app.content_fingerprints set candidate_id = p_winner_id
+    where candidate_id = p_loser_id;
+  update cblaero_app.candidate_submissions set candidate_id = p_winner_id
+    where candidate_id = p_loser_id;
+
+  -- Step 4: Insert audit decision
+  insert into cblaero_app.dedup_decisions (
+    tenant_id, candidate_a_id, candidate_b_id, decision_type,
+    confidence_score, rationale, actor, trace_id, metadata
+  ) values (
+    v_winner_tenant,
+    p_winner_id,
+    p_loser_id,
+    p_decision->>'decision_type',
+    (p_decision->>'confidence_score')::numeric,
+    p_decision->>'rationale',
+    coalesce(p_decision->>'actor', 'system'),
+    p_decision->>'trace_id',
+    coalesce(p_decision->'metadata', '{}'::jsonb)
+  );
+end; $$;
+
+grant execute on function cblaero_app.merge_candidates to authenticated, service_role;
+
+-- Story 2.5: RPC for phone/name field matching with server-side normalization (H1 fix)
+create or replace function cblaero_app.find_dedup_field_matches(
+  p_tenant_id text,
+  p_normalized_phone text,
+  p_first_name text,
+  p_last_name text,
+  p_exclude_id uuid default null
+)
+returns table (
+  id uuid, tenant_id text, email text, phone text, first_name text, last_name text,
+  job_title text, location text, city text, state text,
+  skills jsonb, certifications jsonb, aircraft_experience jsonb,
+  extra_attributes jsonb, years_of_experience numeric,
+  resume_url text, source text, ingestion_state text,
+  created_at timestamptz, updated_at timestamptz
+) language plpgsql as $$
+begin
+  return query
+  select c.id, c.tenant_id, c.email, c.phone, c.first_name, c.last_name,
+         c.job_title, c.location, c.city, c.state,
+         c.skills, c.certifications, c.aircraft_experience,
+         c.extra_attributes, c.years_of_experience,
+         c.resume_url, c.source, c.ingestion_state,
+         c.created_at, c.updated_at
+  from cblaero_app.candidates c
+  where c.tenant_id = p_tenant_id
+    and c.ingestion_state in ('active', 'pending_review')
+    and (p_exclude_id is null or c.id != p_exclude_id)
+    and (
+      (p_normalized_phone != '' and regexp_replace(c.phone, '\D', '', 'g') = p_normalized_phone)
+      or
+      (p_first_name != '' and p_last_name != '' and lower(trim(c.first_name)) = lower(trim(p_first_name)) and lower(trim(c.last_name)) = lower(trim(p_last_name)))
+    )
+  limit 50;
+end; $$;
+
+grant execute on function cblaero_app.find_dedup_field_matches to service_role;
+
+-- Story 2.5: RPC for dedup stats with GROUP BY (H4 fix)
+create or replace function cblaero_app.get_dedup_stats(p_tenant_id text)
+returns table (decision_type text, cnt bigint) language plpgsql as $$
+begin
+  return query
+  select d.decision_type, count(*) as cnt
+  from cblaero_app.dedup_decisions d
+  where d.tenant_id = p_tenant_id
+  group by d.decision_type;
+end; $$;
+
+grant execute on function cblaero_app.get_dedup_stats to service_role;
