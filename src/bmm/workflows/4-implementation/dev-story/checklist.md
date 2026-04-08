@@ -46,6 +46,7 @@ validation-rules:
 - [ ] **Regression Prevention:** ALL existing tests pass (no regressions introduced)
 - [ ] **Code Quality:** Linting and static checks pass when configured in project
 - [ ] **Test Framework Compliance:** Tests use project's testing frameworks and patterns from Dev Notes
+- [ ] **Schema.sql Sync:** If story made ANY database changes (tables, columns, constraints, indexes, RLS policies, RPCs), schema.sql has been updated to match the actual database state
 
 ## 📝 Documentation & Tracking
 

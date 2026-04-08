@@ -122,6 +122,14 @@
       8. **Cards**: `rounded-xl` cards, `rounded-lg` buttons, `rounded-full` badges
     </action>
 
+    <!-- Schema.sql Drift Check -->
+    <action>If a schema.sql file exists in the project AND the story made any database changes (tables, columns, constraints, indexes, RLS policies, RPCs):
+      1. Read schema.sql and identify the relevant table/RPC definitions
+      2. Compare against actual database state (via MCP or migration files)
+      3. If schema.sql is missing changes or out of sync → HIGH finding (schema drift)
+      4. Verify all new columns, constraints, indexes, and RLS policies are reflected in schema.sql
+    </action>
+
     <!-- Reusability Check -->
     <action>Check for duplicated logic that should use existing capabilities from architecture.md registry:
       - Is there a new `fetch()` call that should use `fetchWithRetry`?
