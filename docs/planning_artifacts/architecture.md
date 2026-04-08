@@ -1170,6 +1170,28 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 | `recordFingerprint(params)` | `src/features/candidate-management/infrastructure/fingerprint-repository.ts` | Upsert fingerprint after processing. Supports processed/failed status. |
 | `loadRecentFingerprints(tenantId, type, days?)` | `src/features/candidate-management/infrastructure/fingerprint-repository.ts` | Batch pre-load fingerprints into Set for CSV/ATS batch paths. Default 30-day window. Email sync uses 3650 days (emails persist in inbox). |
 
+### Dedup & Merge (Story 2.5)
+| Capability | Location | When to Use |
+|-----------|----------|-------------|
+| `computeIdentityConfidence(a, b)` | `src/features/candidate-management/application/dedup-scoring.ts` | Deterministic confidence scoring (98/95/85/70/50/0%). Compares email, phone, name. Phone normalization matches `computeIdentityHash` (digits-only, no leading-1 strip). |
+| `routeDedupDecision(score)` | `src/features/candidate-management/application/dedup-scoring.ts` | Routes score to `auto_merge` (>=95), `manual_review` (70-94), or `keep_separate` (<70). |
+| `selectWinner(a, b)` | `src/features/candidate-management/application/dedup-merge.ts` | Winner selection: prefer active > more fields > most recent. Returns `{ winner, loser }`. |
+| `computeMergedFields(winner, loser)` | `src/features/candidate-management/application/dedup-merge.ts` | Computes merged JSONB for `merge_candidates` RPC. JSON array union for skills/certs. Preserves email aliases, merged sources, additional resumes. |
+| `computeFieldDiffs(a, b)` | `src/features/candidate-management/application/dedup-merge.ts` | Computes field-level diffs for review queue UI side-by-side display. |
+| `findIdentityMatches(tenantId, hash, excludeId?)` | `src/features/candidate-management/infrastructure/dedup-repository.ts` | Pass 1: Query `content_fingerprints` for `candidate_identity` hash matches. |
+| `findRawFieldMatches(tenantId, phone, first, last, excludeId?)` | `src/features/candidate-management/infrastructure/dedup-repository.ts` | Pass 2: Calls `find_dedup_field_matches` RPC for server-side phone normalization + name matching. Searches `active` + `pending_review` candidates. |
+| `loadCandidateForDedup(tenantId, candidateId)` | `src/features/candidate-management/infrastructure/dedup-repository.ts` | Load candidate with all fields needed for scoring/merge (includes `resume_url`, `aircraft_experience`). |
+| `listPendingDedupCandidates(tenantId, limit?)` | `src/features/candidate-management/infrastructure/dedup-repository.ts` | Query candidates in `pending_dedup` state for worker processing. |
+| `callMergeCandidatesRpc(winnerId, loserId, fields, decision)` | `src/features/candidate-management/infrastructure/dedup-repository.ts` | Wrapper for `merge_candidates` RPC. Atomic: NULL loser email/phone → update winner → migrate refs → audit. |
+| `createReviewItem(tenantId, aId, bId, score, diffs)` | `src/features/candidate-management/infrastructure/dedup-repository.ts` | Insert into `dedup_review_queue` for manual review. |
+| `recordDedupDecision(params)` | `src/features/candidate-management/infrastructure/dedup-repository.ts` | Insert into `dedup_decisions` audit table. |
+| `listPendingReviews(tenantId, limit?, offset?)` | `src/features/candidate-management/infrastructure/dedup-repository.ts` | Paginated list of pending review queue items. |
+| `resolveReview(reviewId, tenantId, decision, actorId)` | `src/features/candidate-management/infrastructure/dedup-repository.ts` | Update review queue item status. On reject, also transitions candidates to active. |
+| `getDedupStats(tenantId)` | `src/features/candidate-management/infrastructure/dedup-repository.ts` | Counts by decision type + pending reviews. Uses `get_dedup_stats` RPC with GROUP BY. |
+| `merge_candidates` RPC | `supabase/schema.sql` | Atomic merge: NULL loser email/phone (unique constraint release) → update winner fields → migrate fingerprints + submissions → insert audit row. |
+| `find_dedup_field_matches` RPC | `supabase/schema.sql` | Server-side phone normalization (`regexp_replace`) + name matching. Searches `active` + `pending_review` candidates. |
+| `get_dedup_stats` RPC | `supabase/schema.sql` | GROUP BY `decision_type` counts for dashboard stats. |
+
 ### Ingestion Jobs (Scheduler-Ready)
 | Capability | Location | When to Use |
 |-----------|----------|-------------|
@@ -1177,7 +1199,8 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 | `EmailIngestionJob` | `src/modules/ingestion/jobs.ts` | Stream-processes Graph inbox: fetches unread emails, LLM classifies, persists submissions with attachments, marks as read. Uses `processInbox()` for one-at-a-time processing (no OOM). |
 | `OneDriveResumePollerJob` | `src/modules/ingestion/jobs.ts` | Polls OneDrive folder recursively (BFS subfolders) for PDFs. 10-concurrent parallel processing, 500-file cap per run (hourly cron). Uses `uploadFileToStorage` → LLM extraction → `processImportChunk()` repository wrapper with `resume_url`. Uses `mapToCandidateRow()` for field mapping. Uses `createImportBatch()`/`updateImportBatch()` repository functions. Deletes source only after storage backup confirmed. Cleans up empty subfolders. |
 | `SavedSearchDigestJob` | `src/modules/ingestion/jobs.ts` | Sends daily digest emails for saved searches via Graph sendMail. Checks response status. |
-| `registerIngestionJobs(scheduler)` | `src/modules/ingestion/jobs.ts` | Registers all 4 jobs (Ceipal, Email, OneDrive, SavedSearchDigest) with any scheduler implementing `{ register(job: SchedulerJob): void }`. |
+| `DedupWorkerJob` | `src/modules/ingestion/jobs.ts` | Two-pass dedup worker: Pass 1 fingerprint hash lookup, Pass 2 `find_dedup_field_matches` RPC for phone/name. Routes to auto-merge (>=95%), manual review (70-94%), or keep-separate (<70%). Records identity fingerprints. Batch size 100, triggered via `/api/internal/jobs/run` with `job=dedup`. |
+| `registerIngestionJobs(scheduler)` | `src/modules/ingestion/jobs.ts` | Registers all 5 jobs (Ceipal, Email, OneDrive, SavedSearchDigest, DedupWorker) with any scheduler implementing `{ register(job: SchedulerJob): void }`. |
 
 ### Auth & Admin
 | Capability | Location | When to Use |
@@ -1200,6 +1223,7 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 | `MigrationStatusCard` | `src/app/dashboard/admin/MigrationStatusCard.tsx` | Display import batch status. Accepts `tenantId`, `actorId`. |
 | `BatchProgressCard` | `src/app/dashboard/recruiter/upload/BatchProgressCard.tsx` | Real-time batch progress with polling. Accepts `batchId`. |
 | `AiCostDashboard` | `src/app/dashboard/admin/AiCostDashboard.tsx` | AI cost dashboard with daily spend chart, budget alert, prompt version comparison. Client component, self-fetching. |
+| `DedupReviewDashboard` | `src/app/dashboard/admin/dedup/page.tsx` | Dedup review queue with stats, side-by-side comparison, merge/reject actions, bulk operations. Shows merged record after approval. Light theme. |
 
 ## Architecture Resilience Decisions
 

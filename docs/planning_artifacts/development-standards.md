@@ -179,6 +179,9 @@ const { error } = await db.rpc('upsert_candidate_with_audit', {
 - `count_candidates_by_source` — count candidates by source. Used by `countCandidatesBySource()`.
 - `get_last_candidate_update_by_source` — latest updated_at for source. Used by `getLastCandidateUpdateBySource()`.
 - `cleanup_audit_logs` — purge old audit records (retention policy).
+- `merge_candidates` — atomic candidate merge: update winner, mark loser as merged, migrate references, record decision. Used by `callMergeCandidatesRpc()`.
+- `find_raw_field_matches` — phone/name fuzzy matching with server-side normalization for dedup Pass 2. Used by `findRawFieldMatches()`.
+- `get_dedup_stats` — aggregated dedup statistics (counts by decision type + pending reviews). Used by `getDedupStats()`.
 
 **RPCs needed (create when implementing stories that touch these):**
 - `register_or_sync_user` — user upsert by actor_id (replaces check-before-insert in `registerOrSyncUserFromSession`)
@@ -595,6 +598,17 @@ Before writing a new helper, check if one already exists:
 | Sync error markers (KV) | `getMarkerValue()`, `setMarkerValue()` | `@/features/candidate-management/infrastructure/sync-error-repository` — lightweight KV storage using sync_errors table. |
 | Import batch audit | `recordImportBatchAccessEvent()`, `listImportBatchAccessEvents()` | `@/modules/audit` |
 | Cross-client confirmation | `issueCrossClientConfirmationToken()`, `verifyCrossClientConfirmationToken()`, `consumeCrossClientConfirmationToken()` | `@/modules/auth/cross-client-confirmation` |
+| Dedup identity matching | `findIdentityMatches()` | `@/features/candidate-management/infrastructure/dedup-repository` — find candidates by identity fingerprint hash |
+| Dedup field matching | `findRawFieldMatches()` | `@/features/candidate-management/infrastructure/dedup-repository` — RPC-based phone/name matching with server-side normalization |
+| Dedup candidate loading | `loadCandidateForDedup()` | `@/features/candidate-management/infrastructure/dedup-repository` — load candidate with all dedup-relevant fields |
+| Dedup merge execution | `callMergeCandidatesRpc()` | `@/features/candidate-management/infrastructure/dedup-repository` — atomic merge via `merge_candidates` RPC |
+| Dedup state transition | `updateCandidateIngestionState()` | `@/features/candidate-management/infrastructure/dedup-repository` — transition candidate ingestion state |
+| Dedup review CRUD | `createReviewItem()`, `listPendingReviews()`, `getReviewById()`, `resolveReview()` | `@/features/candidate-management/infrastructure/dedup-repository` |
+| Dedup decision audit | `recordDedupDecision()` | `@/features/candidate-management/infrastructure/dedup-repository` — audit log for all dedup decisions |
+| Dedup stats | `getDedupStats()` | `@/features/candidate-management/infrastructure/dedup-repository` — aggregated counts via RPC |
+| Dedup winner selection | `selectWinner()` | `@/features/candidate-management/application/dedup-merge` — picks winner by active status > field count > creation date |
+| Dedup field merging | `computeMergedFields()` | `@/features/candidate-management/application/dedup-merge` — merge two candidates preserving best data |
+| Dedup field diff | `computeFieldDiffs()` | `@/features/candidate-management/application/dedup-merge` — generate field-level diffs for review UI |
 
 ### If 2+ files need the same logic, extract to a shared module
 ```typescript
@@ -617,11 +631,15 @@ Every table must have a dedicated repository or module with named functions for 
 | `import_batch` | `import-batch-repository.ts` | Exists |
 | `sync_errors` | `sync-error-repository.ts` | Exists |
 | `content_fingerprints` | `fingerprint-repository.ts` | Exists |
+| `dedup_decisions` | `dedup-repository.ts` | Exists (append-only audit) |
+| `dedup_review_queue` | `dedup-repository.ts` | Exists |
 | `admin_managed_users` | `admin/index.ts` | OK (module owns table) |
 | `admin_invitations` | `admin/index.ts` | OK (module owns table) |
 | `audit_*` tables | `audit/index.ts` | OK (module owns tables) |
 | `prompt_registry` | `ai/prompt-registry.ts` | Exists |
 | `llm_usage_log` | `ai/usage-log.ts` | Exists |
+| `dedup_reviews` | `dedup-repository.ts` | Exists |
+| `dedup_decisions` | `dedup-repository.ts` | Exists |
 
 ### Shared type definitions
 If a type is used across modules, define it in `contracts/` not inline. If a mapping function is needed by multiple callers, export it from the module's public API.
