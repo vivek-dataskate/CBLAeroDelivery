@@ -72,7 +72,9 @@ Breadcrumbs use **`text-base font-medium`** (16px) with light text on the navy b
 - Active/clickable crumbs: `text-cbl-light hover:text-white`
 - Current page (last crumb): `text-white` (not a link)
 - Separator: `<span className="text-cbl-light/40">/</span>`
-- Header buttons: `rounded-lg border border-white/30 text-white hover:bg-white/10`
+- Header right side: **always Sign Out button only** — no page-specific controls in the header
+- Sign Out button: `rounded-lg border border-white/30 text-white hover:bg-white/10`
+- Page-specific controls (Saved Searches, client switcher, etc.) go in the content area below the header
 
 ### Header Brand (Dashboard root only)
 

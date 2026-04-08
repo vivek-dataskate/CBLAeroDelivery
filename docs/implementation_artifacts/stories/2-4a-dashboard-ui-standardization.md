@@ -131,8 +131,11 @@ so that the application feels professional and I can navigate confidently across
 | No footer | Consistent footer on all pages |
 | No shared header pattern | Sticky header with breadcrumbs on all pages |
 
+- [x] Task 17: Standardize all page headers — Sign Out button right side on every page, move page-specific controls (Saved Searches, client switcher) to content area
+
 ## Change Log
 
 | Date | Change | Author |
 |------|--------|--------|
 | 2026-04-08 | Story created and implemented | Dev Agent |
+| 2026-04-08 | Header consistency fix: Sign Out on all pages, removed inconsistent Dashboard/Saved Searches buttons from headers | Dev Agent |

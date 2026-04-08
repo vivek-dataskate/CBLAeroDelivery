@@ -175,7 +175,11 @@ export default function CandidateDetailPage() {
             <span className="text-cbl-light/40">/</span>
             <span className="text-white">{fullName}</span>
           </nav>
-          <span className="hidden text-sm text-cbl-light/60 sm:block">ID: {candidate.id.slice(0, 8)}...</span>
+          <form action="/api/auth/logout" method="post">
+            <button type="submit" className="rounded-lg border border-white/30 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/10">
+              Sign Out
+            </button>
+          </form>
         </div>
       </header>
 
