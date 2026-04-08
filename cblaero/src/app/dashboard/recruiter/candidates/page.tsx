@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState, useCallback } from "react";
 
 type CandidateRow = {
@@ -74,7 +73,6 @@ function formatDate(iso: string): string {
 }
 
 export default function CandidatesPage() {
-  const router = useRouter();
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [candidates, setCandidates] = useState<CandidateRow[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -432,7 +430,7 @@ export default function CandidatesPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {pageRows.map((c) => (
-                      <tr key={c.id} onClick={() => router.push(`/dashboard/recruiter/candidates/${c.id}`)}
+                      <tr key={c.id} onClick={() => window.open(`/dashboard/recruiter/candidates/${c.id}`, '_blank')}
                         className="cursor-pointer text-sm text-gray-700 transition-colors hover:bg-emerald-50/40">
                         <td className="px-5 py-2.5">
                           <div className="font-medium text-gray-900">{c.firstName} {c.lastName}</div>
