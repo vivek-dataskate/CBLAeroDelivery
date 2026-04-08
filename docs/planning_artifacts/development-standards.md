@@ -295,11 +295,12 @@ Promise.resolve(
 ```
 
 ### 4.8 Schema changes
-- Always update `cblaero/supabase/schema.sql` when applying migrations via MCP
+- Always update `cblaero/supabase/schema.sql` when applying migrations via MCP — schema.sql must match the live DB 100%
 - New RPCs go in schema.sql with `CREATE OR REPLACE FUNCTION`
 - Use `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` for additive changes
 - Include `GRANT` statements for new tables and functions
 - Add indexes for any column used in WHERE clauses at scale
+- **Never use `SELECT * FROM jsonb_populate_record(null::table_type, ...)`** in INSERT statements — this expands to ALL columns including generated columns (e.g., `name_tsv`), which PostgreSQL rejects. Always use explicit column lists in INSERT/VALUES.
 
 ## 5. Authentication & Token Management
 
@@ -908,7 +909,26 @@ When extraction quality drops, a prompt breaks, or a model API goes down, the sy
 3. **Track incidents in the same system as sync errors** — `recordSyncFailure('llm_incident', recordId, error)` so admin dashboard shows them
 4. **Post-incident**: update prompt/model, add regression test covering the failure case, document root cause in story or dev notes
 
-## 27. Audit Log Immutability
+## 27. Dashboard UI Standards — Mandatory for All Dashboard Pages
+
+All dashboard pages (`/dashboard/**`) must follow the standards in [`cblaero/docs/dashboard-ui-standards.md`](../../cblaero/docs/dashboard-ui-standards.md). This is a **code review gate** — PRs that modify dashboard UI will be rejected if they violate these standards.
+
+### Quick reference (full spec in the linked file)
+
+- **Background:** `bg-white` on all pages. No dark mode. No `bg-gray-50` at page level.
+- **Layout:** `flex min-h-screen flex-col bg-white` with sticky header, `flex-1` content, fixed footer.
+- **Container:** `max-w-6xl mx-auto px-6` everywhere. Never `max-w-4xl`/`max-w-5xl`/`max-w-7xl`.
+- **Breadcrumbs:** `text-base font-medium` (16px) with emerald links and `/` separators.
+- **Footer:** Every page ends with `CBL Aero · Enterprise Portal` in `text-sm text-gray-400`.
+- **Typography:** Only Tailwind standard classes (`text-xs`, `text-sm`, `text-base`, `text-xl`). **Never `text-[Npx]`** arbitrary values.
+- **Colors:** `gray-*` for neutrals (never `slate-*`), `emerald-*` for accents (never `cyan-*`).
+- **Cards:** `rounded-xl border-gray-200`. Buttons: `rounded-lg`. Badges: `rounded-full`.
+- **Minimum font:** `text-xs` (12px). Nothing smaller.
+
+### What triggers this standard
+Any file change in `src/app/dashboard/` — pages, components, or child components rendered on dashboard routes.
+
+## 28. Audit Log Immutability
 
 ### Audit events must be tamper-proof
 
