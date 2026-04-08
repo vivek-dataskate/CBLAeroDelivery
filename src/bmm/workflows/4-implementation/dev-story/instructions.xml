@@ -373,7 +373,9 @@
       - Change Log includes summary of changes
       - Only permitted story sections were modified
       - New reusable capabilities registered in architecture.md and development-standards.md
+      - If ANY database changes were made (tables, columns, constraints, indexes, RLS policies, RPCs), schema.sql is updated to match the actual database state
     </action>
+    <action if="story made database changes AND schema.sql exists AND schema.sql does not reflect the changes">HALT — update schema.sql to match actual database before completing</action>
 
     <!-- Mark story ready for review - sprint status conditional -->
     <check if="{sprint_status} file exists AND {{current_sprint_status}} != 'no-sprint-tracking'">
