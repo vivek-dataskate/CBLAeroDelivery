@@ -596,6 +596,7 @@ Before writing a new helper, check if one already exists:
 | Candidate email lookup | `findCandidateIdsByEmails()` | `@/features/candidate-management/infrastructure/candidate-repository` |
 | Candidate source stats | `countCandidatesBySource()`, `getLastCandidateUpdateBySource()` | `@/features/candidate-management/infrastructure/candidate-repository` |
 | Sync error recording | `recordSyncFailure()`, `listRecentSyncErrors()` | `@/features/candidate-management/infrastructure/sync-error-repository` — centralized sync_errors table access with in-memory fallback. |
+| Sync run tracking | `createSyncRun()`, `completeSyncRun()`, `failSyncRun()`, `listSyncRunsCurrentMonth()`, `listSyncErrorsByRun()` | `@/features/candidate-management/infrastructure/sync-error-repository` — batch-level job run summaries. All ingestion jobs MUST create a sync run at start and complete/fail it at end. |
 | Sync error markers (KV) | `getMarkerValue()`, `setMarkerValue()` | `@/features/candidate-management/infrastructure/sync-error-repository` — lightweight KV storage using sync_errors table. |
 | Import batch audit | `recordImportBatchAccessEvent()`, `listImportBatchAccessEvents()` | `@/modules/audit` |
 | Cross-client confirmation | `issueCrossClientConfirmationToken()`, `verifyCrossClientConfirmationToken()`, `consumeCrossClientConfirmationToken()` | `@/modules/auth/cross-client-confirmation` |
