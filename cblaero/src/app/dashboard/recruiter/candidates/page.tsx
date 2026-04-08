@@ -209,24 +209,26 @@ export default function CandidatesPage() {
               <span className="text-white">Candidates</span>
             </nav>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => { setShowSavedPanel(!showSavedPanel); if (!showSavedPanel) loadSavedSearches(); }}
-              className="rounded-lg border border-white/30 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/10"
-            >
-              Saved Searches
+          <form action="/api/auth/logout" method="post">
+            <button type="submit" className="rounded-lg border border-white/30 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/10">
+              Sign Out
             </button>
-            <form action="/api/auth/logout" method="post">
-              <button type="submit" className="rounded-lg border border-white/30 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/10">
-                Sign Out
-              </button>
-            </form>
-          </div>
+          </form>
         </div>
       </header>
 
       <div className="mx-auto w-full max-w-6xl flex-1 px-6 py-6">
+        {/* Saved searches toggle */}
+        <div className="mb-4 flex justify-end">
+          <button
+            type="button"
+            onClick={() => { setShowSavedPanel(!showSavedPanel); if (!showSavedPanel) loadSavedSearches(); }}
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
+          >
+            Saved Searches
+          </button>
+        </div>
+
         {/* Saved searches panel */}
         {showSavedPanel && savedSearches.length > 0 && (
           <div className="mb-4 rounded-xl border border-gray-200 bg-white p-5">

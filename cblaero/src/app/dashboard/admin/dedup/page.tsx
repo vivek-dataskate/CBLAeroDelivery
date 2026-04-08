@@ -174,9 +174,11 @@ export default function DedupReviewDashboard() {
               <span className="text-white">Dedup Review</span>
             </nav>
           </div>
-          <Link href="/dashboard" className="rounded-lg border border-white/30 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/10">
-            Dashboard
-          </Link>
+          <form action="/api/auth/logout" method="post">
+            <button type="submit" className="rounded-lg border border-white/30 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/10">
+              Sign Out
+            </button>
+          </form>
         </div>
       </header>
 
