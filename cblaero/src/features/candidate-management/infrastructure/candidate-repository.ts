@@ -91,6 +91,7 @@ type CandidateDetailRow = CandidateRow & {
   call_availability: string | null;
   interview_availability: string | null;
   veteran_status: string | null;
+  resume_url: string | null;
 };
 
 function toListItem(row: CandidateRow): CandidateListItem {
@@ -155,6 +156,7 @@ function toDetail(row: CandidateDetailRow): CandidateDetail {
     callAvailability: row.call_availability,
     interviewAvailability: row.interview_availability,
     veteranStatus: row.veteran_status,
+    resumeUrl: row.resume_url,
   };
 }
 

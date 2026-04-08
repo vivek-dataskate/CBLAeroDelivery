@@ -767,7 +767,7 @@ returns table (
   employment_type text, current_rate text, per_diem text, has_ap_license boolean,
   years_of_experience text, ceipal_id text, submitted_by text, submitter_email text,
   shift_preference text, expected_start_date text, call_availability text,
-  interview_availability text, veteran_status text,
+  interview_availability text, veteran_status text, resume_url text,
   source text, source_batch_id uuid, created_at timestamptz, updated_at timestamptz
 )
 language sql stable
@@ -782,7 +782,7 @@ as $$
     c.employment_type, c.current_rate, c.per_diem, c.has_ap_license,
     c.years_of_experience, c.ceipal_id, c.submitted_by, c.submitter_email,
     c.shift_preference, c.expected_start_date, c.call_availability,
-    c.interview_availability, c.veteran_status,
+    c.interview_availability, c.veteran_status, c.resume_url,
     c.source, c.source_batch_id, c.created_at, c.updated_at
   from cblaero_app.candidates c
   where c.id = p_candidate_id and c.tenant_id = p_tenant_id
