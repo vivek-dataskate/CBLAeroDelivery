@@ -1143,8 +1143,13 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 | `batchInsertCandidatesNoEmail(rows)` | `src/features/candidate-management/infrastructure/candidate-repository.ts` | Batch insert for candidates without email. |
 | `batchUpsertCandidatesFromATS(records)` | `src/modules/ingestion/index.ts` | Orchestrates batch upsert via repository functions with email dedup + fallback to individual inserts on conflict. |
 | `upsertCandidateFromEmailFull(record)` | `src/modules/ingestion/index.ts` | Single email submission: dedup check first, then repository upsert + submission evidence + attachment upload. Returns `'dedup_skip'` if already processed. |
-| `recordSyncFailure(source, recordId, err)` | `src/features/candidate-management/infrastructure/sync-error-repository.ts` | Log sync errors to Supabase `sync_errors` table with in-memory fallback. Re-exported from `ingestion/index.ts` for backward compatibility. |
+| `recordSyncFailure(source, recordId, err, runId?)` | `src/features/candidate-management/infrastructure/sync-error-repository.ts` | Log sync errors to Supabase `sync_errors` table with in-memory fallback. Optional `runId` links error to parent sync run. Re-exported from `ingestion/index.ts`. |
 | `listRecentSyncErrors()` | `src/features/candidate-management/infrastructure/sync-error-repository.ts` | Fetch recent sync errors for admin dashboard. |
+| `createSyncRun(source)` | `src/features/candidate-management/infrastructure/sync-error-repository.ts` | Create sync run row at job start. Returns id or null on failure (never throws). |
+| `completeSyncRun(runId, counts)` | `src/features/candidate-management/infrastructure/sync-error-repository.ts` | Mark sync run complete with succeeded/failed/total counts. No-op on null runId. |
+| `failSyncRun(runId, errorMessage)` | `src/features/candidate-management/infrastructure/sync-error-repository.ts` | Mark sync run failed with error message/stack trace. No-op on null runId. |
+| `listSyncRunsCurrentMonth()` | `src/features/candidate-management/infrastructure/sync-error-repository.ts` | List sync runs for current UTC month, ordered by started_at desc. |
+| `listSyncErrorsByRun(runId)` | `src/features/candidate-management/infrastructure/sync-error-repository.ts` | List all sync errors linked to a specific run. |
 | `getMarkerValue(source, recordId)` | `src/features/candidate-management/infrastructure/sync-error-repository.ts` | Read KV marker from sync_errors table (e.g., Ceipal resume page). |
 | `setMarkerValue(source, recordId, value)` | `src/features/candidate-management/infrastructure/sync-error-repository.ts` | Write KV marker to sync_errors table. |
 | `createImportBatch(params)` | `src/features/candidate-management/infrastructure/import-batch-repository.ts` | Create new import batch (CSV, resume, email). Returns id + startedAt. Dual persistence. |
@@ -1219,7 +1224,8 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 ### UI Components (Reusable)
 | Capability | Location | When to Use |
 |-----------|----------|-------------|
-| `SyncErrorStatusCard` | `src/app/dashboard/admin/SyncErrorStatusCard.tsx` | Display sync errors on admin dashboard. Accepts `errors: SyncError[]`. |
+| `SyncErrorStatusCard` | `src/app/dashboard/admin/SyncErrorStatusCard.tsx` | Legacy — replaced by SyncRunSummaryCard in Story 2.4b. Kept for zero-risk rollback. |
+| `SyncRunSummaryCard` | `src/app/dashboard/admin/SyncRunSummaryCard.tsx` | Self-fetching client component showing current month sync runs with status, counts, error details on click, and "View Errors" drill-down. |
 | `MigrationStatusCard` | `src/app/dashboard/admin/MigrationStatusCard.tsx` | Display import batch status. Accepts `tenantId`, `actorId`. |
 | `BatchProgressCard` | `src/app/dashboard/recruiter/upload/BatchProgressCard.tsx` | Real-time batch progress with polling. Accepts `batchId`. |
 | `AiCostDashboard` | `src/app/dashboard/admin/AiCostDashboard.tsx` | AI cost dashboard with daily spend chart, budget alert, prompt version comparison. Client component, self-fetching. |
