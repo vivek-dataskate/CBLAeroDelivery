@@ -55,6 +55,7 @@ export default function DedupReviewDashboard() {
   const [loadingExpand, setLoadingExpand] = useState(false);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
+  const [resolvedMap, setResolvedMap] = useState<Map<number, { decision: "approved" | "rejected"; mergedCandidate?: CandidateProfile | null }>>(new Map());
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -105,10 +106,10 @@ export default function DedupReviewDashboard() {
         setError(json.error?.message ?? `Failed to ${actionLabel}`);
         return;
       }
-      // Remove from list and clear expanded state
-      setReviews((prev) => prev.filter((r) => r.id !== reviewId));
-      if (expandedId === reviewId) setExpandedId(null);
-      setExpandedCache((prev) => { const next = new Map(prev); next.delete(reviewId); return next; });
+      const json = await res.json();
+      // Mark as resolved (keep in list showing merged result)
+      setResolvedMap((prev) => new Map(prev).set(reviewId, { decision, mergedCandidate: json.data?.mergedCandidate ?? null }));
+      setExpandedId(reviewId);
       // Refresh stats
       const statsRes = await fetch("/api/internal/dedup/stats");
       if (statsRes.ok) { const s = await statsRes.json(); setStats(s.data ?? null); }
@@ -169,7 +170,7 @@ export default function DedupReviewDashboard() {
             <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-400">CBL Aero</p>
             <h1 className="mt-0.5 text-lg font-semibold text-gray-900">Dedup Review Queue</h1>
           </div>
-          <Link href="/dashboard" className="rounded-md border border-gray-300 px-2.5 py-1 text-[11px] text-gray-600 hover:bg-gray-100">
+          <Link href="/dashboard" className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50">
             Dashboard
           </Link>
         </header>
@@ -248,10 +249,59 @@ export default function DedupReviewDashboard() {
               const isExpanded = expandedId === r.id;
               const cached = expandedCache.get(r.id);
               const isActioning = actionLoading === r.id;
+              const resolved = resolvedMap.get(r.id);
 
               return (
-                <div key={r.id} className={`rounded-lg border bg-white transition-shadow ${isExpanded ? "border-emerald-300 shadow-md" : "border-gray-200"}`}>
+                <div key={r.id} className={`rounded-lg border bg-white transition-shadow ${
+                  resolved ? (resolved.decision === "approved" ? "border-green-300" : "border-blue-300") :
+                  isExpanded ? "border-emerald-300 shadow-md" : "border-gray-200"
+                }`}>
+                  {/* Resolved: show outcome + merged record */}
+                  {resolved && (
+                    <div className={`px-4 py-3 ${resolved.decision === "approved" ? "bg-green-50" : "bg-blue-50"}`}>
+                      <div className="flex items-center justify-between">
+                        <span className={`text-sm font-semibold ${resolved.decision === "approved" ? "text-green-700" : "text-blue-700"}`}>
+                          {resolved.decision === "approved" ? "Merged" : "Kept Separate"}
+                        </span>
+                        <button onClick={() => { setReviews((prev) => prev.filter((rv) => rv.id !== r.id)); setResolvedMap((prev) => { const n = new Map(prev); n.delete(r.id); return n; }); }}
+                          className="text-[10px] text-gray-400 hover:text-gray-600">Dismiss</button>
+                      </div>
+
+                      {resolved.decision === "approved" && resolved.mergedCandidate && (
+                        <div className="mt-3 rounded-lg border border-green-200 bg-white p-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-green-600">Merged Record</p>
+                            <a href={`/dashboard/recruiter/candidates/${resolved.mergedCandidate.id}`} target="_blank" rel="noopener noreferrer"
+                              className="rounded bg-green-600 px-2.5 py-1 text-[10px] font-medium text-white hover:bg-green-500">
+                              Open Profile →
+                            </a>
+                          </div>
+                          <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-[12px]">
+                            <FieldRow label="Name" value={`${resolved.mergedCandidate.firstName ?? ""} ${resolved.mergedCandidate.lastName ?? ""}`.trim()} />
+                            <FieldRow label="Email" value={resolved.mergedCandidate.email} />
+                            <FieldRow label="Phone" value={resolved.mergedCandidate.phone} />
+                            <FieldRow label="Job Title" value={resolved.mergedCandidate.jobTitle} />
+                            <FieldRow label="Location" value={resolved.mergedCandidate.location} />
+                            <FieldRow label="Source" value={resolved.mergedCandidate.source} />
+                          </dl>
+                          {Array.isArray(resolved.mergedCandidate.skills) && resolved.mergedCandidate.skills.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {resolved.mergedCandidate.skills.map((s: string, i: number) => (
+                                <span key={i} className="rounded bg-green-100 px-1.5 py-0.5 text-[10px] text-green-700">{s}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {resolved.decision === "rejected" && (
+                        <p className="mt-1 text-[11px] text-blue-600">Both candidates remain as separate active records.</p>
+                      )}
+                    </div>
+                  )}
+
                   {/* Row header */}
+                  {!resolved && (
                   <div className="flex items-center gap-3 px-4 py-3">
                     <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleSelect(r.id)} className="h-3.5 w-3.5 rounded border-gray-300" />
 
@@ -292,6 +342,7 @@ export default function DedupReviewDashboard() {
                       </button>
                     </div>
                   </div>
+                  )}
 
                   {/* Expanded: side-by-side comparison */}
                   {isExpanded && (
