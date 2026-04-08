@@ -232,7 +232,6 @@ create table if not exists cblaero_app.candidates (
   tenant_id text not null,
   email text,
   phone text,
-  name text not null,
   location text,
   skills jsonb not null default '[]'::jsonb,
   certifications jsonb not null default '[]'::jsonb,
@@ -424,15 +423,15 @@ grant execute on function cblaero_app.search_candidates to anon, authenticated, 
 create or replace function cblaero_app.process_import_chunk(
   p_batch_id uuid,
   p_candidates jsonb,
-  p_error_rows jsonb,
-  p_total_imported int,
-  p_total_skipped int,
-  p_total_errors int
+  p_error_rows jsonb default '[]'::jsonb,
+  p_total_imported int default 0,
+  p_total_skipped int default 0,
+  p_total_errors int default 0
 )
-returns table (imported int, skipped int, errors int)
+returns jsonb
 language plpgsql
 security definer
-set search_path = cblaero_app, public
+set search_path = cblaero_app
 as $$
 declare
   v_candidate jsonb;
@@ -458,7 +457,6 @@ declare
   v_current_company text;
   v_job_title text;
   v_alternate_email text;
-  v_computed_name text;
   v_resume_url text;
 begin
   for v_error in select value from jsonb_array_elements(coalesce(p_error_rows, '[]'::jsonb)) loop
@@ -499,12 +497,6 @@ begin
     v_job_title := nullif(trim(coalesce(v_candidate->>'job_title', '')), '');
     v_alternate_email := nullif(trim(coalesce(v_candidate->>'alternate_email', '')), '');
     v_resume_url := nullif(trim(coalesce(v_candidate->>'resume_url', '')), '');
-    -- Derive name: prefer first_name + last_name; fall back to explicit name field
-    v_computed_name := coalesce(
-      nullif(trim(coalesce(v_first_name, '') || ' ' || coalesce(v_last_name, '')), ''),
-      nullif(trim(coalesce(v_candidate->>'name', '')), ''),
-      ''
-    );
 
     if v_email is null and v_phone is null then
       insert into cblaero_app.import_row_error (
@@ -529,41 +521,17 @@ begin
     begin
       if v_email is not null then
         insert into cblaero_app.candidates (
-          tenant_id,
-          email,
-          phone,
-          name,
-          first_name,
-          last_name,
-          middle_name,
-          home_phone,
-          work_phone,
-          location,
-          address,
-          city,
-          state,
-          country,
-          postal_code,
-          current_company,
-          job_title,
-          alternate_email,
-          skills,
-          certifications,
-          experience,
-          extra_attributes,
-          availability_status,
-          ingestion_state,
-          source,
-          source_batch_id,
-          created_by_actor_id,
-          resume_url,
-          updated_at
+          tenant_id, email, phone, first_name, last_name, middle_name,
+          home_phone, work_phone, location, address, city, state, country,
+          postal_code, current_company, job_title, alternate_email,
+          skills, certifications, experience, extra_attributes,
+          availability_status, ingestion_state, source, source_batch_id,
+          created_by_actor_id, resume_url, updated_at
         )
         values (
           v_candidate->>'tenant_id',
           v_email,
           v_phone,
-          v_computed_name,
           v_first_name,
           v_last_name,
           v_middle_name,
@@ -593,7 +561,6 @@ begin
         on conflict (tenant_id, email) where email is not null
         do update set
           phone = excluded.phone,
-          name = excluded.name,
           first_name = excluded.first_name,
           last_name = excluded.last_name,
           middle_name = excluded.middle_name,
@@ -625,7 +592,7 @@ begin
         returning xmax into v_xmax;
       else
         insert into cblaero_app.candidates (
-          tenant_id, email, phone, name, first_name, last_name, middle_name,
+          tenant_id, email, phone, first_name, last_name, middle_name,
           home_phone, work_phone, location, address, city, state, country,
           postal_code, current_company, job_title, alternate_email,
           skills, certifications, experience, extra_attributes,
@@ -633,7 +600,7 @@ begin
           created_by_actor_id, resume_url, updated_at
         )
         values (
-          v_candidate->>'tenant_id', v_email, v_phone, v_computed_name,
+          v_candidate->>'tenant_id', v_email, v_phone,
           v_first_name, v_last_name, v_middle_name, v_home_phone, v_work_phone,
           nullif(v_candidate->>'location', ''), v_address, v_city, v_state,
           v_country, v_postal_code, v_current_company, v_job_title, v_alternate_email,
@@ -651,7 +618,7 @@ begin
         )
         on conflict (tenant_id, phone) where phone is not null
         do update set
-          email = excluded.email, name = excluded.name,
+          email = excluded.email,
           first_name = excluded.first_name, last_name = excluded.last_name,
           middle_name = excluded.middle_name, home_phone = excluded.home_phone,
           work_phone = excluded.work_phone, location = excluded.location,
@@ -701,16 +668,18 @@ begin
   end loop;
 
   update cblaero_app.import_batch
-  set
-    imported = p_total_imported + v_chunk_inserted,
-    skipped = p_total_skipped + v_chunk_updated,
-    errors = p_total_errors + v_chunk_errors
+  set imported = p_total_imported + v_chunk_inserted + v_chunk_updated,
+      skipped = p_total_skipped,
+      errors = p_total_errors + v_chunk_errors,
+      updated_at = now()
   where id = p_batch_id;
 
-  return query
-  select p_total_imported + v_chunk_inserted,
-         p_total_skipped + v_chunk_updated,
-         p_total_errors + v_chunk_errors;
+  return jsonb_build_object(
+    'inserted', v_chunk_inserted,
+    'updated', v_chunk_updated,
+    'errors', v_chunk_errors,
+    'imported', v_chunk_inserted + v_chunk_updated
+  );
 end;
 $$;
 
@@ -856,13 +825,72 @@ $$;
 grant execute on function cblaero_app.cleanup_audit_logs to service_role;
 
 -- RPC: Upsert single candidate with email dedup (insert or update)
+-- Uses explicit column lists to avoid writing to generated columns (name_tsv)
 create or replace function cblaero_app.upsert_candidate(p_candidate jsonb)
 returns uuid language plpgsql as $$
-declare v_id uuid; v_email text := p_candidate->>'email';
+declare
+  v_id uuid;
+  v_email text := nullif(trim(coalesce(p_candidate->>'email', '')), '');
+  v_phone text := nullif(trim(coalesce(p_candidate->>'phone', '')), '');
+  v_first_name text := nullif(trim(coalesce(p_candidate->>'first_name', '')), '');
+  v_last_name text := nullif(trim(coalesce(p_candidate->>'last_name', '')), '');
 begin
   if v_email is not null and v_email != '' then
-    insert into cblaero_app.candidates
-    select * from jsonb_populate_record(null::cblaero_app.candidates, p_candidate || jsonb_build_object('updated_at', now()))
+    insert into cblaero_app.candidates (
+      tenant_id, email, phone, first_name, last_name, middle_name,
+      home_phone, work_phone, location, address, city, state, country,
+      postal_code, current_company, job_title, alternate_email,
+      skills, certifications, experience, extra_attributes,
+      availability_status, ingestion_state, source, source_batch_id,
+      created_by_actor_id, resume_url,
+      work_authorization, clearance, aircraft_experience, employment_type,
+      current_rate, per_diem, has_ap_license, years_of_experience,
+      ceipal_id, submitted_by, submitter_email, shift_preference,
+      expected_start_date, call_availability, interview_availability, veteran_status,
+      updated_at
+    )
+    values (
+      p_candidate->>'tenant_id', v_email, v_phone, v_first_name, v_last_name,
+      nullif(trim(coalesce(p_candidate->>'middle_name', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'home_phone', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'work_phone', '')), ''),
+      nullif(p_candidate->>'location', ''),
+      nullif(trim(coalesce(p_candidate->>'address', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'city', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'state', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'country', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'postal_code', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'current_company', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'job_title', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'alternate_email', '')), ''),
+      coalesce(p_candidate->'skills', '[]'::jsonb),
+      coalesce(p_candidate->'certifications', '[]'::jsonb),
+      coalesce(p_candidate->'experience', '[]'::jsonb),
+      coalesce(p_candidate->'extra_attributes', '{}'::jsonb),
+      coalesce(p_candidate->>'availability_status', 'passive'),
+      coalesce(p_candidate->>'ingestion_state', 'pending_dedup'),
+      coalesce(p_candidate->>'source', 'email'),
+      (p_candidate->>'source_batch_id')::uuid,
+      nullif(trim(coalesce(p_candidate->>'created_by_actor_id', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'resume_url', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'work_authorization', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'clearance', '')), ''),
+      coalesce(p_candidate->'aircraft_experience', '[]'::jsonb),
+      nullif(trim(coalesce(p_candidate->>'employment_type', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'current_rate', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'per_diem', '')), ''),
+      (p_candidate->>'has_ap_license')::boolean,
+      nullif(trim(coalesce(p_candidate->>'years_of_experience', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'ceipal_id', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'submitted_by', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'submitter_email', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'shift_preference', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'expected_start_date', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'call_availability', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'interview_availability', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'veteran_status', '')), ''),
+      now()
+    )
     on conflict (tenant_id, email) where email is not null
     do update set
       first_name = excluded.first_name, last_name = excluded.last_name,
@@ -875,11 +903,66 @@ begin
         when cblaero_app.candidates.ingestion_state in ('active', 'pending_review') then cblaero_app.candidates.ingestion_state
         else excluded.ingestion_state
       end,
-      source = excluded.source, source_batch_id = excluded.source_batch_id, updated_at = now()
+      source = excluded.source, source_batch_id = excluded.source_batch_id,
+      resume_url = coalesce(excluded.resume_url, cblaero_app.candidates.resume_url),
+      updated_at = now()
     returning id into v_id;
   else
-    insert into cblaero_app.candidates
-    select * from jsonb_populate_record(null::cblaero_app.candidates, p_candidate)
+    insert into cblaero_app.candidates (
+      tenant_id, email, phone, first_name, last_name, middle_name,
+      home_phone, work_phone, location, address, city, state, country,
+      postal_code, current_company, job_title, alternate_email,
+      skills, certifications, experience, extra_attributes,
+      availability_status, ingestion_state, source, source_batch_id,
+      created_by_actor_id, resume_url,
+      work_authorization, clearance, aircraft_experience, employment_type,
+      current_rate, per_diem, has_ap_license, years_of_experience,
+      ceipal_id, submitted_by, submitter_email, shift_preference,
+      expected_start_date, call_availability, interview_availability, veteran_status,
+      updated_at
+    )
+    values (
+      p_candidate->>'tenant_id', v_email, v_phone, v_first_name, v_last_name,
+      nullif(trim(coalesce(p_candidate->>'middle_name', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'home_phone', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'work_phone', '')), ''),
+      nullif(p_candidate->>'location', ''),
+      nullif(trim(coalesce(p_candidate->>'address', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'city', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'state', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'country', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'postal_code', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'current_company', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'job_title', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'alternate_email', '')), ''),
+      coalesce(p_candidate->'skills', '[]'::jsonb),
+      coalesce(p_candidate->'certifications', '[]'::jsonb),
+      coalesce(p_candidate->'experience', '[]'::jsonb),
+      coalesce(p_candidate->'extra_attributes', '{}'::jsonb),
+      coalesce(p_candidate->>'availability_status', 'passive'),
+      coalesce(p_candidate->>'ingestion_state', 'pending_dedup'),
+      coalesce(p_candidate->>'source', 'email'),
+      (p_candidate->>'source_batch_id')::uuid,
+      nullif(trim(coalesce(p_candidate->>'created_by_actor_id', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'resume_url', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'work_authorization', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'clearance', '')), ''),
+      coalesce(p_candidate->'aircraft_experience', '[]'::jsonb),
+      nullif(trim(coalesce(p_candidate->>'employment_type', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'current_rate', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'per_diem', '')), ''),
+      (p_candidate->>'has_ap_license')::boolean,
+      nullif(trim(coalesce(p_candidate->>'years_of_experience', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'ceipal_id', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'submitted_by', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'submitter_email', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'shift_preference', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'expected_start_date', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'call_availability', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'interview_availability', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'veteran_status', '')), ''),
+      now()
+    )
     returning id into v_id;
   end if;
   return v_id;
@@ -888,18 +971,77 @@ end; $$;
 grant execute on function cblaero_app.upsert_candidate to service_role;
 
 -- RPC: Batch upsert candidates with per-row email dedup
+-- Uses explicit column lists to avoid writing to generated columns (name_tsv)
 create or replace function cblaero_app.upsert_candidate_batch(p_candidates jsonb)
 returns table (inserted int, updated int) language plpgsql as $$
-declare v_inserted int := 0; v_updated int := 0; v_row jsonb; v_email text; v_existing_id uuid;
+declare
+  v_inserted int := 0; v_updated int := 0; v_row jsonb;
+  v_email text; v_phone text; v_first_name text; v_last_name text;
+  v_xmax bigint;
 begin
   for v_row in select jsonb_array_elements(p_candidates)
   loop
-    v_email := v_row->>'email';
+    v_email := nullif(trim(coalesce(v_row->>'email', '')), '');
+    v_phone := nullif(trim(coalesce(v_row->>'phone', '')), '');
+    v_first_name := nullif(trim(coalesce(v_row->>'first_name', '')), '');
+    v_last_name := nullif(trim(coalesce(v_row->>'last_name', '')), '');
+
     if v_email is not null and v_email != '' then
-      select c.id into v_existing_id from cblaero_app.candidates c
-        where c.tenant_id = v_row->>'tenant_id' and c.email = v_email limit 1;
-      insert into cblaero_app.candidates
-      select * from jsonb_populate_record(null::cblaero_app.candidates, v_row || jsonb_build_object('updated_at', now()))
+      insert into cblaero_app.candidates (
+        tenant_id, email, phone, first_name, last_name, middle_name,
+        home_phone, work_phone, location, address, city, state, country,
+        postal_code, current_company, job_title, alternate_email,
+        skills, certifications, experience, extra_attributes,
+        availability_status, ingestion_state, source, source_batch_id,
+        created_by_actor_id, resume_url,
+        work_authorization, clearance, aircraft_experience, employment_type,
+        current_rate, per_diem, has_ap_license, years_of_experience,
+        ceipal_id, submitted_by, submitter_email, shift_preference,
+        expected_start_date, call_availability, interview_availability, veteran_status,
+        updated_at
+      )
+      values (
+        v_row->>'tenant_id', v_email, v_phone, v_first_name, v_last_name,
+        nullif(trim(coalesce(v_row->>'middle_name', '')), ''),
+        nullif(trim(coalesce(v_row->>'home_phone', '')), ''),
+        nullif(trim(coalesce(v_row->>'work_phone', '')), ''),
+        nullif(v_row->>'location', ''),
+        nullif(trim(coalesce(v_row->>'address', '')), ''),
+        nullif(trim(coalesce(v_row->>'city', '')), ''),
+        nullif(trim(coalesce(v_row->>'state', '')), ''),
+        nullif(trim(coalesce(v_row->>'country', '')), ''),
+        nullif(trim(coalesce(v_row->>'postal_code', '')), ''),
+        nullif(trim(coalesce(v_row->>'current_company', '')), ''),
+        nullif(trim(coalesce(v_row->>'job_title', '')), ''),
+        nullif(trim(coalesce(v_row->>'alternate_email', '')), ''),
+        coalesce(v_row->'skills', '[]'::jsonb),
+        coalesce(v_row->'certifications', '[]'::jsonb),
+        coalesce(v_row->'experience', '[]'::jsonb),
+        coalesce(v_row->'extra_attributes', '{}'::jsonb),
+        coalesce(v_row->>'availability_status', 'passive'),
+        coalesce(v_row->>'ingestion_state', 'pending_dedup'),
+        coalesce(v_row->>'source', 'email'),
+        (v_row->>'source_batch_id')::uuid,
+        nullif(trim(coalesce(v_row->>'created_by_actor_id', '')), ''),
+        nullif(trim(coalesce(v_row->>'resume_url', '')), ''),
+        nullif(trim(coalesce(v_row->>'work_authorization', '')), ''),
+        nullif(trim(coalesce(v_row->>'clearance', '')), ''),
+        coalesce(v_row->'aircraft_experience', '[]'::jsonb),
+        nullif(trim(coalesce(v_row->>'employment_type', '')), ''),
+        nullif(trim(coalesce(v_row->>'current_rate', '')), ''),
+        nullif(trim(coalesce(v_row->>'per_diem', '')), ''),
+        (v_row->>'has_ap_license')::boolean,
+        nullif(trim(coalesce(v_row->>'years_of_experience', '')), ''),
+        nullif(trim(coalesce(v_row->>'ceipal_id', '')), ''),
+        nullif(trim(coalesce(v_row->>'submitted_by', '')), ''),
+        nullif(trim(coalesce(v_row->>'submitter_email', '')), ''),
+        nullif(trim(coalesce(v_row->>'shift_preference', '')), ''),
+        nullif(trim(coalesce(v_row->>'expected_start_date', '')), ''),
+        nullif(trim(coalesce(v_row->>'call_availability', '')), ''),
+        nullif(trim(coalesce(v_row->>'interview_availability', '')), ''),
+        nullif(trim(coalesce(v_row->>'veteran_status', '')), ''),
+        now()
+      )
       on conflict (tenant_id, email) where email is not null
       do update set
         first_name = excluded.first_name, last_name = excluded.last_name,
@@ -912,12 +1054,69 @@ begin
           when cblaero_app.candidates.ingestion_state in ('active', 'pending_review') then cblaero_app.candidates.ingestion_state
           else excluded.ingestion_state
         end,
-        source = excluded.source, source_batch_id = excluded.source_batch_id, updated_at = now();
-      if v_existing_id is not null then v_updated := v_updated + 1;
-      else v_inserted := v_inserted + 1; end if;
+        source = excluded.source, source_batch_id = excluded.source_batch_id,
+        resume_url = coalesce(excluded.resume_url, cblaero_app.candidates.resume_url),
+        updated_at = now()
+      returning xmax into v_xmax;
+
+      if v_xmax = 0 then v_inserted := v_inserted + 1;
+      else v_updated := v_updated + 1; end if;
     else
-      insert into cblaero_app.candidates
-      select * from jsonb_populate_record(null::cblaero_app.candidates, v_row);
+      insert into cblaero_app.candidates (
+        tenant_id, email, phone, first_name, last_name, middle_name,
+        home_phone, work_phone, location, address, city, state, country,
+        postal_code, current_company, job_title, alternate_email,
+        skills, certifications, experience, extra_attributes,
+        availability_status, ingestion_state, source, source_batch_id,
+        created_by_actor_id, resume_url,
+        work_authorization, clearance, aircraft_experience, employment_type,
+        current_rate, per_diem, has_ap_license, years_of_experience,
+        ceipal_id, submitted_by, submitter_email, shift_preference,
+        expected_start_date, call_availability, interview_availability, veteran_status,
+        updated_at
+      )
+      values (
+        v_row->>'tenant_id', v_email, v_phone, v_first_name, v_last_name,
+        nullif(trim(coalesce(v_row->>'middle_name', '')), ''),
+        nullif(trim(coalesce(v_row->>'home_phone', '')), ''),
+        nullif(trim(coalesce(v_row->>'work_phone', '')), ''),
+        nullif(v_row->>'location', ''),
+        nullif(trim(coalesce(v_row->>'address', '')), ''),
+        nullif(trim(coalesce(v_row->>'city', '')), ''),
+        nullif(trim(coalesce(v_row->>'state', '')), ''),
+        nullif(trim(coalesce(v_row->>'country', '')), ''),
+        nullif(trim(coalesce(v_row->>'postal_code', '')), ''),
+        nullif(trim(coalesce(v_row->>'current_company', '')), ''),
+        nullif(trim(coalesce(v_row->>'job_title', '')), ''),
+        nullif(trim(coalesce(v_row->>'alternate_email', '')), ''),
+        coalesce(v_row->'skills', '[]'::jsonb),
+        coalesce(v_row->'certifications', '[]'::jsonb),
+        coalesce(v_row->'experience', '[]'::jsonb),
+        coalesce(v_row->'extra_attributes', '{}'::jsonb),
+        coalesce(v_row->>'availability_status', 'passive'),
+        coalesce(v_row->>'ingestion_state', 'pending_dedup'),
+        coalesce(v_row->>'source', 'email'),
+        (v_row->>'source_batch_id')::uuid,
+        nullif(trim(coalesce(v_row->>'created_by_actor_id', '')), ''),
+        nullif(trim(coalesce(v_row->>'resume_url', '')), ''),
+        nullif(trim(coalesce(v_row->>'work_authorization', '')), ''),
+        nullif(trim(coalesce(v_row->>'clearance', '')), ''),
+        coalesce(v_row->'aircraft_experience', '[]'::jsonb),
+        nullif(trim(coalesce(v_row->>'employment_type', '')), ''),
+        nullif(trim(coalesce(v_row->>'current_rate', '')), ''),
+        nullif(trim(coalesce(v_row->>'per_diem', '')), ''),
+        (v_row->>'has_ap_license')::boolean,
+        nullif(trim(coalesce(v_row->>'years_of_experience', '')), ''),
+        nullif(trim(coalesce(v_row->>'ceipal_id', '')), ''),
+        nullif(trim(coalesce(v_row->>'submitted_by', '')), ''),
+        nullif(trim(coalesce(v_row->>'submitter_email', '')), ''),
+        nullif(trim(coalesce(v_row->>'shift_preference', '')), ''),
+        nullif(trim(coalesce(v_row->>'expected_start_date', '')), ''),
+        nullif(trim(coalesce(v_row->>'call_availability', '')), ''),
+        nullif(trim(coalesce(v_row->>'interview_availability', '')), ''),
+        nullif(trim(coalesce(v_row->>'veteran_status', '')), ''),
+        now()
+      );
       v_inserted := v_inserted + 1;
     end if;
   end loop;
@@ -1022,6 +1221,9 @@ alter table cblaero_app.candidates
   add column if not exists call_availability text,
   add column if not exists interview_availability text,
   add column if not exists veteran_status text;
+
+alter table cblaero_app.candidates
+  add column if not exists resume_url text;
 
 create index if not exists idx_candidates_ceipal_id
   on cblaero_app.candidates (ceipal_id) where ceipal_id is not null;
