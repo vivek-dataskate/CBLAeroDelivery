@@ -233,6 +233,12 @@
     processes - **Integration Patterns:** External service integrations, data flows <action>Extract any story-specific requirements that the
     developer MUST follow</action>
     <action>Identify any architectural decisions that override previous patterns</action>
+
+    <!-- Schema.sql Drift Detection -->
+    <check if="story touches database tables, columns, constraints, indexes, RLS policies, or RPCs">
+      <action>If a schema.sql file exists in the project, note in the story Dev Notes that the developer MUST update schema.sql to reflect any DB changes made during implementation</action>
+      <action>Include in story Dev Notes: "⚠️ SCHEMA SYNC REQUIRED: Any database changes (tables, columns, constraints, indexes, RLS policies, RPCs) must be reflected in schema.sql. After implementation, verify schema.sql matches the actual database state."</action>
+    </check>
   </step>
 
   <step n="4" goal="Web research for latest technical specifics">
