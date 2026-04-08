@@ -75,6 +75,7 @@ development_status:
   2-2a-implement-recruiter-pdf-resume-upload-with-llm-extraction: done
   2-4-implement-candidate-profile-storage-and-indexing: done  # 2026-04-02: reworked + reviewed — expanded filters, sorting, saved searches, dashboard UI
   2-4a-dashboard-ui-standardization: done  # 2026-04-08: white backgrounds, consistent headers/breadcrumbs/footers, font normalization, UI standards doc + workflow integration
+  2-4b-sync-run-summary-and-error-management: ready-for-dev  # sync run tracking, summary card, error detail page
   2-5-implement-deterministic-deduplication-and-manual-review-queue: done
   2-5a-implement-deduced-role-classification: ready-for-dev
   2-6-implement-availability-state-and-manual-refresh-operations: ready-for-dev
