@@ -23,6 +23,7 @@ export type CandidateListItem = {
   source: string;
   sourceBatchId: string | null;
   deducedRoles: string[];
+  availabilityLastSignalAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -61,6 +62,7 @@ export type CandidateDetail = CandidateListItem & {
   interviewAvailability: string | null;
   veteranStatus: string | null;
   resumeUrl: string | null;
+  availabilityLastSignalAt: string | null;
 };
 
 export type CandidateListParams = {

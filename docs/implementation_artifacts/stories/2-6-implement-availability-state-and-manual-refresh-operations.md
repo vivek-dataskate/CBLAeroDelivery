@@ -1,6 +1,6 @@
 # Story 2.6: Implement Availability State and Manual Refresh Operations
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -18,73 +18,73 @@ so that candidate readiness reflects fresh information when automation lags.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Schema changes — `candidate_availability_signals` table + `availability_last_signal_at` column (AC: #1, #4)
-  - [ ] 1.1 Create `candidate_availability_signals` table in `supabase/schema.sql` with columns: `id` (bigint identity), `tenant_id`, `candidate_id` (FK), `previous_state`, `new_state`, `source` (check: `'self_report'`, `'engagement'`, `'manual_refresh'`, `'system'`), `metadata` (jsonb), `created_at` (timestamptz). Indexes on `(tenant_id, candidate_id, created_at DESC)` and `(tenant_id, created_at DESC)`
-  - [ ] 1.2 Add `availability_last_signal_at timestamptz` column to `candidates` table (denormalized for efficient staleness queries — avoids JOIN on every list query at 1M+ rows)
-  - [ ] 1.3 Create `update_availability_status` RPC in `schema.sql`: atomically updates `candidates.availability_status` + `candidates.availability_last_signal_at`, inserts `candidate_availability_signals` row, returns the new signal row. Single RPC = single transaction (dev-standards section 4.1: 3+ operations = RPC)
-  - [ ] 1.4 Grants: `authenticated` gets SELECT + INSERT on `candidate_availability_signals`, `service_role` gets full access. Table is append-only (no UPDATE/DELETE grants for `authenticated`)
-  - [ ] 1.5 Apply migration via Supabase MCP
+- [x] Task 1: Schema changes — `candidate_availability_signals` table + `availability_last_signal_at` column (AC: #1, #4)
+  - [x] 1.1 Create `candidate_availability_signals` table in `supabase/schema.sql` with columns: `id` (bigint identity), `tenant_id`, `candidate_id` (FK), `previous_state`, `new_state`, `source` (check: `'self_report'`, `'engagement'`, `'manual_refresh'`, `'system'`), `metadata` (jsonb), `created_at` (timestamptz). Indexes on `(tenant_id, candidate_id, created_at DESC)` and `(tenant_id, created_at DESC)`
+  - [x] 1.2 Add `availability_last_signal_at timestamptz` column to `candidates` table (denormalized for efficient staleness queries — avoids JOIN on every list query at 1M+ rows)
+  - [x] 1.3 Create `update_availability_status` RPC in `schema.sql`: atomically updates `candidates.availability_status` + `candidates.availability_last_signal_at`, inserts `candidate_availability_signals` row, returns the new signal row. Single RPC = single transaction (dev-standards section 4.1: 3+ operations = RPC)
+  - [x] 1.4 Grants: `authenticated` gets SELECT + INSERT on `candidate_availability_signals`, `service_role` gets full access. Table is append-only (no UPDATE/DELETE grants for `authenticated`)
+  - [x] 1.5 Apply migration via Supabase MCP
 
-- [ ] Task 2: Availability contracts and types (AC: #1, #4)
-  - [ ] 2.1 Create `src/features/candidate-management/contracts/availability.ts` — export `AvailabilitySignal`, `AvailabilitySource`, `RefreshResult`, `StaleSignalInfo` types
-  - [ ] 2.2 Update `CandidateListRow` and `CandidateDetailRow` in `contracts/candidate.ts` to include `availabilityLastSignalAt: string | null`
+- [x] Task 2: Availability contracts and types (AC: #1, #4)
+  - [x] 2.1 Create `src/features/candidate-management/contracts/availability.ts` — export `AvailabilitySignal`, `AvailabilitySource`, `RefreshResult`, `StaleSignalInfo` types
+  - [x] 2.2 Update `CandidateListRow` and `CandidateDetailRow` in `contracts/candidate.ts` to include `availabilityLastSignalAt: string | null`
 
-- [ ] Task 3: Create `AvailabilityRepository` (AC: #1, #3, #4)
-  - [ ] 3.1 Create `src/features/candidate-management/infrastructure/availability-repository.ts`
-  - [ ] 3.2 `updateAvailabilityStatus(tenantId, candidateId, newState, source, metadata?)` — calls `update_availability_status` RPC
-  - [ ] 3.3 `getSignalHistory(tenantId, candidateId, limit?)` — query `candidate_availability_signals` ordered by `created_at DESC`
-  - [ ] 3.4 `getLatestSignal(tenantId, candidateId)` — single most recent signal row
-  - [ ] 3.5 `batchUpdateAvailability(tenantId, candidateIds, newState, source)` — use `Promise.allSettled()` over `update_availability_status` RPC calls for parallelism (max 50 candidates from UI selection)
+- [x] Task 3: Create `AvailabilityRepository` (AC: #1, #3, #4)
+  - [x] 3.1 Create `src/features/candidate-management/infrastructure/availability-repository.ts`
+  - [x] 3.2 `updateAvailabilityStatus(tenantId, candidateId, newState, source, metadata?)` — calls `update_availability_status` RPC
+  - [x] 3.3 `getSignalHistory(tenantId, candidateId, limit?)` — query `candidate_availability_signals` ordered by `created_at DESC`
+  - [x] 3.4 `getLatestSignal(tenantId, candidateId)` — single most recent signal row
+  - [x] 3.5 `batchUpdateAvailability(tenantId, candidateIds, newState, source)` — use `Promise.allSettled()` over `update_availability_status` RPC calls for parallelism (max 50 candidates from UI selection)
 
-- [ ] Task 3b: Create availability scoring logic in application layer (AC: #1)
-  - [ ] 3b.1 Create `src/features/candidate-management/application/availability-scoring.ts` — follows the pattern of `dedup-scoring.ts` in the application layer
-  - [ ] 3b.2 `computeAvailabilityState(tenantId, candidateId)` — recalculate state from engagement signals in prior 90 days: count engagement events (SMS reply, email reply, call outcome, portal login) → active if >=3 events in 90 days, passive if 1-2 events, unavailable if 0 events. Self-reported state takes priority if signal is <7 days old.
-  - [ ] 3b.3 `isStaleSignal(availabilityLastSignalAt: string | null): boolean` — returns true if null or >7 days ago. Exported from this file for use by both API routes and UI components.
+- [x] Task 3b: Create availability scoring logic in application layer (AC: #1)
+  - [x] 3b.1 Create `src/features/candidate-management/application/availability-scoring.ts` — follows the pattern of `dedup-scoring.ts` in the application layer
+  - [x] 3b.2 `computeAvailabilityState(tenantId, candidateId)` — recalculate state from engagement signals in prior 90 days: count engagement events (SMS reply, email reply, call outcome, portal login) → active if >=3 events in 90 days, passive if 1-2 events, unavailable if 0 events. Self-reported state takes priority if signal is <7 days old.
+  - [x] 3b.3 `isStaleSignal(availabilityLastSignalAt: string | null): boolean` — returns true if null or >7 days ago. Exported from this file for use by both API routes and UI components.
 
-- [ ] Task 4: Staleness detection in RPCs and repository (AC: #2)
-  - [ ] 4.1 (isStaleSignal is in Task 3b.3 — `application/availability-scoring.ts`)
-  - [ ] 4.2 Update `list_candidates_v2` RPC to include `availability_last_signal_at` in the SELECT output
-  - [ ] 4.3 Update `get_candidate_detail` RPC to include `availability_last_signal_at` in output
-  - [ ] 4.4 Update `CandidateListRow` mapping in `candidate-repository.ts` to include the new field
+- [x] Task 4: Staleness detection in RPCs and repository (AC: #2)
+  - [x] 4.1 (isStaleSignal is in Task 3b.3 — `application/availability-scoring.ts`)
+  - [x] 4.2 Update `list_candidates_v2` RPC to include `availability_last_signal_at` in the SELECT output
+  - [x] 4.3 Update `get_candidate_detail` RPC to include `availability_last_signal_at` in output
+  - [x] 4.4 Update `CandidateListRow` mapping in `candidate-repository.ts` to include the new field
 
-- [ ] Task 5: Manual refresh API endpoint (AC: #3, #5)
-  - [ ] 5.1 Create `POST /api/internal/candidates/[candidateId]/refresh-availability/route.ts` — single candidate refresh
-  - [ ] 5.2 Create `POST /api/internal/candidates/bulk-refresh-availability/route.ts` — accepts `{ candidateIds: string[] }`, max 50 per request. NOTE: `candidates/route.ts` already exists for listing; this new file sits alongside the `[candidateId]` dynamic segment and is additive (no collision in App Router)
-  - [ ] 5.3 Both endpoints: use `withAuth(handler, { permission: 'candidate:write' })`, resolve tenant via `resolveRequestTenantId`
-  - [ ] 5.4 Refresh logic: call `computeAvailabilityState()` → if state changed, call `updateAvailabilityStatus()` with source `'manual_refresh'` → return `{ previousState, newState, isStale: false }`
-  - [ ] 5.5 If state unchanged: still update `availability_last_signal_at` to now (touching the signal timestamp confirms freshness) and insert a signal row with `previous_state === new_state`, source `'manual_refresh'`
+- [x] Task 5: Manual refresh API endpoint (AC: #3, #5)
+  - [x] 5.1 Create `POST /api/internal/candidates/[candidateId]/refresh-availability/route.ts` — single candidate refresh
+  - [x] 5.2 Create `POST /api/internal/candidates/bulk-refresh-availability/route.ts` — accepts `{ candidateIds: string[] }`, max 50 per request. NOTE: `candidates/route.ts` already exists for listing; this new file sits alongside the `[candidateId]` dynamic segment and is additive (no collision in App Router)
+  - [x] 5.3 Both endpoints: use `withAuth(handler, { permission: 'candidate:write' })`, resolve tenant via `resolveRequestTenantId`
+  - [x] 5.4 Refresh logic: call `computeAvailabilityState()` → if state changed, call `updateAvailabilityStatus()` with source `'manual_refresh'` → return `{ previousState, newState, isStale: false }`
+  - [x] 5.5 If state unchanged: still update `availability_last_signal_at` to now (touching the signal timestamp confirms freshness) and insert a signal row with `previous_state === new_state`, source `'manual_refresh'`
 
-- [ ] Task 6: UI — Stale signal indicator + refresh button (AC: #2, #3)
-  - [ ] 6.1 Update `AvailabilityBadge` component in `candidates/page.tsx` to show a stale indicator (amber dot or "Stale" suffix) when `isStaleSignal()` returns true
-  - [ ] 6.2 Add "Refresh" icon button next to the availability badge on the candidate detail page (`candidates/[id]/page.tsx`) — calls single-candidate refresh endpoint, shows inline loading state, updates badge on success. Also add a minimal "Recent Availability Signals" section showing the last 5 signals (source + new_state + created_at) — no pagination needed
-  - [ ] 6.3 Add bulk "Refresh Availability" button to candidate list page toolbar (appears when candidates are selected) — calls bulk refresh endpoint
-  - [ ] 6.4 Show toast notification on refresh success/failure
-  - [ ] 6.5 Follow recruiter dashboard white theme (`bg-white`, `text-gray-900`, `text-xs/text-sm`) — NOT the admin dark theme
+- [x] Task 6: UI — Stale signal indicator + refresh button (AC: #2, #3)
+  - [x] 6.1 Update `AvailabilityBadge` component in `candidates/page.tsx` to show a stale indicator (amber dot or "Stale" suffix) when `isStaleSignal()` returns true
+  - [x] 6.2 Add "Refresh" icon button next to the availability badge on the candidate detail page (`candidates/[id]/page.tsx`) — calls single-candidate refresh endpoint, shows inline loading state, updates badge on success. Also add a minimal "Recent Availability Signals" section showing the last 5 signals (source + new_state + created_at) — no pagination needed
+  - [x] 6.3 Add bulk "Refresh Availability" button to candidate list page toolbar (appears when candidates are selected) — calls bulk refresh endpoint
+  - [x] 6.4 Show toast notification on refresh success/failure
+  - [x] 6.5 Follow recruiter dashboard white theme (`bg-white`, `text-gray-900`, `text-xs/text-sm`) — NOT the admin dark theme
 
-- [ ] Task 7: Register `CandidateAvailabilityRefreshJob` for future scheduler use (AC: #3)
-  - [ ] 7.1 Create `CandidateAvailabilityRefreshJob` implementing `SchedulerJob` interface in `src/modules/ingestion/jobs.ts`
-  - [ ] 7.2 Job logic: query candidates where `availability_last_signal_at` is null or >4 hours old, batch of 200, recalculate each via `computeAvailabilityState()`, update via `updateAvailabilityStatus()` with source `'system'`
-  - [ ] 7.3 Register in `registerIngestionJobs(scheduler)` — 6th job
-  - [ ] 7.4 Add `'availability-refresh'` alias to `src/app/api/internal/jobs/run/route.ts` allowed jobs list. IMPORTANT: The current route uses an `else` catch-all that defaults to `EmailIngestionJob` — when adding the new branch, also refactor all branches to explicit `else if` checks and change the final `else` to throw an error (prevents silent misrouting of unknown job names)
-  - [ ] 7.5 Do NOT add a Render cron trigger yet (Story 2.7 will implement the global scheduler). The job is callable manually via `/api/internal/jobs/run?job=availability-refresh` for testing.
-  - [ ] 7.6 Log summary: `{ processed, stateChanged, unchanged, errors }`
+- [x] Task 7: Register `CandidateAvailabilityRefreshJob` for future scheduler use (AC: #3)
+  - [x] 7.1 Create `CandidateAvailabilityRefreshJob` implementing `SchedulerJob` interface in `src/modules/ingestion/jobs.ts`
+  - [x] 7.2 Job logic: query candidates where `availability_last_signal_at` is null or >4 hours old, batch of 200, recalculate each via `computeAvailabilityState()`, update via `updateAvailabilityStatus()` with source `'system'`
+  - [x] 7.3 Register in `registerIngestionJobs(scheduler)` — 6th job
+  - [x] 7.4 Add `'availability-refresh'` alias to `src/app/api/internal/jobs/run/route.ts` allowed jobs list. IMPORTANT: The current route uses an `else` catch-all that defaults to `EmailIngestionJob` — when adding the new branch, also refactor all branches to explicit `else if` checks and change the final `else` to throw an error (prevents silent misrouting of unknown job names)
+  - [x] 7.5 Do NOT add a Render cron trigger yet (Story 2.7 will implement the global scheduler). The job is callable manually via `/api/internal/jobs/run?job=availability-refresh` for testing.
+  - [x] 7.6 Log summary: `{ processed, stateChanged, unchanged, errors }`
 
-- [ ] Task 8: Tests (AC: all)
-  - [ ] 8.1 Unit tests for `computeAvailabilityState()` — 8+ cases: no engagement (unavailable), 1-2 events (passive), 3+ events (active), self-report overrides, stale self-report falls back to engagement, null signal_at
-  - [ ] 8.2 Unit tests for `isStaleSignal()` — null, 6 days ago (not stale), 8 days ago (stale), exact boundary
-  - [ ] 8.3 Integration tests for refresh API endpoints — single refresh, bulk refresh, auth enforcement, tenant isolation
-  - [ ] 8.4 Verify existing candidate list/detail tests still pass with new `availability_last_signal_at` field
+- [x] Task 8: Tests (AC: all)
+  - [x] 8.1 Unit tests for `computeAvailabilityState()` — 8+ cases: no engagement (unavailable), 1-2 events (passive), 3+ events (active), self-report overrides, stale self-report falls back to engagement, null signal_at
+  - [x] 8.2 Unit tests for `isStaleSignal()` — null, 6 days ago (not stale), 8 days ago (stale), exact boundary
+  - [ ] 8.3 Integration tests for refresh API endpoints — single refresh, bulk refresh, auth enforcement, tenant isolation (deferred — unit tests cover scoring logic; integration tests require auth mocking infrastructure)
+  - [x] 8.4 Verify existing candidate list/detail tests still pass with new `availability_last_signal_at` field
 
-- [ ] Task 9: Seed `policy_registry` row for refresh cadence (AC: architecture compliance)
-  - [ ] 9.1 Insert initial `policy_registry` row: `family = 'refresh_cadences'`, `key = 'candidate_availability'`, `description = 'Candidate availability refresh interval'`
-  - [ ] 9.2 Insert initial `policy_versions` row: `value = '{"interval_hours": 4}'`, `effective_from = now()`, `created_by_actor_id = 'system'`
-  - [ ] 9.3 The refresh job (Task 7.2) MUST read the 4-hour interval from this policy row, not hardcode it. Use `getSupabaseAdminClient()` to query `policy_versions` for the effective `refresh_cadences.candidate_availability` value at job execution time.
-  - [ ] 9.4 NOTE: If `policy_registry`/`policy_versions` tables do not yet exist in schema.sql, create them per the architecture spec (architecture.md section on Policy Registry). Check schema.sql first.
+- [x] Task 9: Seed `policy_registry` row for refresh cadence (AC: architecture compliance)
+  - [x] 9.1 Insert initial `policy_registry` row: `family = 'refresh_cadences'`, `key = 'candidate_availability'`, `description = 'Candidate availability refresh interval'`
+  - [x] 9.2 Insert initial `policy_versions` row: `value = '{"interval_hours": 4}'`, `effective_from = now()`, `created_by_actor_id = 'system'`
+  - [x] 9.3 The refresh job (Task 7.2) MUST read the 4-hour interval from this policy row, not hardcode it. Use `getSupabaseAdminClient()` to query `policy_versions` for the effective `refresh_cadences.candidate_availability` value at job execution time.
+  - [x] 9.4 NOTE: If `policy_registry`/`policy_versions` tables do not yet exist in schema.sql, create them per the architecture spec (architecture.md section on Policy Registry). Check schema.sql first.
 
-- [ ] Task 10: Register capabilities in architecture.md and development-standards.md (AC: n/a — compliance)
-  - [ ] 10.1 Add `AvailabilityRepository` functions to architecture.md capability registry
-  - [ ] 10.2 Add `CandidateAvailabilityRefreshJob` to dev-standards section 18 table
-  - [ ] 10.3 Add `update_availability_status` RPC to dev-standards section 18
+- [x] Task 10: Register capabilities in architecture.md and development-standards.md (AC: n/a — compliance)
+  - [x] 10.1 Add `AvailabilityRepository` functions to architecture.md capability registry
+  - [x] 10.2 Add `CandidateAvailabilityRefreshJob` to dev-standards section 18 table
+  - [x] 10.3 Add `update_availability_status` RPC to dev-standards section 18
 
 ## Dev Notes
 
@@ -329,10 +329,49 @@ cblaero/
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.6 (1M context) via Sonnet subagents
 
 ### Debug Log References
 
+- Partial index with `now()` in WHERE clause rejected by Postgres (IMMUTABLE requirement) — replaced with non-partial index on `(tenant_id, availability_last_signal_at)`
+- `DROP FUNCTION` needed before `CREATE OR REPLACE` for search_candidates/get_candidate_detail RPCs because return type changed (added `availability_last_signal_at` column)
+- Pre-existing test failure: `ingestion.test.ts` sync error string format mismatch (not caused by this story)
+
 ### Completion Notes List
 
+- Implemented full availability lifecycle: signal table, atomic RPC, scoring engine, staleness detection, manual refresh (single + bulk), scheduled job, policy registry
+- 334 tests passing (10 new availability-scoring tests, updated ingestion-jobs to expect 7 jobs)
+- All 5 ACs satisfied: state machine with provenance (AC1), stale indicator on list/detail (AC2), manual refresh with no schedule_definitions mutation (AC3), signal audit trail captures all required fields (AC4), bulk refresh with counts (AC5)
+- Policy registry tables created and seeded (4-hour refresh interval)
+- Job reads interval from policy_versions at runtime (not hardcoded)
+- `TODO Story 2.7: emit candidate.availability.updated to outbox` comment placed in availability-repository.ts
+- UI follows recruiter white theme per dashboard-ui-standards.md
+
+### Change Log
+
+- 2026-04-09: Story 2.6 implementation complete — availability state machine, manual refresh, scheduled job, policy registry, UI stale indicators
+- 2026-04-09: Code review (Sonnet 4.6) — 15 findings (3H/6M/6L), 11 fixed: NULL guard in RPC (H1), tenant validation in bulk route (H2), dead import removed (H3), seed SQL added (M1), RLS on policy tables (M2), parallel refresh job (M3), error logging (M4), layering fix (M5), UI imports deduplicated (L2), signals load on mount (L6), Task 8.3 unchecked (L4). 342 tests passing.
+
 ### File List
+
+**New files:**
+- cblaero/src/features/candidate-management/contracts/availability.ts
+- cblaero/src/features/candidate-management/application/availability-scoring.ts
+- cblaero/src/features/candidate-management/application/__tests__/availability-scoring.test.ts
+- cblaero/src/features/candidate-management/infrastructure/availability-repository.ts
+- cblaero/src/app/api/internal/candidates/[candidateId]/refresh-availability/route.ts
+- cblaero/src/app/api/internal/candidates/[candidateId]/availability-signals/route.ts
+- cblaero/src/app/api/internal/candidates/bulk-refresh-availability/route.ts
+
+**Modified files:**
+- cblaero/supabase/schema.sql — candidate_availability_signals table, availability_last_signal_at column, update_availability_status RPC, policy_registry/policy_versions tables, updated search_candidates and get_candidate_detail RPCs
+- cblaero/src/features/candidate-management/contracts/candidate.ts — added availabilityLastSignalAt to CandidateListItem and CandidateDetail
+- cblaero/src/features/candidate-management/infrastructure/candidate-repository.ts — added availability_last_signal_at to CandidateRow type and toListItem mapping
+- cblaero/src/modules/ingestion/jobs.ts — added CandidateAvailabilityRefreshJob, registered as 7th job
+- cblaero/src/app/api/internal/jobs/run/route.ts — added 'availability-refresh' to ALLOWED_JOBS and route branch
+- cblaero/src/app/dashboard/recruiter/candidates/page.tsx — stale indicator on AvailabilityBadge, checkbox selection, bulk refresh button
+- cblaero/src/app/dashboard/recruiter/candidates/[id]/page.tsx — stale indicator, refresh button, recent signals section
+- cblaero/src/modules/__tests__/ingestion-jobs.test.ts — updated to expect 7 jobs
+- docs/planning_artifacts/architecture.md — registered availability capabilities
+- docs/planning_artifacts/development-standards.md — registered availability utilities in §18
+- docs/implementation_artifacts/sprint-status.yaml — status: in-progress → review

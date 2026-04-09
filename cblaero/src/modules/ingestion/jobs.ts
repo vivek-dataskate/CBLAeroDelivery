@@ -983,6 +983,129 @@ export class RoleDeductionEnrichmentJob implements SchedulerJob {
   }
 }
 
+// Story 2.6: Availability refresh job — recalculates availability state for stale candidates
+export class CandidateAvailabilityRefreshJob implements SchedulerJob {
+  name = 'CandidateAvailabilityRefreshJob';
+
+  async run(): Promise<void> {
+    if (!isSupabaseConfigured()) {
+      console.log('[AvailabilityRefresh] Supabase not configured — skipping');
+      return;
+    }
+
+    const runId = await createSyncRun('availability-refresh');
+    let processed = 0;
+    let stateChanged = 0;
+    let unchanged = 0;
+    let errors = 0;
+
+    try {
+      const { computeAvailabilityState } = await import(
+        '../../features/candidate-management/application/availability-scoring'
+      );
+      const { updateAvailabilityStatus } = await import(
+        '../../features/candidate-management/infrastructure/availability-repository'
+      );
+
+      const db = getSupabaseAdminClient();
+
+      // Read refresh interval from policy_registry
+      let intervalHours = 4;
+      try {
+        const { data: policyData } = await db
+          .schema('cblaero_app')
+          .from('policy_registry')
+          .select('id')
+          .eq('family', 'refresh_cadences')
+          .eq('key', 'candidate_availability')
+          .maybeSingle();
+
+        if (policyData) {
+          const { data: versionData } = await db
+            .schema('cblaero_app')
+            .from('policy_versions')
+            .select('value')
+            .eq('policy_id', policyData.id)
+            .lte('effective_from', new Date().toISOString())
+            .order('effective_from', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (versionData?.value && typeof versionData.value === 'object' && 'interval_hours' in versionData.value) {
+            intervalHours = (versionData.value as { interval_hours: number }).interval_hours;
+          }
+        }
+      } catch {
+        console.warn('[AvailabilityRefresh] Failed to read policy — using default 4h interval');
+      }
+
+      const cutoff = new Date(Date.now() - intervalHours * 60 * 60 * 1000).toISOString();
+
+      // Query candidates where availability_last_signal_at is null or older than interval
+      const { data: candidates, error: fetchError } = await db
+        .from('candidates')
+        .select('id, tenant_id, availability_status')
+        .eq('ingestion_state', 'active')
+        .or(`availability_last_signal_at.is.null,availability_last_signal_at.lt.${cutoff}`)
+        .limit(200);
+
+      if (fetchError) throw new Error(`Failed to fetch stale candidates: ${fetchError.message}`);
+
+      if (!candidates || candidates.length === 0) {
+        console.log('[AvailabilityRefresh] No candidates need refresh');
+        await completeSyncRun(runId, { succeeded: 0, failed: 0, total: 0 });
+        return;
+      }
+
+      console.log(`[AvailabilityRefresh] Processing ${candidates.length} candidates (interval: ${intervalHours}h)`);
+
+      // Process in parallel sub-batches of 10 to avoid overwhelming the DB
+      const PARALLEL_CHUNK = 10;
+      for (let i = 0; i < candidates.length; i += PARALLEL_CHUNK) {
+        const chunk = candidates.slice(i, i + PARALLEL_CHUNK);
+        const results = await Promise.allSettled(
+          chunk.map(async (candidate) => {
+            const newState = await computeAvailabilityState(candidate.tenant_id, candidate.id);
+            await updateAvailabilityStatus(candidate.tenant_id, candidate.id, newState, 'system');
+            return { previousState: candidate.availability_status, newState };
+          }),
+        );
+
+        for (let j = 0; j < results.length; j++) {
+          const result = results[j];
+          if (result.status === 'fulfilled') {
+            processed++;
+            if (result.value.previousState !== result.value.newState) {
+              stateChanged++;
+            } else {
+              unchanged++;
+            }
+          } else {
+            errors++;
+            console.error(`[AvailabilityRefresh] Error for candidate ${chunk[j].id}:`, result.reason instanceof Error ? result.reason.message : result.reason);
+            recordSyncFailure('availability-refresh', chunk[j].id, result.reason, runId);
+          }
+        }
+      }
+
+      console.log(JSON.stringify({
+        level: 'info',
+        module: 'CandidateAvailabilityRefreshJob',
+        action: 'batch_complete',
+        processed,
+        stateChanged,
+        unchanged,
+        errors,
+      }));
+
+      await completeSyncRun(runId, { succeeded: processed, failed: errors, total: candidates.length });
+    } catch (err) {
+      console.error('[AvailabilityRefresh] Fatal error:', err);
+      await failSyncRun(runId, err instanceof Error ? (err.stack ?? err.message) : String(err));
+    }
+  }
+}
+
 export function registerIngestionJobs(scheduler: { register(job: SchedulerJob): void }) {
   scheduler.register(new CeipalIngestionJob());
   scheduler.register(new EmailIngestionJob());
@@ -990,6 +1113,7 @@ export function registerIngestionJobs(scheduler: { register(job: SchedulerJob): 
   scheduler.register(new SavedSearchDigestJob());
   scheduler.register(new DedupWorkerJob());
   scheduler.register(new RoleDeductionEnrichmentJob());
+  scheduler.register(new CandidateAvailabilityRefreshJob());
 }
 
 // GlobalScheduler stub removed — deferred to Story 2.7. Use registerIngestionJobs() with a real scheduler.
