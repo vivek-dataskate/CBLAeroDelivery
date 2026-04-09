@@ -245,7 +245,7 @@ create table if not exists cblaero_app.candidates (
   created_by_actor_id text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint candidates_email_or_phone_required check (email is not null or phone is not null)
+  constraint candidates_email_or_phone_required check (ingestion_state = 'merged' or email is not null or phone is not null)
 );
 
 alter table cblaero_app.candidates
@@ -1539,7 +1539,7 @@ begin
     state = coalesce(p_merged_fields->>'state', state),
     resume_url = coalesce(p_merged_fields->>'resume_url', resume_url),
     linkedin_url = coalesce(p_merged_fields->>'linkedin_url', linkedin_url),
-    years_of_experience = coalesce((p_merged_fields->>'years_of_experience')::numeric, years_of_experience),
+    years_of_experience = coalesce(p_merged_fields->>'years_of_experience', years_of_experience),
     skills = coalesce(p_merged_fields->'skills', skills),
     certifications = coalesce(p_merged_fields->'certifications', certifications),
     aircraft_experience = coalesce(p_merged_fields->'aircraft_experience', aircraft_experience),
