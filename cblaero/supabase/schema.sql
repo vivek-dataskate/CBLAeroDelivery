@@ -323,6 +323,10 @@ create index if not exists idx_candidates_tenant_source
   on cblaero_app.candidates (tenant_id, source)
   where ingestion_state = 'active';
 
+-- Sync timestamp lookup (get_last_candidate_update_by_source)
+create index if not exists idx_candidates_source_updated_at
+  on cblaero_app.candidates (source, updated_at desc);
+
 -- Sort performance indexes
 create index if not exists idx_candidates_tenant_created_desc
   on cblaero_app.candidates (tenant_id, created_at desc)
@@ -1183,9 +1187,13 @@ $$;
 grant execute on function cblaero_app.count_candidates_by_source to service_role;
 
 -- Story 2.4: get_last_candidate_update_by_source — latest updated_at for a source
+-- Uses ORDER BY + LIMIT 1 instead of MAX() to leverage idx_candidates_source_updated_at
 create or replace function cblaero_app.get_last_candidate_update_by_source(p_source text)
 returns timestamptz language sql stable as $$
-  select max(updated_at) from cblaero_app.candidates where source = p_source;
+  select updated_at from cblaero_app.candidates
+  where source = p_source
+  order by updated_at desc
+  limit 1;
 $$;
 
 grant execute on function cblaero_app.get_last_candidate_update_by_source to service_role;
