@@ -194,18 +194,18 @@ export const POST = withAuth(async ({ session, request, traceId }) => {
 
           // Deduce roles from extracted data (LLM path — single file, acceptable latency)
           try {
-            const extraction = result.extraction as Record<string, unknown>;
+            const extraction = result.extraction;
             const roleResult = await deduceRoles(
               {
-                jobTitle: typeof extraction.jobTitle === 'string' ? extraction.jobTitle : null,
-                skills: Array.isArray(extraction.skills) ? extraction.skills : [],
-                certifications: Array.isArray(extraction.certifications) ? extraction.certifications : [],
-                aircraftExperience: Array.isArray(extraction.aircraftExperience) ? extraction.aircraftExperience : [],
+                jobTitle: extraction.jobTitle ?? null,
+                skills: extraction.skills ?? [],
+                certifications: extraction.certifications ?? [],
+                aircraftExperience: extraction.aircraftExperience ?? [],
               },
               tenantId,
             );
-            (extraction as Record<string, unknown>).deducedRoles = roleResult.roles;
-            (extraction as Record<string, unknown>).roleDeductionMetadata = roleResult.metadata;
+            extraction.deducedRoles = roleResult.roles;
+            extraction.roleDeductionMetadata = roleResult.metadata;
           } catch (err) {
             console.warn(JSON.stringify({ level: 'warn', module: 'recruiter/resume-upload', action: 'role_deduction_failed', traceId, batchId, filename: file.name, error: err instanceof Error ? err.message : String(err) }));
             // Non-fatal — candidate proceeds with empty deduced_roles
