@@ -52,11 +52,14 @@ function StatusBadge({ status }: { status: string }) {
 
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
+const PAGE_SIZE = 10;
+
 export default function SyncRunSummaryCard() {
   const [runs, setRuns] = useState<SyncRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
 
   useEffect(() => {
     fetch("/api/internal/admin/sync-runs")
@@ -100,8 +103,13 @@ export default function SyncRunSummaryCard() {
         </div>
       )}
 
-      {!loading && !fetchError && runs.length > 0 && (
-        <div className="overflow-x-auto">
+      {!loading && !fetchError && runs.length > 0 && (() => {
+        const totalPages = Math.ceil(runs.length / PAGE_SIZE);
+        const pageRuns = runs.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+        return (
+        <div>
+          <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead className="border-b border-gray-100 bg-gray-50/50">
               <tr>
@@ -116,7 +124,7 @@ export default function SyncRunSummaryCard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {runs.map((run) => {
+              {pageRuns.map((run) => {
                 const isExpanded = expandedRunId === run.id;
                 return (
                   <Fragment key={run.id}>
@@ -188,8 +196,38 @@ export default function SyncRunSummaryCard() {
               })}
             </tbody>
           </table>
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between border-t border-gray-100 px-3 py-2">
+              <span className="text-xs text-gray-400">
+                {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, runs.length)} of {runs.length} runs
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={page <= 0}
+                  className="rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-30"
+                >
+                  Prev
+                </button>
+                <span className="text-xs text-gray-500">{page + 1}/{totalPages}</span>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                  disabled={page >= totalPages - 1}
+                  className="rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-30"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
