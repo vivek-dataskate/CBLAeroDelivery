@@ -65,7 +65,7 @@ export function computeIdentityConfidence(
  * Route a confidence score to the appropriate action.
  */
 export function routeDedupDecision(score: number): "auto_merge" | "manual_review" | "keep_separate" {
-  if (score >= 95) return "auto_merge";
-  if (score >= 70) return "manual_review";
+  if (score >= 50) return "auto_merge";
+  if (score > 0) return "manual_review";
   return "keep_separate";
 }

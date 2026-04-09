@@ -23,6 +23,7 @@ export function selectWinner(a: CandidateForDedup, b: CandidateForDedup): { winn
     if (c.jobTitle) count++;
     if (c.location) count++;
     if (c.resumeUrl) count++;
+    if (c.linkedinUrl) count++;
     if (c.yearsOfExperience !== null) count++;
     if (Array.isArray(c.skills) && c.skills.length > 0) count++;
     if (Array.isArray(c.certifications) && c.certifications.length > 0) count++;
@@ -60,6 +61,7 @@ export function computeMergedFields(
   merged.city = winner.city || loser.city;
   merged.state = winner.state || loser.state;
   merged.resume_url = winner.resumeUrl || loser.resumeUrl;
+  merged.linkedin_url = winner.linkedinUrl || loser.linkedinUrl;
 
   // Numeric: prefer higher value
   if (winner.yearsOfExperience !== null && loser.yearsOfExperience !== null) {

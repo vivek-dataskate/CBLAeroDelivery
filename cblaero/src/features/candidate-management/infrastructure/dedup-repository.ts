@@ -48,6 +48,7 @@ function toCandidateForDedup(row: any): CandidateForDedup {
     extraAttributes: row.extra_attributes ?? {},
     yearsOfExperience: row.years_of_experience ?? null,
     resumeUrl: row.resume_url ?? null,
+    linkedinUrl: row.linkedin_url ?? null,
     source: row.source ?? null,
     ingestionState: row.ingestion_state,
     createdAt: row.created_at,
@@ -161,7 +162,7 @@ export async function loadCandidateForDedup(
   const db = getSupabaseAdminClient();
   const { data, error } = await db
     .from("candidates")
-    .select("id, tenant_id, email, phone, first_name, last_name, job_title, location, city, state, skills, certifications, aircraft_experience, extra_attributes, years_of_experience, resume_url, source, ingestion_state, created_at, updated_at")
+    .select("id, tenant_id, email, phone, first_name, last_name, job_title, location, city, state, skills, certifications, aircraft_experience, extra_attributes, years_of_experience, resume_url, linkedin_url, source, ingestion_state, created_at, updated_at")
     .eq("tenant_id", tenantId)
     .eq("id", candidateId)
     .maybeSingle();
@@ -182,7 +183,7 @@ export async function listPendingDedupCandidates(
   const db = getSupabaseAdminClient();
   const { data, error } = await db
     .from("candidates")
-    .select("id, tenant_id, email, phone, first_name, last_name, job_title, location, city, state, skills, certifications, aircraft_experience, extra_attributes, years_of_experience, resume_url, source, ingestion_state, created_at, updated_at")
+    .select("id, tenant_id, email, phone, first_name, last_name, job_title, location, city, state, skills, certifications, aircraft_experience, extra_attributes, years_of_experience, resume_url, linkedin_url, source, ingestion_state, created_at, updated_at")
     .eq("tenant_id", tenantId)
     .eq("ingestion_state", "pending_dedup")
     .order("created_at", { ascending: true })

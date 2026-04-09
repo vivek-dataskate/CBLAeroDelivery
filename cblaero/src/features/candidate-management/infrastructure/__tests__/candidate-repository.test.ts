@@ -57,6 +57,9 @@ function makeCandidate(overrides: Partial<CandidateDetail> = {}): CandidateDetai
     interviewAvailability: null,
     veteranStatus: null,
     resumeUrl: null,
+    linkedinUrl: null,
+    deducedRoles: [],
+    availabilityLastSignalAt: null,
     ...overrides,
   };
 }

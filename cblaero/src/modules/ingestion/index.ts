@@ -285,6 +285,7 @@ export function mapToCandidateRow(record: Record<string, unknown>, source: strin
     call_availability: str('callAvailability'),
     interview_availability: str('interviewAvailability'),
     veteran_status: str('veteranStatus'),
+    linkedin_url: str('linkedinUrl'),
     skills: Array.isArray(record.skills) ? record.skills : [],
     certifications: Array.isArray(record.certifications) ? record.certifications : [],
     availability_status: 'active',

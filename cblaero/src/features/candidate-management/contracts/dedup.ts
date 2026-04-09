@@ -60,6 +60,7 @@ export type CandidateForDedup = {
   extraAttributes: Record<string, unknown>;
   yearsOfExperience: number | null;
   resumeUrl: string | null;
+  linkedinUrl: string | null;
   source: string | null;
   ingestionState: string;
   createdAt: string;
