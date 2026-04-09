@@ -11,6 +11,7 @@ import {
   batchInsertCandidatesNoEmail,
 } from '@/features/candidate-management/infrastructure/candidate-repository';
 import { deduceRoles } from '@/features/candidate-management/application/role-deduction';
+import { updateAvailabilityStatus } from '@/features/candidate-management/infrastructure/availability-repository';
 
 // Re-export sync error/run functions from centralized repository for backward compatibility
 export {
@@ -226,6 +227,16 @@ export async function upsertCandidateFromEmailFull(record: {
     });
     const attCount = attachmentMeta.filter((a) => a.url).length;
     console.log(`[Ingestion] Saved submission evidence for ${record.subject} (${attCount} attachments uploaded)`);
+
+    // Record engagement signal — email submission means recruiter talked to candidate
+    if (candidateId) {
+      updateAvailabilityStatus(DEFAULT_TENANT_ID, candidateId, 'active', 'engagement', {
+        source: 'email_submission',
+        emailSubject: record.subject,
+      }).catch((err) => {
+        console.warn(`[Ingestion] Engagement signal failed for ${candidateId}:`, err instanceof Error ? err.message : err);
+      });
+    }
   } catch (subError) {
     console.error(`[Ingestion] Submission evidence insert failed: ${subError instanceof Error ? subError.message : subError}`);
     recordSyncFailure('email', record.id, subError);
