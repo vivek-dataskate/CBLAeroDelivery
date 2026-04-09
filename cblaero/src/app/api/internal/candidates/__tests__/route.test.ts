@@ -67,6 +67,9 @@ function makeCandidateFixture(overrides: Partial<CandidateDetail> = {}): Candida
     interviewAvailability: null,
     veteranStatus: null,
     resumeUrl: null,
+    linkedinUrl: null,
+    deducedRoles: [],
+    availabilityLastSignalAt: null,
     ...overrides,
   };
 }

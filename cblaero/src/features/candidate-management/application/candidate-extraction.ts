@@ -54,6 +54,9 @@ export interface CandidateExtraction {
   callAvailability?: string;
   interviewAvailability?: string;
 
+  // Social / web presence
+  linkedinUrl?: string;
+
   // Metadata
   ceipalId?: string;
   submittedBy?: string;
@@ -132,6 +135,7 @@ Return ONLY valid JSON matching this schema (omit fields that are not present):
   "clearance": "string",
   "callAvailability": "string",
   "interviewAvailability": "string",
+  "linkedinUrl": "string (LinkedIn profile URL if present)",
   "ceipalId": "string (numeric ID from Ceipal ATS)",
   "submittedBy": "string (recruiter name who submitted)",
   "submitterEmail": "string (recruiter's email)",
@@ -272,6 +276,7 @@ const ALLOWED_EXTRACTION_KEYS = new Set([
   'skills', 'certifications', 'aircraftExperience', 'hasAPLicense', 'yearsOfExperience',
   'workAuthorization', 'clearance',
   'callAvailability', 'interviewAvailability',
+  'linkedinUrl',
   'ceipalId', 'submittedBy', 'submitterEmail',
   'additionalFields',
 ]);
