@@ -52,6 +52,7 @@ type ColumnMap = Record<string, CanonicalField>;
 type PreparedCandidate = CsvCandidateRow & {
   rowNumber: number;
   rawData: Record<string, string>;
+  deduced_roles?: string[];
 };
 
 type PreparedErrorRow = {
@@ -328,6 +329,7 @@ async function processSupabaseBatch(input: {
     source_batch_id: candidate.source_batch_id,
     created_by_actor_id: candidate.created_by_actor_id,
     extra_attributes: candidate.extra_attributes,
+    deduced_roles: candidate.deduced_roles ?? [],
   });
 
   const toRpcError = (error: PreparedErrorRow) => ({
@@ -412,6 +414,7 @@ function processInMemoryBatch(input: {
       source_batch_id: candidate.source_batch_id,
       created_by_actor_id: candidate.created_by_actor_id,
       extra_attributes: candidate.extra_attributes,
+      deduced_roles: candidate.deduced_roles ?? [],
     })),
   );
 
