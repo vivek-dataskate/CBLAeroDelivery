@@ -68,6 +68,10 @@ export interface CandidateExtraction {
 
   // Whether LLM classified this as a candidate submission email
   isSubmission?: boolean;
+
+  // Role deduction (populated post-extraction)
+  deducedRoles?: string[];
+  roleDeductionMetadata?: Record<string, unknown>;
 }
 
 export type ContentType = 'pdf' | 'email_body' | 'email_attachment';
