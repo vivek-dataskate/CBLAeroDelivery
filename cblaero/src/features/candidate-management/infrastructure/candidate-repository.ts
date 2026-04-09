@@ -52,6 +52,7 @@ type CandidateRow = {
   job_title: string | null;
   skills: unknown[];
   deduced_roles: string[];
+  availability_last_signal_at: string | null;
   source: string;
   source_batch_id: string | null;
   created_at: string;
@@ -112,6 +113,7 @@ function toListItem(row: CandidateRow): CandidateListItem {
     jobTitle: row.job_title,
     skills: Array.isArray(row.skills) ? row.skills : [],
     deducedRoles: Array.isArray(row.deduced_roles) ? row.deduced_roles : [],
+    availabilityLastSignalAt: row.availability_last_signal_at,
     yearsOfExperience: row.years_of_experience,
     source: row.source,
     sourceBatchId: row.source_batch_id,

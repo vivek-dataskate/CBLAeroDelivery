@@ -1197,6 +1197,17 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 | `find_dedup_field_matches` RPC | `supabase/schema.sql` | Server-side phone normalization (`regexp_replace`) + name matching. Searches `active` + `pending_review` candidates. |
 | `get_dedup_stats` RPC | `supabase/schema.sql` | GROUP BY `decision_type` counts for dashboard stats. |
 
+### Availability & Refresh (Story 2.6)
+| Capability | Location | When to Use |
+|-----------|----------|-------------|
+| `updateAvailabilityStatus(tenantId, candidateId, newState, source, metadata?)` | `src/features/candidate-management/infrastructure/availability-repository.ts` | Atomic availability state update via `update_availability_status` RPC. Updates `candidates.availability_status` + `availability_last_signal_at`, inserts audit row in `candidate_availability_signals`. |
+| `getSignalHistory(tenantId, candidateId, limit?)` | `src/features/candidate-management/infrastructure/availability-repository.ts` | Query recent availability signals ordered by `created_at DESC`. Default limit 20. |
+| `getLatestSignal(tenantId, candidateId)` | `src/features/candidate-management/infrastructure/availability-repository.ts` | Get single most recent signal row. |
+| `batchUpdateAvailability(tenantId, candidateIds, newState, source)` | `src/features/candidate-management/infrastructure/availability-repository.ts` | Parallel batch update using `Promise.allSettled()` over RPC calls. Max 50 candidates from UI. |
+| `computeAvailabilityState(tenantId, candidateId)` | `src/features/candidate-management/application/availability-scoring.ts` | Recalculate availability from engagement signals: fresh self-report takes priority, then count engagement events (>=3 active, 1-2 passive, 0 unavailable). |
+| `isStaleSignal(availabilityLastSignalAt)` | `src/features/candidate-management/application/availability-scoring.ts` | Returns true if null or >7 days ago. Used by API routes and UI components. |
+| `update_availability_status` RPC | `supabase/schema.sql` | Atomic: SELECT current state → UPDATE candidate → INSERT signal row. Returns `{ signal_id, previous_state, new_state, source }`. |
+
 ### Ingestion Jobs (Scheduler-Ready)
 | Capability | Location | When to Use |
 |-----------|----------|-------------|
@@ -1206,7 +1217,8 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 | `SavedSearchDigestJob` | `src/modules/ingestion/jobs.ts` | Sends daily digest emails for saved searches via Graph sendMail. Checks response status. |
 | `DedupWorkerJob` | `src/modules/ingestion/jobs.ts` | Two-pass dedup worker: Pass 1 fingerprint hash lookup, Pass 2 `find_dedup_field_matches` RPC for phone/name. Routes to auto-merge (>=95%), manual review (70-94%), or keep-separate (<70%). Records identity fingerprints. Batch size 100, triggered via `/api/internal/jobs/run` with `job=dedup`. |
 | `RoleDeductionEnrichmentJob` | `src/modules/ingestion/jobs.ts` | Monthly enrichment: queries candidates with empty `deduced_roles`, runs `deduceRoles()` (LLM path) per candidate, updates `deduced_roles` and `role_deduction_metadata`. Batch size 100, triggered via `/api/internal/jobs/run` with `job=role-enrichment`. |
-| `registerIngestionJobs(scheduler)` | `src/modules/ingestion/jobs.ts` | Registers all 6 jobs (Ceipal, Email, OneDrive, SavedSearchDigest, DedupWorker, RoleDeductionEnrichment) with any scheduler implementing `{ register(job: SchedulerJob): void }`. |
+| `CandidateAvailabilityRefreshJob` | `src/modules/ingestion/jobs.ts` | Recalculates availability for stale candidates. Reads interval from `policy_registry` (default 4h). Batch size 200, triggered via `/api/internal/jobs/run` with `job=availability-refresh`. |
+| `registerIngestionJobs(scheduler)` | `src/modules/ingestion/jobs.ts` | Registers all 7 jobs (Ceipal, Email, OneDrive, SavedSearchDigest, DedupWorker, RoleDeductionEnrichment, CandidateAvailabilityRefresh) with any scheduler implementing `{ register(job: SchedulerJob): void }`. |
 
 ### Role Deduction (Story 2.5a)
 | Capability | Location | When to Use |
