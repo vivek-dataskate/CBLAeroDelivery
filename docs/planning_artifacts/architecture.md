@@ -1205,7 +1205,22 @@ _Dev agents: read this section BEFORE implementing any story. If a capability ex
 | `OneDriveResumePollerJob` | `src/modules/ingestion/jobs.ts` | Polls OneDrive folder recursively (BFS subfolders) for PDFs. 10-concurrent parallel processing, 500-file cap per run (hourly cron). Uses `uploadFileToStorage` → LLM extraction → `processImportChunk()` repository wrapper with `resume_url`. Uses `mapToCandidateRow()` for field mapping. Uses `createImportBatch()`/`updateImportBatch()` repository functions. Deletes source only after storage backup confirmed. Cleans up empty subfolders. |
 | `SavedSearchDigestJob` | `src/modules/ingestion/jobs.ts` | Sends daily digest emails for saved searches via Graph sendMail. Checks response status. |
 | `DedupWorkerJob` | `src/modules/ingestion/jobs.ts` | Two-pass dedup worker: Pass 1 fingerprint hash lookup, Pass 2 `find_dedup_field_matches` RPC for phone/name. Routes to auto-merge (>=95%), manual review (70-94%), or keep-separate (<70%). Records identity fingerprints. Batch size 100, triggered via `/api/internal/jobs/run` with `job=dedup`. |
-| `registerIngestionJobs(scheduler)` | `src/modules/ingestion/jobs.ts` | Registers all 5 jobs (Ceipal, Email, OneDrive, SavedSearchDigest, DedupWorker) with any scheduler implementing `{ register(job: SchedulerJob): void }`. |
+| `RoleDeductionEnrichmentJob` | `src/modules/ingestion/jobs.ts` | Monthly enrichment: queries candidates with empty `deduced_roles`, runs `deduceRoles()` (LLM path) per candidate, updates `deduced_roles` and `role_deduction_metadata`. Batch size 100, triggered via `/api/internal/jobs/run` with `job=role-enrichment`. |
+| `registerIngestionJobs(scheduler)` | `src/modules/ingestion/jobs.ts` | Registers all 6 jobs (Ceipal, Email, OneDrive, SavedSearchDigest, DedupWorker, RoleDeductionEnrichment) with any scheduler implementing `{ register(job: SchedulerJob): void }`. |
+
+### Role Deduction (Story 2.5a)
+| Capability | Location | When to Use |
+|-----------|----------|-------------|
+| `deduceRoles(candidate, tenantId, options?)` | `src/features/candidate-management/application/role-deduction.ts` | Orchestrator: tries heuristic first, falls back to LLM. Use `{ heuristicOnly: true }` for CSV batch mode. Returns `{ roles, metadata }`. |
+| `deduceRolesHeuristic(jobTitle, skills, taxonomy)` | `src/features/candidate-management/application/role-deduction.ts` | Fast, free heuristic matching: exact name → alias containment → word overlap → skills intersection. Returns up to 3 roles sorted by confidence. |
+| `deduceRolesLlm(jobTitle, skills, certs, aircraft, taxonomy, tenantId)` | `src/features/candidate-management/application/role-deduction.ts` | LLM classification via `callLlm()` with `role-deduction` prompt. Validates roles against taxonomy, auto-inserts new IT roles. ~$0.001/candidate on Haiku. |
+| `getAllRoles(tenantId)` | `src/features/candidate-management/infrastructure/role-taxonomy-repository.ts` | Cached (10-min TTL) fetch of all active roles for a tenant. Used by deduction and UI filter. |
+| `getRolesByCategory(tenantId, category)` | `src/features/candidate-management/infrastructure/role-taxonomy-repository.ts` | Fetch roles by category (aviation/it/other). |
+| `findRoleByName(tenantId, roleName)` | `src/features/candidate-management/infrastructure/role-taxonomy-repository.ts` | Case-insensitive role lookup. Used by LLM path to validate deduced roles. |
+| `insertRole(tenantId, roleName, category)` | `src/features/candidate-management/infrastructure/role-taxonomy-repository.ts` | Insert new role (used by LLM path for new IT roles). Invalidates cache. |
+| `getRolesWithAliases(tenantId)` | `src/features/candidate-management/infrastructure/role-taxonomy-repository.ts` | Alias of `getAllRoles` — aliases always included. Used for heuristic matching. |
+| `clearRoleTaxonomyCacheForTest()` | `src/features/candidate-management/infrastructure/role-taxonomy-repository.ts` | Test cleanup for role taxonomy cache + in-memory store. |
+| `seed_aviation_roles` RPC | `supabase/schema.sql` | Seeds ~47 canonical aviation roles with aliases for a given tenant. Idempotent via ON CONFLICT. |
 
 ### Auth & Admin
 | Capability | Location | When to Use |

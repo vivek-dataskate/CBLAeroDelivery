@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { withAuth } from '@/modules/auth';
 import { recordImportBatchAccessEvent } from '@/modules/audit';
 import { extractCandidateFromDocument } from '@/features/candidate-management/application/candidate-extraction';
+import { deduceRoles } from '@/features/candidate-management/application/role-deduction';
 import { createImportBatch } from '@/features/candidate-management/infrastructure/import-batch-repository';
 import { insertSubmission } from '@/features/candidate-management/infrastructure/submission-repository';
 import { uploadFileToStorage } from '@/features/candidate-management/infrastructure/storage';
@@ -189,6 +190,25 @@ export const POST = withAuth(async ({ session, request, traceId }) => {
               storageWarning,
               submissionId,
             };
+          }
+
+          // Deduce roles from extracted data (LLM path — single file, acceptable latency)
+          try {
+            const extraction = result.extraction as Record<string, unknown>;
+            const roleResult = await deduceRoles(
+              {
+                jobTitle: typeof extraction.jobTitle === 'string' ? extraction.jobTitle : null,
+                skills: Array.isArray(extraction.skills) ? extraction.skills : [],
+                certifications: Array.isArray(extraction.certifications) ? extraction.certifications : [],
+                aircraftExperience: Array.isArray(extraction.aircraftExperience) ? extraction.aircraftExperience : [],
+              },
+              tenantId,
+            );
+            (extraction as Record<string, unknown>).deducedRoles = roleResult.roles;
+            (extraction as Record<string, unknown>).roleDeductionMetadata = roleResult.metadata;
+          } catch (err) {
+            console.warn(JSON.stringify({ level: 'warn', module: 'recruiter/resume-upload', action: 'role_deduction_failed', traceId, batchId, filename: file.name, error: err instanceof Error ? err.message : String(err) }));
+            // Non-fatal — candidate proceeds with empty deduced_roles
           }
 
           await insertSubmission({

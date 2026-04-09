@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { CeipalIngestionJob, EmailIngestionJob, OneDriveResumePollerJob, DedupWorkerJob } from '@/modules/ingestion/jobs';
+import { CeipalIngestionJob, EmailIngestionJob, OneDriveResumePollerJob, DedupWorkerJob, SavedSearchDigestJob, RoleDeductionEnrichmentJob } from '@/modules/ingestion/jobs';
 import { isSupabaseConfigured } from '@/modules/persistence';
 import {
   countCandidatesBySource,
@@ -29,10 +29,10 @@ export async function POST(request: NextRequest) {
   };
 
   const jobName = body.job;
-  if (!jobName || !['ceipal-sync', 'email-sync', 'onedrive-sync', 'dedup'].includes(jobName)) {
+  const ALLOWED_JOBS = ['ceipal-sync', 'email-sync', 'onedrive-sync', 'dedup', 'saved-search-digest', 'role-enrichment'];
+  if (!jobName || !ALLOWED_JOBS.includes(jobName)) {
     return NextResponse.json({
-      error: 'Invalid job',
-      available: ['ceipal-sync', 'email-sync', 'onedrive-sync', 'dedup'],
+      error: { code: 'UNKNOWN_JOB', message: `Unknown job name. Available: ${ALLOWED_JOBS.join(', ')}` },
     }, { status: 400 });
   }
 
@@ -47,9 +47,19 @@ export async function POST(request: NextRequest) {
     } else if (jobName === 'dedup') {
       const job = new DedupWorkerJob();
       await job.run();
-    } else {
+    } else if (jobName === 'email-sync') {
       const job = new EmailIngestionJob();
       await job.run();
+    } else if (jobName === 'saved-search-digest') {
+      const job = new SavedSearchDigestJob();
+      await job.run();
+    } else if (jobName === 'role-enrichment') {
+      const job = new RoleDeductionEnrichmentJob();
+      await job.run();
+    } else {
+      return NextResponse.json({
+        error: { code: 'UNKNOWN_JOB', message: 'Unknown job name' },
+      }, { status: 400 });
     }
 
     return NextResponse.json({

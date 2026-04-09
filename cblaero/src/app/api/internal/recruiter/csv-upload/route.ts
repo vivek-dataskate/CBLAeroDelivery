@@ -5,6 +5,8 @@ import { recordImportBatchAccessEvent } from "@/modules/audit";
 import {
   shouldUseInMemoryPersistenceForTests,
 } from "@/modules/persistence";
+import { deduceRolesHeuristic } from "@/features/candidate-management/application/role-deduction";
+import { getAllRoles } from "@/features/candidate-management/infrastructure/role-taxonomy-repository";
 import {
   type CanonicalField,
   CANONICAL_FIELDS,
@@ -568,6 +570,23 @@ export const POST = withAuth(async ({ session, request, traceId }) => {
   const skippedByFingerprint = originalCount - prepared.candidates.length;
   if (skippedByFingerprint > 0) {
     console.log(JSON.stringify({ level: "info", module: "recruiter/csv-upload", action: "fingerprint_gate", traceId, batchId, skipped: skippedByFingerprint, total: originalCount, timestamp: new Date().toISOString() }));
+  }
+
+  // Heuristic-only role deduction for CSV batch (NO LLM — keeps upload fast)
+  // Unclassified candidates (deduced_roles=[]) will be picked up by enrichment job later
+  try {
+    const taxonomy = await getAllRoles(tenantId);
+    if (taxonomy.length > 0) {
+      for (const candidate of prepared.candidates) {
+        const jobTitle = typeof candidate.job_title === 'string' ? candidate.job_title : null;
+        const skills = Array.isArray(candidate.skills) ? candidate.skills.filter((s: unknown): s is string => typeof s === 'string') : [];
+        const result = deduceRolesHeuristic(jobTitle, skills, taxonomy);
+        candidate.deduced_roles = result.roles;
+      }
+    }
+  } catch (err) {
+    console.warn(JSON.stringify({ level: 'warn', module: 'recruiter/csv-upload', action: 'role_deduction_batch_failed', traceId, batchId, error: err instanceof Error ? err.message : String(err) }));
+    // Non-fatal — candidates proceed with empty deduced_roles
   }
 
   try {

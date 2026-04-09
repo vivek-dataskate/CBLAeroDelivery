@@ -344,6 +344,7 @@ export const GET = withAuth(async ({ session, request, traceId }) => {
   const yearsOfExperience = sp.get("years_of_experience");
   const veteranStatus = sp.get("veteran_status");
   const hasApLicenseRaw = sp.get("has_ap_license");
+  const deducedRole = sp.get("deduced_role");
   const createdAfter = sp.get("created_after");
   const createdBefore = sp.get("created_before");
   const sortBy = sp.get("sort_by");
@@ -400,7 +401,7 @@ export const GET = withAuth(async ({ session, request, traceId }) => {
     email || phone || jobTitle || skills || currentCompany ||
     stateGeo || city || workAuthorization || employmentType ||
     source || shiftPreference || yearsOfExperience || veteranStatus ||
-    hasApLicense !== undefined || createdAfter || createdBefore
+    hasApLicense !== undefined || deducedRole || createdAfter || createdBefore
   );
   if (!hasFilter) {
     return NextResponse.json(
@@ -439,6 +440,7 @@ export const GET = withAuth(async ({ session, request, traceId }) => {
     yearsOfExperience: yearsOfExperience ?? undefined,
     veteranStatus: veteranStatus ?? undefined,
     hasApLicense,
+    deducedRole: deducedRole ?? undefined,
     createdAfter: createdAfter ?? undefined,
     createdBefore: createdBefore ?? undefined,
     sortBy: (sortBy as import("@/features/candidate-management/contracts/candidate").SortByField) ?? undefined,

@@ -54,6 +54,10 @@ vi.mock('@/modules/ingestion/index', () => ({
   upsertCandidateFromEmailFull: mocks.upsertCandidateFromEmailFull,
   batchUpsertCandidatesFromATS: mocks.batchUpsertCandidatesFromATS,
   DEFAULT_TENANT_ID: 'cbl-aero',
+  createSyncRun: vi.fn().mockResolvedValue('mock-run-id'),
+  completeSyncRun: vi.fn().mockResolvedValue(undefined),
+  failSyncRun: vi.fn().mockResolvedValue(undefined),
+  mapToCandidateRow: vi.fn((record: any, source: string) => ({ ...record, source })),
 }));
 
 vi.mock('@/features/candidate-management/infrastructure/fingerprint-repository', () => ({
@@ -65,6 +69,10 @@ vi.mock('@/features/candidate-management/infrastructure/fingerprint-repository',
 
 vi.mock('@/features/candidate-management/infrastructure/candidate-repository', () => ({
   getLastCandidateUpdateBySource: mocks.getLastCandidateUpdateBySource,
+}));
+
+vi.mock('@/features/candidate-management/application/role-deduction', () => ({
+  deduceRoles: vi.fn().mockResolvedValue({ roles: [], metadata: { source: 'heuristic', confidence: 0, rawJobTitle: null, rawSkills: [], deducedAt: new Date().toISOString() } }),
 }));
 
 import { CeipalIngestionJob, EmailIngestionJob, registerIngestionJobs } from '@/modules/ingestion/jobs';
@@ -106,7 +114,7 @@ describe('CeipalIngestionJob', () => {
     await job.run();
 
     expect(mocks.batchUpsertCandidatesFromATS).toHaveBeenCalledTimes(1);
-    expect(mocks.recordSyncFailure).toHaveBeenCalledWith('ceipal', 'polling', expect.any(Error));
+    expect(mocks.recordSyncFailure).toHaveBeenCalledWith('ceipal', 'polling', expect.any(Error), expect.anything());
   });
 
   it('records sync failure on polling error', async () => {
@@ -115,7 +123,7 @@ describe('CeipalIngestionJob', () => {
     const job = new CeipalIngestionJob();
     await job.run();
 
-    expect(mocks.recordSyncFailure).toHaveBeenCalledWith('ceipal', 'polling', expect.any(Error));
+    expect(mocks.recordSyncFailure).toHaveBeenCalledWith('ceipal', 'polling', expect.any(Error), expect.anything());
     expect(mocks.upsertCandidateFromATS).not.toHaveBeenCalled();
   });
 
@@ -190,22 +198,23 @@ describe('EmailIngestionJob', () => {
     const job = new EmailIngestionJob();
     await job.run();
 
-    expect(mocks.recordSyncFailure).toHaveBeenCalledWith('email', 'polling', expect.any(Error));
+    expect(mocks.recordSyncFailure).toHaveBeenCalledWith('email', 'polling', expect.any(Error), expect.anything());
   });
 });
 
 describe('registerIngestionJobs', () => {
-  it('registers CeipalIngestionJob, EmailIngestionJob, OneDriveResumePollerJob, SavedSearchDigestJob, and DedupWorkerJob', () => {
+  it('registers CeipalIngestionJob, EmailIngestionJob, OneDriveResumePollerJob, SavedSearchDigestJob, DedupWorkerJob, and RoleDeductionEnrichmentJob', () => {
     const mockScheduler = { register: vi.fn() };
     registerIngestionJobs(mockScheduler);
 
-    expect(mockScheduler.register).toHaveBeenCalledTimes(5);
+    expect(mockScheduler.register).toHaveBeenCalledTimes(6);
     const names = mockScheduler.register.mock.calls.map((c: any) => c[0].name);
     expect(names).toContain('CeipalIngestionJob');
     expect(names).toContain('EmailIngestionJob');
     expect(names).toContain('OneDriveResumePollerJob');
     expect(names).toContain('SavedSearchDigestJob');
     expect(names).toContain('DedupWorkerJob');
+    expect(names).toContain('RoleDeductionEnrichmentJob');
   });
 
   it('registered jobs implement SchedulerJob interface', () => {

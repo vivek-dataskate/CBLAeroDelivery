@@ -51,6 +51,7 @@ type CandidateRow = {
   ingestion_state: string;
   job_title: string | null;
   skills: unknown[];
+  deduced_roles: string[];
   source: string;
   source_batch_id: string | null;
   created_at: string;
@@ -110,6 +111,7 @@ function toListItem(row: CandidateRow): CandidateListItem {
     ingestionState: row.ingestion_state as IngestionState,
     jobTitle: row.job_title,
     skills: Array.isArray(row.skills) ? row.skills : [],
+    deducedRoles: Array.isArray(row.deduced_roles) ? row.deduced_roles : [],
     yearsOfExperience: row.years_of_experience,
     source: row.source,
     sourceBatchId: row.source_batch_id,
@@ -221,6 +223,7 @@ function countActiveFilters(params: CandidateListParams): number {
   if (params.yearsOfExperience) count++;
   if (params.veteranStatus) count++;
   if (params.hasApLicense !== undefined) count++;
+  if (params.deducedRole) count++; // H7 fix: include role filter in active filter count
   if (params.createdAfter) count++;
   if (params.createdBefore) count++;
   return count;
@@ -329,6 +332,12 @@ export async function listCandidates(params: CandidateListParams): Promise<Candi
     if (params.hasApLicense !== undefined) {
       candidates = candidates.filter((c) => c.hasApLicense === params.hasApLicense);
     }
+    if (params.deducedRole) {
+      const role = params.deducedRole;
+      candidates = candidates.filter((c) =>
+        Array.isArray(c.deducedRoles) && c.deducedRoles.includes(role),
+      );
+    }
     if (params.createdAfter) {
       candidates = candidates.filter((c) => c.createdAt >= params.createdAfter!);
     }
@@ -429,6 +438,7 @@ export async function listCandidates(params: CandidateListParams): Promise<Candi
   if (params.currentCompany) rpcParams.p_current_company = params.currentCompany;
   if (params.phone) rpcParams.p_phone = params.phone;
   if (params.shiftPreference) rpcParams.p_shift_preference = params.shiftPreference;
+  if (params.deducedRole) rpcParams.p_deduced_role = params.deducedRole;
   if (params.createdAfter) rpcParams.p_created_after = params.createdAfter;
   if (params.createdBefore) rpcParams.p_created_before = params.createdBefore;
 

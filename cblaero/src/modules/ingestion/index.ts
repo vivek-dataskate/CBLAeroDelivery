@@ -10,6 +10,7 @@ import {
   batchUpsertCandidatesByEmail,
   batchInsertCandidatesNoEmail,
 } from '@/features/candidate-management/infrastructure/candidate-repository';
+import { deduceRoles } from '@/features/candidate-management/application/role-deduction';
 
 // Re-export sync error/run functions from centralized repository for backward compatibility
 export {
@@ -151,6 +152,25 @@ export async function upsertCandidateFromEmailFull(record: {
     return 'dedup_skip';
   }
 
+  // 1b. Deduce roles from extracted data (LLM path — single email, acceptable latency)
+  try {
+    const c = record.candidate;
+    const roleResult = await deduceRoles(
+      {
+        jobTitle: typeof c.jobTitle === 'string' ? c.jobTitle : null,
+        skills: Array.isArray(c.skills) ? c.skills : [],
+        certifications: Array.isArray(c.certifications) ? c.certifications : [],
+        aircraftExperience: Array.isArray(c.aircraftExperience) ? c.aircraftExperience : [],
+      },
+      DEFAULT_TENANT_ID,
+    );
+    record.candidate.deducedRoles = roleResult.roles;
+    record.candidate.roleDeductionMetadata = roleResult.metadata;
+  } catch (err) {
+    console.warn(`[Ingestion] Role deduction failed for email "${record.subject}":`, err instanceof Error ? err.message : err);
+    // Non-fatal — candidate proceeds with empty deduced_roles
+  }
+
   // 2. Upsert the candidate record via repository — single round-trip
   const candidateRow = mapToCandidateRow(record.candidate, source);
   let candidateId: string | null = null;
@@ -262,5 +282,7 @@ export function mapToCandidateRow(record: Record<string, unknown>, source: strin
     extra_attributes: record.additionalFields && typeof record.additionalFields === 'object'
       ? record.additionalFields
       : (record.extra_attributes && typeof record.extra_attributes === 'object' ? record.extra_attributes : {}),
+    deduced_roles: Array.isArray(record.deducedRoles) ? record.deducedRoles
+      : (Array.isArray(record.deduced_roles) ? record.deduced_roles : []),
   };
 }

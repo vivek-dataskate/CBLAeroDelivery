@@ -355,6 +355,7 @@ create or replace function cblaero_app.search_candidates(
   p_shift_preference text default null,
   p_created_after timestamptz default null,
   p_created_before timestamptz default null,
+  p_deduced_role text default null,
   p_sort_by text default 'created_at',
   p_sort_dir text default 'desc',
   p_cursor_id uuid default null,
@@ -366,7 +367,8 @@ returns table (
   email text, phone text, location text, city text, state text,
   availability_status text, ingestion_state text, job_title text,
   skills jsonb, years_of_experience text, source text,
-  source_batch_id uuid, created_at timestamptz, updated_at timestamptz
+  source_batch_id uuid, created_at timestamptz, updated_at timestamptz,
+  deduced_roles jsonb
 )
 language plpgsql stable
 as $$
@@ -381,7 +383,7 @@ begin
   select c.id, c.tenant_id, c.first_name, c.last_name, c.email, c.phone,
     c.location, c.city, c.state, c.availability_status, c.ingestion_state,
     c.job_title, c.skills, c.years_of_experience, c.source,
-    c.source_batch_id, c.created_at, c.updated_at
+    c.source_batch_id, c.created_at, c.updated_at, c.deduced_roles
   from cblaero_app.candidates c
   where c.tenant_id = p_tenant_id and c.ingestion_state = 'active'
     and (p_cursor_created_at is null or (c.created_at, c.id) < (p_cursor_created_at, p_cursor_id))
@@ -404,6 +406,7 @@ begin
     and (p_years_of_experience is null or (c.years_of_experience is not null and c.years_of_experience != '' and c.years_of_experience::numeric >= p_years_of_experience))
     and (p_created_after is null or c.created_at >= p_created_after)
     and (p_created_before is null or c.created_at < (p_created_before + interval '1 day'))
+    and (p_deduced_role is null or c.deduced_roles @> jsonb_build_array(p_deduced_role))
   order by
     case when p_sort_by = 'created_at' and p_sort_dir = 'desc' then c.created_at end desc nulls last,
     case when p_sort_by = 'created_at' and p_sort_dir = 'asc' then c.created_at end asc nulls last,
@@ -458,6 +461,7 @@ declare
   v_job_title text;
   v_alternate_email text;
   v_resume_url text;
+  v_deduced_roles jsonb;
 begin
   for v_error in select value from jsonb_array_elements(coalesce(p_error_rows, '[]'::jsonb)) loop
     insert into cblaero_app.import_row_error (
@@ -497,6 +501,7 @@ begin
     v_job_title := nullif(trim(coalesce(v_candidate->>'job_title', '')), '');
     v_alternate_email := nullif(trim(coalesce(v_candidate->>'alternate_email', '')), '');
     v_resume_url := nullif(trim(coalesce(v_candidate->>'resume_url', '')), '');
+    v_deduced_roles := coalesce(v_candidate->'deduced_roles', '[]'::jsonb);
 
     if v_email is null and v_phone is null then
       insert into cblaero_app.import_row_error (
@@ -526,7 +531,7 @@ begin
           postal_code, current_company, job_title, alternate_email,
           skills, certifications, experience, extra_attributes,
           availability_status, ingestion_state, source, source_batch_id,
-          created_by_actor_id, resume_url, updated_at
+          created_by_actor_id, resume_url, deduced_roles, updated_at
         )
         values (
           v_candidate->>'tenant_id',
@@ -556,6 +561,7 @@ begin
           coalesce((v_candidate->>'source_batch_id')::uuid, p_batch_id),
           nullif(trim(coalesce(v_candidate->>'created_by_actor_id', '')), ''),
           v_resume_url,
+          v_deduced_roles,
           coalesce((v_candidate->>'updated_at')::timestamptz, now())
         )
         on conflict (tenant_id, email) where email is not null
@@ -588,6 +594,7 @@ begin
           source_batch_id = excluded.source_batch_id,
           created_by_actor_id = coalesce(candidates.created_by_actor_id, excluded.created_by_actor_id),
           resume_url = coalesce(excluded.resume_url, candidates.resume_url),
+          deduced_roles = excluded.deduced_roles,
           updated_at = excluded.updated_at
         returning xmax into v_xmax;
       else
@@ -597,7 +604,7 @@ begin
           postal_code, current_company, job_title, alternate_email,
           skills, certifications, experience, extra_attributes,
           availability_status, ingestion_state, source, source_batch_id,
-          created_by_actor_id, resume_url, updated_at
+          created_by_actor_id, resume_url, deduced_roles, updated_at
         )
         values (
           v_candidate->>'tenant_id', v_email, v_phone,
@@ -614,6 +621,7 @@ begin
           coalesce((v_candidate->>'source_batch_id')::uuid, p_batch_id),
           nullif(trim(coalesce(v_candidate->>'created_by_actor_id', '')), ''),
           v_resume_url,
+          v_deduced_roles,
           coalesce((v_candidate->>'updated_at')::timestamptz, now())
         )
         on conflict (tenant_id, phone) where phone is not null
@@ -637,6 +645,7 @@ begin
           source_batch_id = excluded.source_batch_id,
           created_by_actor_id = coalesce(candidates.created_by_actor_id, excluded.created_by_actor_id),
           resume_url = coalesce(excluded.resume_url, candidates.resume_url),
+          deduced_roles = excluded.deduced_roles,
           updated_at = excluded.updated_at
         returning xmax into v_xmax;
       end if;
@@ -737,7 +746,8 @@ returns table (
   years_of_experience text, ceipal_id text, submitted_by text, submitter_email text,
   shift_preference text, expected_start_date text, call_availability text,
   interview_availability text, veteran_status text, resume_url text,
-  source text, source_batch_id uuid, created_at timestamptz, updated_at timestamptz
+  source text, source_batch_id uuid, created_at timestamptz, updated_at timestamptz,
+  deduced_roles jsonb
 )
 language sql stable
 as $$
@@ -752,7 +762,7 @@ as $$
     c.years_of_experience, c.ceipal_id, c.submitted_by, c.submitter_email,
     c.shift_preference, c.expected_start_date, c.call_availability,
     c.interview_availability, c.veteran_status, c.resume_url,
-    c.source, c.source_batch_id, c.created_at, c.updated_at
+    c.source, c.source_batch_id, c.created_at, c.updated_at, c.deduced_roles
   from cblaero_app.candidates c
   where c.id = p_candidate_id and c.tenant_id = p_tenant_id
   limit 1;
@@ -1624,3 +1634,299 @@ grant select on cblaero_app.sync_runs
 revoke insert, update, delete on cblaero_app.sync_errors from anon, authenticated;
 grant select on cblaero_app.sync_errors to authenticated;
 grant insert, update, delete on cblaero_app.sync_errors to service_role;
+
+-- ============================================================
+-- Story 2.5a: Role Taxonomy & Deduced Role Classification
+-- ============================================================
+
+-- Task 1: Role taxonomy reference table
+create table if not exists cblaero_app.role_taxonomy (
+  id serial primary key,
+  tenant_id text not null,
+  role_name text not null,
+  category text not null check (category in ('aviation', 'it', 'other')),
+  aliases jsonb not null default '[]'::jsonb,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists uq_role_taxonomy_tenant_name
+  on cblaero_app.role_taxonomy (tenant_id, lower(role_name));
+create index if not exists idx_role_taxonomy_aliases
+  on cblaero_app.role_taxonomy using gin (aliases);
+create index if not exists idx_role_taxonomy_category
+  on cblaero_app.role_taxonomy (tenant_id, category) where is_active = true;
+
+-- RLS
+alter table cblaero_app.role_taxonomy enable row level security;
+create policy if not exists tenant_isolation_role_taxonomy on cblaero_app.role_taxonomy
+  using (tenant_id = current_setting('request.jwt.claims', true)::jsonb->>'tenant_id');
+
+-- Grants
+grant select on cblaero_app.role_taxonomy to authenticated;
+grant all on cblaero_app.role_taxonomy to service_role;
+grant usage, select on sequence cblaero_app.role_taxonomy_id_seq to service_role;
+
+-- Task 2: Deduced roles columns on candidates
+alter table cblaero_app.candidates
+  add column if not exists deduced_roles jsonb not null default '[]'::jsonb;
+alter table cblaero_app.candidates
+  add column if not exists role_deduction_metadata jsonb not null default '{}'::jsonb;
+
+-- GIN index for role containment queries (e.g., deduced_roles @> '["A&P Mechanic"]')
+create index if not exists idx_candidates_deduced_roles_gin
+  on cblaero_app.candidates using gin (deduced_roles);
+
+-- CHECK constraint: max 3 deduced roles
+-- H9 fix: schema-scoped constraint check to avoid false matches from other schemas
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint c
+    join pg_class t on t.oid = c.conrelid
+    join pg_namespace n on n.oid = t.relnamespace
+    where c.conname = 'chk_deduced_roles_max3'
+      and t.relname = 'candidates'
+      and n.nspname = 'cblaero_app'
+  ) then
+    alter table cblaero_app.candidates
+      add constraint chk_deduced_roles_max3
+      check (jsonb_array_length(deduced_roles) <= 3);
+  end if;
+end $$;
+
+-- Task 1.4: Seed canonical aviation roles (idempotent via ON CONFLICT)
+-- Uses a function so tenant_id can be provided at runtime
+create or replace function cblaero_app.seed_aviation_roles(p_tenant_id text)
+returns int
+language plpgsql
+as $$
+declare v_count int := 0;
+begin
+  insert into cblaero_app.role_taxonomy (tenant_id, role_name, category, aliases)
+  values
+    (p_tenant_id, 'A&P Aircraft Inspector', 'aviation', '["AP Aircraft Inspector", "A and P Aircraft Inspector"]'::jsonb),
+    (p_tenant_id, 'A&P Mechanic', 'aviation', '["A&P Aircraft Maintenance Tech", "AP Mechanic", "Airframe and Powerplant Mechanic", "A&P AIRCRAFT MAINTENANCE TECH III", "A&P Tech"]'::jsonb),
+    (p_tenant_id, 'Aircraft Maintenance Supervisor', 'aviation', '["Maintenance Supervisor", "Aircraft Maint Supervisor"]'::jsonb),
+    (p_tenant_id, 'Aircraft Paint Technician', 'aviation', '["Aircraft Paint Tech"]'::jsonb),
+    (p_tenant_id, 'Aircraft Painter', 'aviation', '["Painter Aircraft"]'::jsonb),
+    (p_tenant_id, 'Aircraft Structures Technician/Sheet Metal', 'aviation', '["Aircraft Structures Tech"]'::jsonb),
+    (p_tenant_id, 'Aircraft Welder', 'aviation', '["Aviation Welder", "Welder Aircraft"]'::jsonb),
+    (p_tenant_id, 'Avionics Technician', 'aviation', '["Avionics Tech", "AVIONICS TECH", "Avionics Installer"]'::jsonb),
+    (p_tenant_id, 'Cabinet Builder', 'aviation', '["Aviation Cabinet Builder", "Cabinet Maker"]'::jsonb),
+    (p_tenant_id, 'Cabinet Finisher (Painter)', 'aviation', '["Cabinet Finisher", "Cabinet Painter"]'::jsonb),
+    (p_tenant_id, 'Chief Inspector', 'aviation', '["Chief QC Inspector"]'::jsonb),
+    (p_tenant_id, 'CNC Programmer/Operator', 'aviation', '["CNC Programmer", "CNC Operator", "CNC Machinist"]'::jsonb),
+    (p_tenant_id, 'Completion Lining & Upholstery', 'aviation', '["Lining and Upholstery Tech", "Completions Upholstery"]'::jsonb),
+    (p_tenant_id, 'Completions Interior Tech', 'aviation', '["Interior Completions Tech", "Completions Interior Technician"]'::jsonb),
+    (p_tenant_id, 'Completions System', 'aviation', '["Completions Systems Tech", "Systems Completions"]'::jsonb),
+    (p_tenant_id, 'Composite Technician', 'aviation', '["Composite Tech", "Composites Technician"]'::jsonb),
+    (p_tenant_id, 'Evaluation Inspector', 'aviation', '["Eval Inspector"]'::jsonb),
+    (p_tenant_id, 'Evaluation Structures Technician', 'aviation', '["Eval Structures Tech"]'::jsonb),
+    (p_tenant_id, 'Evaluation Teardown Inspector', 'aviation', '["Teardown Inspector", "Eval Teardown Inspector"]'::jsonb),
+    (p_tenant_id, 'Final Inspector', 'aviation', '["Final QC Inspector"]'::jsonb),
+    (p_tenant_id, 'Finish Application Tech', 'aviation', '["Finish App Tech", "Finish Application Technician"]'::jsonb),
+    (p_tenant_id, 'Finish Shop Lead', 'aviation', '["Finish Shop Supervisor"]'::jsonb),
+    (p_tenant_id, 'General Building Maintenance Technician', 'aviation', '["Building Maintenance Tech", "Facilities Maintenance"]'::jsonb),
+    (p_tenant_id, 'Interior Technician', 'aviation', '["Interior Tech", "Aircraft Interior Tech"]'::jsonb),
+    (p_tenant_id, 'Landing Gear Inspector', 'aviation', '["Landing Gear QC Inspector"]'::jsonb),
+    (p_tenant_id, 'Maintenance Instructor', 'aviation', '["Aviation Maintenance Instructor"]'::jsonb),
+    (p_tenant_id, 'Maintenance Planner', 'aviation', '["Aircraft Maintenance Planner", "MRO Planner"]'::jsonb),
+    (p_tenant_id, 'MRO A&P Maintenance Technician', 'aviation', '["MRO A&P Tech", "MRO Maintenance Tech"]'::jsonb),
+    (p_tenant_id, 'MRO Avionics Technician', 'aviation', '["MRO Avionics Tech"]'::jsonb),
+    (p_tenant_id, 'MRO Interiors Technician', 'aviation', '["MRO Interior Tech", "MRO Interiors Tech"]'::jsonb),
+    (p_tenant_id, 'NDT Administrative', 'aviation', '["NDT Admin"]'::jsonb),
+    (p_tenant_id, 'NDT Level II Technician', 'aviation', '["NDT Tech", "NDT Level 2", "Non Destructive Testing Tech"]'::jsonb),
+    (p_tenant_id, 'Paint Inspector', 'aviation', '["Paint QC Inspector"]'::jsonb),
+    (p_tenant_id, 'Paint Prepper', 'aviation', '["Paint Prep Tech", "Surface Prep"]'::jsonb),
+    (p_tenant_id, 'Paint Technician', 'aviation', '["Paint Tech"]'::jsonb),
+    (p_tenant_id, 'Painter', 'aviation', '["Aircraft Painter General"]'::jsonb),
+    (p_tenant_id, 'QC Inspector', 'aviation', '["Quality Control Inspector", "QA Inspector"]'::jsonb),
+    (p_tenant_id, 'QC Lead Inspector', 'aviation', '["Lead QC Inspector", "QC Lead"]'::jsonb),
+    (p_tenant_id, 'Quality Engineer (Evaluator)', 'aviation', '["Quality Engineer", "QE Evaluator"]'::jsonb),
+    (p_tenant_id, 'Sheet Metal Fabricator', 'aviation', '["Sheet Metal Fab", "Metal Fabricator"]'::jsonb),
+    (p_tenant_id, 'Sheet Metal Technician', 'aviation', '["Sheet Metal Tech"]'::jsonb),
+    (p_tenant_id, 'SR. Technical Writer', 'aviation', '["Senior Technical Writer", "Sr Tech Writer"]'::jsonb),
+    (p_tenant_id, 'Structures Mechanic', 'aviation', '["Structural Mechanic"]'::jsonb),
+    (p_tenant_id, 'Structures Technician', 'aviation', '["Structures Tech"]'::jsonb),
+    (p_tenant_id, 'Upholstery Fabrication Tech', 'aviation', '["Upholstery Tech", "Upholstery Fabrication Technician"]'::jsonb),
+    (p_tenant_id, 'Wire Fabrication Technician', 'aviation', '["Wire Fab Tech", "Wiring Technician"]'::jsonb),
+    (p_tenant_id, 'Wire Harness Fab Shop Lead', 'aviation', '["Wire Harness Lead", "Harness Fab Lead"]'::jsonb)
+  on conflict (tenant_id, lower(role_name)) do nothing;
+  get diagnostics v_count = row_count;
+  return v_count;
+end;
+$$;
+
+grant execute on function cblaero_app.seed_aviation_roles to service_role;
+
+-- H5 fix: Exact case-insensitive role lookup (replaces ilike which treats %/_ as wildcards)
+create or replace function cblaero_app.find_role_by_name_exact(p_tenant_id text, p_role_name text)
+returns setof cblaero_app.role_taxonomy
+language sql stable
+as $$
+  select * from cblaero_app.role_taxonomy
+  where tenant_id = p_tenant_id and lower(role_name) = lower(p_role_name)
+  limit 1;
+$$;
+
+grant execute on function cblaero_app.find_role_by_name_exact to service_role;
+
+-- Seed canonical IT roles (idempotent via ON CONFLICT)
+create or replace function cblaero_app.seed_it_roles(p_tenant_id text)
+returns int
+language plpgsql
+as $$
+declare v_count int := 0;
+begin
+  insert into cblaero_app.role_taxonomy (tenant_id, role_name, category, aliases) values
+    (p_tenant_id, 'Business Analyst', 'it', '["Sr. Business Analyst", "Senior Business Analyst", "Sr. Business Systems Analyst", "Business Systems Analyst", "Sr. Business System Analyst", "Business System Analyst"]'::jsonb),
+    (p_tenant_id, 'Java Developer', 'it', '["Sr. Java Developer", "Senior Java Developer", "Full Stack Java Developer", "Java Full Stack Developer", "Sr. Java Full Stack Developer", "Sr. Full Stack Java Developer", "Java/J2EE Developer"]'::jsonb),
+    (p_tenant_id, 'Project Manager', 'it', '["Sr. Project Manager", "Senior Project Manager", "IT Project Manager", "Technical Project Manager", "Program Manager"]'::jsonb),
+    (p_tenant_id, 'Software Engineer', 'it', '["Senior Software Engineer", "Software Developer", "Senior Software Developer", "Developer", "Senior Developer"]'::jsonb),
+    (p_tenant_id, 'DevOps Engineer', 'it', '["Sr. DevOps Engineer", "AWS DevOps Engineer", "Senior DevOps Engineer"]'::jsonb),
+    (p_tenant_id, 'Full Stack Developer', 'it', '["Full Stack Web Developer", "Fullstack Developer"]'::jsonb),
+    (p_tenant_id, 'Scrum Master', 'it', '["Agile Scrum Master", "Senior Scrum Master"]'::jsonb),
+    (p_tenant_id, 'Network Engineer', 'it', '["Sr. Network Engineer", "Senior Network Engineer", "Network Security Engineer"]'::jsonb),
+    (p_tenant_id, 'QA Automation Engineer', 'it', '["QA Engineer", "Software QA Engineer", "QA Analyst", "QA Automation Tester", "Quality Assurance Engineer"]'::jsonb),
+    (p_tenant_id, 'Data Engineer', 'it', '["Sr. Data Engineer", "Senior Data Engineer", "Big Data Engineer"]'::jsonb),
+    (p_tenant_id, 'Data Scientist', 'it', '["Senior Data Scientist", "Sr. Data Scientist"]'::jsonb),
+    (p_tenant_id, 'Data Analyst', 'it', '["Senior Data Analyst", "Sr. Data Analyst"]'::jsonb),
+    (p_tenant_id, 'Salesforce Developer', 'it', '["Sr. Salesforce Developer", "Senior Salesforce Developer", "Salesforce Admin"]'::jsonb),
+    (p_tenant_id, 'Python Developer', 'it', '["Sr. Python Developer", "Senior Python Developer"]'::jsonb),
+    (p_tenant_id, 'Consultant', 'it', '["Senior Consultant", "Independent Consultant", "IT Consultant"]'::jsonb),
+    (p_tenant_id, 'UI Developer', 'it', '["Sr. UI Developer", "Senior UI Developer", "UI/UX Developer", "Frontend Developer", "Front End Developer"]'::jsonb),
+    (p_tenant_id, '.NET Developer', 'it', '[".Net Developer", "Senior .Net Developer", "Sr. .Net Developer", "C# Developer", "ASP.NET Developer"]'::jsonb),
+    (p_tenant_id, 'Android Developer', 'it', '["Senior Android Developer", "Mobile Developer", "iOS Developer"]'::jsonb),
+    (p_tenant_id, 'System Administrator', 'it', '["Systems Administrator", "Sr. System Administrator", "Linux Administrator", "Windows Administrator"]'::jsonb),
+    (p_tenant_id, 'Systems Engineer', 'it', '["Senior Systems Engineer", "Sr. Systems Engineer"]'::jsonb),
+    (p_tenant_id, 'Solution Architect', 'it', '["Technical Architect", "Enterprise Architect", "Sr. Solution Architect", "Senior Architect"]'::jsonb),
+    (p_tenant_id, 'Technical Lead', 'it', '["Tech Lead", "Lead Developer", "Development Lead"]'::jsonb),
+    (p_tenant_id, 'IT Support Specialist', 'it', '["IT Specialist", "IT Technician", "Technical Support Specialist", "Desktop Support Technician", "Desktop Support", "Help Desk Technician"]'::jsonb),
+    (p_tenant_id, 'Service Desk Analyst', 'it', '["Help Desk Analyst", "IT Service Desk"]'::jsonb),
+    (p_tenant_id, 'Web Developer', 'it', '["Senior Web Developer", "Web Designer"]'::jsonb),
+    (p_tenant_id, 'MuleSoft Developer', 'it', '["MuleSoft Integration Developer", "Mule Developer"]'::jsonb),
+    (p_tenant_id, 'ServiceNow Developer', 'it', '["ServiceNow Admin", "ServiceNow Consultant"]'::jsonb),
+    (p_tenant_id, 'Product Manager', 'it', '["Senior Product Manager", "Product Owner", "Sr. Product Manager"]'::jsonb),
+    (p_tenant_id, 'IT Manager', 'it', '["IT Director", "Manager"]'::jsonb),
+    (p_tenant_id, 'Customer Service Representative', 'it', '["Customer Support Representative", "Customer Service Agent"]'::jsonb),
+    (p_tenant_id, 'Database Administrator', 'it', '["DBA", "Sr. DBA", "Senior Database Administrator", "Oracle DBA", "SQL Server DBA"]'::jsonb),
+    (p_tenant_id, 'Cloud Engineer', 'it', '["AWS Engineer", "Azure Engineer", "Cloud Architect", "Sr. Cloud Engineer"]'::jsonb),
+    (p_tenant_id, 'Security Engineer', 'it', '["Cybersecurity Engineer", "Information Security Engineer", "Security Analyst", "Cybersecurity Analyst"]'::jsonb),
+    (p_tenant_id, 'ETL Developer', 'it', '["Informatica Developer", "SSIS Developer", "Sr. ETL Developer"]'::jsonb),
+    (p_tenant_id, 'SAP Consultant', 'it', '["SAP Developer", "SAP ABAP Developer", "SAP Functional Consultant", "Sr. SAP Consultant"]'::jsonb),
+    (p_tenant_id, 'Tableau Developer', 'it', '["Power BI Developer", "BI Developer", "Business Intelligence Developer", "Sr. Tableau Developer"]'::jsonb),
+    (p_tenant_id, 'Machine Learning Engineer', 'it', '["ML Engineer", "AI Engineer", "Deep Learning Engineer"]'::jsonb),
+    (p_tenant_id, 'React Developer', 'it', '["React.js Developer", "ReactJS Developer", "Senior React Developer"]'::jsonb),
+    (p_tenant_id, 'Angular Developer', 'it', '["AngularJS Developer", "Senior Angular Developer"]'::jsonb),
+    (p_tenant_id, 'Automation Engineer', 'it', '["RPA Developer", "Automation Tester", "Test Automation Engineer"]'::jsonb),
+    (p_tenant_id, 'Network Administrator', 'it', '["Network Technician", "Sr. Network Administrator"]'::jsonb),
+    (p_tenant_id, 'SharePoint Developer', 'it', '["SharePoint Administrator", "SharePoint Consultant"]'::jsonb),
+    (p_tenant_id, 'Release Engineer', 'it', '["Build Engineer", "Release Manager", "CI/CD Engineer"]'::jsonb),
+    (p_tenant_id, 'Pega Developer', 'it', '["Pega Architect", "Sr. Pega Developer"]'::jsonb),
+    (p_tenant_id, 'Mainframe Developer', 'it', '["COBOL Developer", "Mainframe Programmer", "z/OS Developer"]'::jsonb),
+    (p_tenant_id, 'Recruiter', 'other', '["Technical Recruiter", "IT Recruiter", "Staffing Specialist", "Talent Acquisition"]'::jsonb),
+    (p_tenant_id, 'Accountant', 'other', '["Senior Accountant", "Staff Accountant", "CPA"]'::jsonb)
+  on conflict (tenant_id, lower(role_name)) do update set aliases = excluded.aliases;
+  get diagnostics v_count = row_count;
+  return v_count;
+end;
+$$;
+
+grant execute on function cblaero_app.seed_it_roles to service_role;
+
+-- Batch update deduced_roles (used by backfill script)
+create or replace function cblaero_app.batch_update_deduced_roles(p_updates jsonb)
+returns int
+language plpgsql as $$
+declare v_row jsonb; v_count int := 0;
+begin
+  for v_row in select value from jsonb_array_elements(p_updates)
+  loop
+    update cblaero_app.candidates set
+      deduced_roles = coalesce(v_row->'deduced_roles', '[]'::jsonb),
+      role_deduction_metadata = coalesce(v_row->'role_deduction_metadata', '{}'::jsonb),
+      updated_at = now()
+    where id = (v_row->>'id')::uuid;
+    v_count := v_count + 1;
+  end loop;
+  return v_count;
+end; $$;
+
+grant execute on function cblaero_app.batch_update_deduced_roles to service_role;
+
+-- Server-side heuristic backfill (runs entirely in Postgres)
+create or replace function cblaero_app.backfill_deduced_roles_heuristic(
+  p_tenant_id text, p_batch_size int default 5000
+)
+returns table (processed int, assigned int, empty int)
+language plpgsql as $$
+declare
+  v_processed int := 0; v_assigned int := 0; v_empty int := 0;
+  v_candidate record; v_role record;
+  v_roles text[]; v_best_confidence numeric; v_title text;
+begin
+  for v_candidate in
+    select c.id, c.job_title, c.skills
+    from cblaero_app.candidates c
+    where c.deduced_roles = '[]'::jsonb and c.tenant_id = p_tenant_id and c.ingestion_state != 'merged'
+    order by c.id limit p_batch_size
+  loop
+    v_roles := '{}'; v_best_confidence := 0;
+    v_title := lower(trim(coalesce(v_candidate.job_title, '')));
+
+    if v_title != '' then
+      for v_role in select r.role_name, r.aliases from cblaero_app.role_taxonomy r where r.tenant_id = p_tenant_id and r.is_active = true
+      loop
+        if array_length(v_roles, 1) is not null and array_length(v_roles, 1) >= 3 then exit; end if;
+        if v_title = lower(v_role.role_name) then
+          v_roles := array_append(v_roles, v_role.role_name);
+          if v_best_confidence < 1.0 then v_best_confidence := 1.0; end if; continue;
+        end if;
+        if exists (select 1 from jsonb_array_elements_text(v_role.aliases) as alias where v_title = lower(alias) or v_title like '%' || lower(alias) || '%') then
+          v_roles := array_append(v_roles, v_role.role_name);
+          if v_best_confidence < 0.9 then v_best_confidence := 0.9; end if; continue;
+        end if;
+        if length(v_title) >= 3 and (v_title like '%' || lower(v_role.role_name) || '%' or lower(v_role.role_name) like '%' || v_title || '%') then
+          v_roles := array_append(v_roles, v_role.role_name);
+          if v_best_confidence < 0.7 then v_best_confidence := 0.7; end if;
+        end if;
+      end loop;
+    end if;
+
+    update cblaero_app.candidates set
+      deduced_roles = to_jsonb(v_roles),
+      role_deduction_metadata = jsonb_build_object('source','heuristic','confidence',v_best_confidence,'rawJobTitle',v_candidate.job_title,'deducedAt',now()::text),
+      ingestion_state = 'active', updated_at = now()
+    where id = v_candidate.id;
+
+    v_processed := v_processed + 1;
+    if array_length(v_roles, 1) > 0 then v_assigned := v_assigned + 1; else v_empty := v_empty + 1; end if;
+  end loop;
+  processed := v_processed; assigned := v_assigned; empty := v_empty; return next;
+end; $$;
+
+grant execute on function cblaero_app.backfill_deduced_roles_heuristic to service_role;
+
+-- Self-looping wrapper: runs batches until all done
+create or replace function cblaero_app.backfill_all_deduced_roles(p_tenant_id text)
+returns table (total_processed int, total_assigned int, total_empty int, batches_run int)
+language plpgsql as $$
+declare
+  v_total_processed int := 0; v_total_assigned int := 0; v_total_empty int := 0;
+  v_batches int := 0; v_batch record;
+begin
+  loop
+    select * into v_batch from cblaero_app.backfill_deduced_roles_heuristic(p_tenant_id, 5000);
+    if v_batch.processed = 0 then exit; end if;
+    v_total_processed := v_total_processed + v_batch.processed;
+    v_total_assigned := v_total_assigned + v_batch.assigned;
+    v_total_empty := v_total_empty + v_batch.empty;
+    v_batches := v_batches + 1;
+    raise notice 'Batch %: % processed (% assigned, % empty) — cumulative: %', v_batches, v_batch.processed, v_batch.assigned, v_batch.empty, v_total_processed;
+  end loop;
+  total_processed := v_total_processed; total_assigned := v_total_assigned; total_empty := v_total_empty; batches_run := v_batches; return next;
+end; $$;
+
+grant execute on function cblaero_app.backfill_all_deduced_roles to service_role;
