@@ -21,6 +21,7 @@ function makeCandidate(overrides: Partial<CandidateForDedup> = {}): CandidateFor
     extraAttributes: {},
     yearsOfExperience: null,
     resumeUrl: null,
+    linkedinUrl: null,
     source: null,
     ingestionState: "pending_dedup",
     createdAt: "2026-01-01T00:00:00Z",
@@ -127,22 +128,22 @@ describe("computeIdentityConfidence", () => {
 // ============================================================
 
 describe("routeDedupDecision", () => {
-  it("routes >= 95 to auto_merge", () => {
+  it("routes >= 50 to auto_merge", () => {
+    expect(routeDedupDecision(50)).toBe("auto_merge");
+    expect(routeDedupDecision(70)).toBe("auto_merge");
+    expect(routeDedupDecision(85)).toBe("auto_merge");
     expect(routeDedupDecision(95)).toBe("auto_merge");
     expect(routeDedupDecision(98)).toBe("auto_merge");
     expect(routeDedupDecision(100)).toBe("auto_merge");
   });
 
-  it("routes 70-94 to manual_review", () => {
-    expect(routeDedupDecision(70)).toBe("manual_review");
-    expect(routeDedupDecision(85)).toBe("manual_review");
-    expect(routeDedupDecision(94)).toBe("manual_review");
+  it("routes 1-49 to manual_review", () => {
+    expect(routeDedupDecision(1)).toBe("manual_review");
+    expect(routeDedupDecision(49)).toBe("manual_review");
   });
 
-  it("routes < 70 to keep_separate", () => {
-    expect(routeDedupDecision(50)).toBe("keep_separate");
+  it("routes 0 to keep_separate", () => {
     expect(routeDedupDecision(0)).toBe("keep_separate");
-    expect(routeDedupDecision(69)).toBe("keep_separate");
   });
 });
 

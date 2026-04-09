@@ -243,10 +243,10 @@ export function mapCeipalApplicantToCandidate(a: CeipalApplicant): Record<string
     veteranStatus: cleanNA(a.veteran_status),
     ceipalId: clean(a.applicant_id),
     createdByActorId: clean(a.created_by),
+    linkedinUrl: clean(a.linkedin_profile_url) || undefined,
     source: 'ceipal',
     // Additional fields stored in extra_attributes via additionalFields
     additionalFields: {
-      ...(clean(a.linkedin_profile_url) ? { linkedinUrl: clean(a.linkedin_profile_url) } : {}),
       ...(clean(a.resume_path) ? { resumeUrl: clean(a.resume_path) } : {}),
       ...(cleanNA(a.applicant_status) ? { applicantStatus: cleanNA(a.applicant_status) } : {}),
       ...(clean(a.source) ? { originalSource: clean(a.source) } : {}),

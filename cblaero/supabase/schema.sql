@@ -373,7 +373,8 @@ returns table (
   availability_status text, ingestion_state text, job_title text,
   skills jsonb, years_of_experience text, source text,
   source_batch_id uuid, created_at timestamptz, updated_at timestamptz,
-  deduced_roles jsonb, availability_last_signal_at timestamptz
+  deduced_roles jsonb, availability_last_signal_at timestamptz,
+  linkedin_url text
 )
 language plpgsql stable
 as $$
@@ -389,7 +390,7 @@ begin
     c.location, c.city, c.state, c.availability_status, c.ingestion_state,
     c.job_title, c.skills, c.years_of_experience, c.source,
     c.source_batch_id, c.created_at, c.updated_at, c.deduced_roles,
-    c.availability_last_signal_at
+    c.availability_last_signal_at, c.linkedin_url
   from cblaero_app.candidates c
   where c.tenant_id = p_tenant_id and c.ingestion_state = 'active'
     and (p_cursor_created_at is null or (c.created_at, c.id) < (p_cursor_created_at, p_cursor_id))
@@ -467,6 +468,7 @@ declare
   v_job_title text;
   v_alternate_email text;
   v_resume_url text;
+  v_linkedin_url text;
   v_deduced_roles jsonb;
 begin
   for v_error in select value from jsonb_array_elements(coalesce(p_error_rows, '[]'::jsonb)) loop
@@ -507,6 +509,7 @@ begin
     v_job_title := nullif(trim(coalesce(v_candidate->>'job_title', '')), '');
     v_alternate_email := nullif(trim(coalesce(v_candidate->>'alternate_email', '')), '');
     v_resume_url := nullif(trim(coalesce(v_candidate->>'resume_url', '')), '');
+    v_linkedin_url := nullif(trim(coalesce(v_candidate->>'linkedin_url', '')), '');
     v_deduced_roles := coalesce(v_candidate->'deduced_roles', '[]'::jsonb);
 
     if v_email is null and v_phone is null then
@@ -537,7 +540,7 @@ begin
           postal_code, current_company, job_title, alternate_email,
           skills, certifications, experience, extra_attributes,
           availability_status, ingestion_state, source, source_batch_id,
-          created_by_actor_id, resume_url, deduced_roles, updated_at
+          created_by_actor_id, resume_url, linkedin_url, deduced_roles, updated_at
         )
         values (
           v_candidate->>'tenant_id',
@@ -567,6 +570,7 @@ begin
           coalesce((v_candidate->>'source_batch_id')::uuid, p_batch_id),
           nullif(trim(coalesce(v_candidate->>'created_by_actor_id', '')), ''),
           v_resume_url,
+          v_linkedin_url,
           v_deduced_roles,
           coalesce((v_candidate->>'updated_at')::timestamptz, now())
         )
@@ -600,6 +604,7 @@ begin
           source_batch_id = excluded.source_batch_id,
           created_by_actor_id = coalesce(candidates.created_by_actor_id, excluded.created_by_actor_id),
           resume_url = coalesce(excluded.resume_url, candidates.resume_url),
+          linkedin_url = coalesce(excluded.linkedin_url, candidates.linkedin_url),
           deduced_roles = excluded.deduced_roles,
           updated_at = excluded.updated_at
         returning xmax into v_xmax;
@@ -610,7 +615,7 @@ begin
           postal_code, current_company, job_title, alternate_email,
           skills, certifications, experience, extra_attributes,
           availability_status, ingestion_state, source, source_batch_id,
-          created_by_actor_id, resume_url, deduced_roles, updated_at
+          created_by_actor_id, resume_url, linkedin_url, deduced_roles, updated_at
         )
         values (
           v_candidate->>'tenant_id', v_email, v_phone,
@@ -627,6 +632,7 @@ begin
           coalesce((v_candidate->>'source_batch_id')::uuid, p_batch_id),
           nullif(trim(coalesce(v_candidate->>'created_by_actor_id', '')), ''),
           v_resume_url,
+          v_linkedin_url,
           v_deduced_roles,
           coalesce((v_candidate->>'updated_at')::timestamptz, now())
         )
@@ -651,6 +657,7 @@ begin
           source_batch_id = excluded.source_batch_id,
           created_by_actor_id = coalesce(candidates.created_by_actor_id, excluded.created_by_actor_id),
           resume_url = coalesce(excluded.resume_url, candidates.resume_url),
+          linkedin_url = coalesce(excluded.linkedin_url, candidates.linkedin_url),
           deduced_roles = excluded.deduced_roles,
           updated_at = excluded.updated_at
         returning xmax into v_xmax;
@@ -859,7 +866,7 @@ begin
       postal_code, current_company, job_title, alternate_email,
       skills, certifications, experience, extra_attributes,
       availability_status, ingestion_state, source, source_batch_id,
-      created_by_actor_id, resume_url,
+      created_by_actor_id, resume_url, linkedin_url,
       work_authorization, clearance, aircraft_experience, employment_type,
       current_rate, per_diem, has_ap_license, years_of_experience,
       ceipal_id, submitted_by, submitter_email, shift_preference,
@@ -890,6 +897,7 @@ begin
       (p_candidate->>'source_batch_id')::uuid,
       nullif(trim(coalesce(p_candidate->>'created_by_actor_id', '')), ''),
       nullif(trim(coalesce(p_candidate->>'resume_url', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'linkedin_url', '')), ''),
       nullif(trim(coalesce(p_candidate->>'work_authorization', '')), ''),
       nullif(trim(coalesce(p_candidate->>'clearance', '')), ''),
       coalesce(p_candidate->'aircraft_experience', '[]'::jsonb),
@@ -922,6 +930,7 @@ begin
       end,
       source = excluded.source, source_batch_id = excluded.source_batch_id,
       resume_url = coalesce(excluded.resume_url, cblaero_app.candidates.resume_url),
+      linkedin_url = coalesce(excluded.linkedin_url, cblaero_app.candidates.linkedin_url),
       updated_at = now()
     returning id into v_id;
   else
@@ -931,7 +940,7 @@ begin
       postal_code, current_company, job_title, alternate_email,
       skills, certifications, experience, extra_attributes,
       availability_status, ingestion_state, source, source_batch_id,
-      created_by_actor_id, resume_url,
+      created_by_actor_id, resume_url, linkedin_url,
       work_authorization, clearance, aircraft_experience, employment_type,
       current_rate, per_diem, has_ap_license, years_of_experience,
       ceipal_id, submitted_by, submitter_email, shift_preference,
@@ -962,6 +971,7 @@ begin
       (p_candidate->>'source_batch_id')::uuid,
       nullif(trim(coalesce(p_candidate->>'created_by_actor_id', '')), ''),
       nullif(trim(coalesce(p_candidate->>'resume_url', '')), ''),
+      nullif(trim(coalesce(p_candidate->>'linkedin_url', '')), ''),
       nullif(trim(coalesce(p_candidate->>'work_authorization', '')), ''),
       nullif(trim(coalesce(p_candidate->>'clearance', '')), ''),
       coalesce(p_candidate->'aircraft_experience', '[]'::jsonb),
@@ -1010,7 +1020,7 @@ begin
         postal_code, current_company, job_title, alternate_email,
         skills, certifications, experience, extra_attributes,
         availability_status, ingestion_state, source, source_batch_id,
-        created_by_actor_id, resume_url,
+        created_by_actor_id, resume_url, linkedin_url,
         work_authorization, clearance, aircraft_experience, employment_type,
         current_rate, per_diem, has_ap_license, years_of_experience,
         ceipal_id, submitted_by, submitter_email, shift_preference,
@@ -1041,6 +1051,7 @@ begin
         (v_row->>'source_batch_id')::uuid,
         nullif(trim(coalesce(v_row->>'created_by_actor_id', '')), ''),
         nullif(trim(coalesce(v_row->>'resume_url', '')), ''),
+        nullif(trim(coalesce(v_row->>'linkedin_url', '')), ''),
         nullif(trim(coalesce(v_row->>'work_authorization', '')), ''),
         nullif(trim(coalesce(v_row->>'clearance', '')), ''),
         coalesce(v_row->'aircraft_experience', '[]'::jsonb),
@@ -1073,6 +1084,7 @@ begin
         end,
         source = excluded.source, source_batch_id = excluded.source_batch_id,
         resume_url = coalesce(excluded.resume_url, cblaero_app.candidates.resume_url),
+        linkedin_url = coalesce(excluded.linkedin_url, cblaero_app.candidates.linkedin_url),
         updated_at = now()
       returning xmax into v_xmax;
 
@@ -1085,7 +1097,7 @@ begin
         postal_code, current_company, job_title, alternate_email,
         skills, certifications, experience, extra_attributes,
         availability_status, ingestion_state, source, source_batch_id,
-        created_by_actor_id, resume_url,
+        created_by_actor_id, resume_url, linkedin_url,
         work_authorization, clearance, aircraft_experience, employment_type,
         current_rate, per_diem, has_ap_license, years_of_experience,
         ceipal_id, submitted_by, submitter_email, shift_preference,
@@ -1116,6 +1128,7 @@ begin
         (v_row->>'source_batch_id')::uuid,
         nullif(trim(coalesce(v_row->>'created_by_actor_id', '')), ''),
         nullif(trim(coalesce(v_row->>'resume_url', '')), ''),
+        nullif(trim(coalesce(v_row->>'linkedin_url', '')), ''),
         nullif(trim(coalesce(v_row->>'work_authorization', '')), ''),
         nullif(trim(coalesce(v_row->>'clearance', '')), ''),
         coalesce(v_row->'aircraft_experience', '[]'::jsonb),
@@ -1244,7 +1257,8 @@ alter table cblaero_app.candidates
   add column if not exists veteran_status text;
 
 alter table cblaero_app.candidates
-  add column if not exists resume_url text;
+  add column if not exists resume_url text,
+  add column if not exists linkedin_url text;
 
 create index if not exists idx_candidates_ceipal_id
   on cblaero_app.candidates (ceipal_id) where ceipal_id is not null;
@@ -1524,6 +1538,7 @@ begin
     city = coalesce(p_merged_fields->>'city', city),
     state = coalesce(p_merged_fields->>'state', state),
     resume_url = coalesce(p_merged_fields->>'resume_url', resume_url),
+    linkedin_url = coalesce(p_merged_fields->>'linkedin_url', linkedin_url),
     years_of_experience = coalesce((p_merged_fields->>'years_of_experience')::numeric, years_of_experience),
     skills = coalesce(p_merged_fields->'skills', skills),
     certifications = coalesce(p_merged_fields->'certifications', certifications),

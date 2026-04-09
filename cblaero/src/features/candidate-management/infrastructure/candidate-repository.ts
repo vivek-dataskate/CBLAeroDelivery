@@ -58,6 +58,7 @@ type CandidateRow = {
   created_at: string;
   updated_at: string;
   years_of_experience: string | null;
+  linkedin_url: string | null;
 };
 
 type CandidateDetailRow = CandidateRow & {
@@ -94,6 +95,7 @@ type CandidateDetailRow = CandidateRow & {
   interview_availability: string | null;
   veteran_status: string | null;
   resume_url: string | null;
+  linkedin_url: string | null;
 };
 
 function toListItem(row: CandidateRow): CandidateListItem {
@@ -113,6 +115,7 @@ function toListItem(row: CandidateRow): CandidateListItem {
     jobTitle: row.job_title,
     skills: Array.isArray(row.skills) ? row.skills : [],
     deducedRoles: Array.isArray(row.deduced_roles) ? row.deduced_roles : [],
+    linkedinUrl: row.linkedin_url ?? null,
     availabilityLastSignalAt: row.availability_last_signal_at,
     yearsOfExperience: row.years_of_experience,
     source: row.source,
@@ -161,6 +164,7 @@ function toDetail(row: CandidateDetailRow): CandidateDetail {
     interviewAvailability: row.interview_availability,
     veteranStatus: row.veteran_status,
     resumeUrl: row.resume_url,
+    linkedinUrl: row.linkedin_url,
   };
 }
 
