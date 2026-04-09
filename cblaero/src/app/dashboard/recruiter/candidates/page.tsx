@@ -13,6 +13,7 @@ type CandidateRow = {
   availabilityStatus: string;
   jobTitle: string | null;
   skills: unknown[];
+  deducedRoles: string[];
   yearsOfExperience: string | null;
   source: string;
   createdAt: string;
@@ -41,6 +42,7 @@ const FILTER_LABELS: Record<string, string> = {
   source: "Source",
   work_authorization: "Work Auth",
   years_of_experience: "Min Experience",
+  deduced_role: "Role",
   created_after: "Added After",
   created_before: "Added Before",
 };
@@ -60,6 +62,22 @@ function SkillsCell({ skills }: { skills: unknown[] }) {
     <span>
       {labels.join(", ")}
       {extra > 0 && <span className="text-gray-400"> +{extra}</span>}
+    </span>
+  );
+}
+
+function RolesCell({ roles }: { roles: string[] }) {
+  if (!roles || roles.length === 0) return <span className="text-gray-400">—</span>;
+  const shown = roles.slice(0, 2);
+  const extra = roles.length > 2 ? roles.length - 2 : 0;
+  return (
+    <span className="flex flex-wrap gap-1">
+      {shown.map((r) => (
+        <span key={r} className="inline-block rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">
+          {r}
+        </span>
+      ))}
+      {extra > 0 && <span className="text-xs text-gray-400">+{extra}</span>}
     </span>
   );
 }
@@ -105,23 +123,18 @@ export default function CandidatesPage() {
         params.set("limit", "500");
 
         const url = `/api/internal/candidates?${params.toString()}`;
-        console.log("[CandidateSearch] Fetching:", url);
-        console.log("[CandidateSearch] Active filters:", JSON.stringify(activeFilters));
 
         const res = await fetch(url);
-        console.log("[CandidateSearch] Response status:", res.status);
 
         const json = await res.json();
-        console.log("[CandidateSearch] Response body:", JSON.stringify(json).slice(0, 500));
 
         if (!res.ok) {
-          console.error("[CandidateSearch] API error:", json.error);
+          console.error("[CandidateSearch] API error:", json.error?.code);
           setError(json.error?.message ?? "Search failed.");
           return;
         }
 
         const items = json.data as CandidateRow[];
-        console.log("[CandidateSearch] Got", items.length, "candidates, nextCursor:", json.meta?.nextCursor ? "yes" : "no");
         if (cursor) {
           setCandidates((prev) => [...prev, ...items]);
         } else {
@@ -286,6 +299,16 @@ export default function CandidatesPage() {
             </label>
           </div>
 
+          {/* Row 1b: Role filter */}
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-4">
+            <label>
+              <span className="text-xs font-medium text-gray-600">Role</span>
+              <input type="text" value={filters.deduced_role ?? ""} onChange={(e) => setFilter("deduced_role", e.target.value)}
+                placeholder="e.g. A&P Mechanic"
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-cbl-blue focus:outline-none focus:ring-1 focus:ring-cbl-blue" />
+            </label>
+          </div>
+
           {/* Row 2: Location + Dropdowns */}
           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-6">
             <label>
@@ -422,6 +445,7 @@ export default function CandidatesPage() {
                     <tr className="border-b border-gray-100 bg-gray-50/50">
                       <th className="px-5 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Name</th>
                       <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Job Title</th>
+                      <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Roles</th>
                       <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Location</th>
                       <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Status</th>
                       <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Experience</th>
@@ -438,6 +462,7 @@ export default function CandidatesPage() {
                           <div className="text-xs text-gray-400">{c.email ?? "—"}</div>
                         </td>
                         <td className="px-4 py-2.5">{c.jobTitle ?? "—"}</td>
+                        <td className="px-4 py-2.5"><RolesCell roles={c.deducedRoles ?? []} /></td>
                         <td className="px-4 py-2.5">
                           {c.city || c.state
                             ? `${c.city ?? ""}${c.city && c.state ? ", " : ""}${c.state ?? ""}`
