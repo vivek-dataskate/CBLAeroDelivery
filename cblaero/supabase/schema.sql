@@ -1573,6 +1573,22 @@ end; $$;
 
 grant execute on function cblaero_app.merge_candidates to authenticated, service_role;
 
+-- Immutable phone normalization wrapper (needed for functional index)
+create or replace function cblaero_app.normalize_phone(phone text)
+returns text language sql immutable parallel safe as $$
+  select regexp_replace(phone, '\D', '', 'g');
+$$;
+
+-- Functional index on normalized phone for fast dedup matching
+create index if not exists idx_candidates_phone_normalized
+  on cblaero_app.candidates (cblaero_app.normalize_phone(phone))
+  where phone is not null and ingestion_state in ('active', 'pending_review');
+
+-- Index on lowered name for fast dedup name matching
+create index if not exists idx_candidates_name_lower
+  on cblaero_app.candidates (lower(trim(first_name)), lower(trim(last_name)))
+  where ingestion_state in ('active', 'pending_review');
+
 -- Story 2.5: RPC for phone/name field matching with server-side normalization (H1 fix)
 create or replace function cblaero_app.find_dedup_field_matches(
   p_tenant_id text,
@@ -1585,7 +1601,7 @@ returns table (
   id uuid, tenant_id text, email text, phone text, first_name text, last_name text,
   job_title text, location text, city text, state text,
   skills jsonb, certifications jsonb, aircraft_experience jsonb,
-  extra_attributes jsonb, years_of_experience numeric,
+  extra_attributes jsonb, years_of_experience text,
   resume_url text, linkedin_url text, source text, ingestion_state text,
   created_at timestamptz, updated_at timestamptz
 ) language plpgsql as $$
@@ -1602,7 +1618,7 @@ begin
     and c.ingestion_state in ('active', 'pending_review')
     and (p_exclude_id is null or c.id != p_exclude_id)
     and (
-      (p_normalized_phone != '' and regexp_replace(c.phone, '\D', '', 'g') = p_normalized_phone)
+      (p_normalized_phone != '' and cblaero_app.normalize_phone(c.phone) = p_normalized_phone)
       or
       (p_first_name != '' and p_last_name != '' and lower(trim(c.first_name)) = lower(trim(p_first_name)) and lower(trim(c.last_name)) = lower(trim(p_last_name)))
     )
