@@ -1586,7 +1586,7 @@ returns table (
   job_title text, location text, city text, state text,
   skills jsonb, certifications jsonb, aircraft_experience jsonb,
   extra_attributes jsonb, years_of_experience numeric,
-  resume_url text, source text, ingestion_state text,
+  resume_url text, linkedin_url text, source text, ingestion_state text,
   created_at timestamptz, updated_at timestamptz
 ) language plpgsql as $$
 begin
@@ -1595,7 +1595,7 @@ begin
          c.job_title, c.location, c.city, c.state,
          c.skills, c.certifications, c.aircraft_experience,
          c.extra_attributes, c.years_of_experience,
-         c.resume_url, c.source, c.ingestion_state,
+         c.resume_url, c.linkedin_url, c.source, c.ingestion_state,
          c.created_at, c.updated_at
   from cblaero_app.candidates c
   where c.tenant_id = p_tenant_id
