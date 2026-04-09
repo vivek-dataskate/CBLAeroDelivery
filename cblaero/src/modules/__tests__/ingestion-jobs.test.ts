@@ -203,11 +203,11 @@ describe('EmailIngestionJob', () => {
 });
 
 describe('registerIngestionJobs', () => {
-  it('registers CeipalIngestionJob, EmailIngestionJob, OneDriveResumePollerJob, SavedSearchDigestJob, DedupWorkerJob, and RoleDeductionEnrichmentJob', () => {
+  it('registers all 7 ingestion jobs', () => {
     const mockScheduler = { register: vi.fn() };
     registerIngestionJobs(mockScheduler);
 
-    expect(mockScheduler.register).toHaveBeenCalledTimes(6);
+    expect(mockScheduler.register).toHaveBeenCalledTimes(7);
     const names = mockScheduler.register.mock.calls.map((c: any) => c[0].name);
     expect(names).toContain('CeipalIngestionJob');
     expect(names).toContain('EmailIngestionJob');
@@ -215,6 +215,7 @@ describe('registerIngestionJobs', () => {
     expect(names).toContain('SavedSearchDigestJob');
     expect(names).toContain('DedupWorkerJob');
     expect(names).toContain('RoleDeductionEnrichmentJob');
+    expect(names).toContain('CandidateAvailabilityRefreshJob');
   });
 
   it('registered jobs implement SchedulerJob interface', () => {

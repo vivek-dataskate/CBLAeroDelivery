@@ -617,6 +617,13 @@ Before writing a new helper, check if one already exists:
 | Role taxonomy CRUD | `getAllRoles()`, `getRolesByCategory()`, `findRoleByName()`, `insertRole()`, `getRolesWithAliases()` | `@/features/candidate-management/infrastructure/role-taxonomy-repository` — 10-min cached |
 | Role taxonomy test cleanup | `clearRoleTaxonomyCacheForTest()` | `@/features/candidate-management/infrastructure/role-taxonomy-repository` |
 | Role enrichment job | `RoleDeductionEnrichmentJob` | `@/modules/ingestion/jobs` — monthly LLM enrichment for unclassified candidates |
+| Availability state update | `updateAvailabilityStatus()` | `@/features/candidate-management/infrastructure/availability-repository` — atomic RPC: update candidate + insert signal row |
+| Availability signal history | `getSignalHistory()`, `getLatestSignal()` | `@/features/candidate-management/infrastructure/availability-repository` — query `candidate_availability_signals` |
+| Availability batch update | `batchUpdateAvailability()` | `@/features/candidate-management/infrastructure/availability-repository` — parallel update via `Promise.allSettled()` |
+| Availability scoring | `computeAvailabilityState()` | `@/features/candidate-management/application/availability-scoring` — recalculate from self-report + engagement signals |
+| Staleness check | `isStaleSignal()` | `@/features/candidate-management/application/availability-scoring` — returns true if null or >7 days |
+| Availability refresh job | `CandidateAvailabilityRefreshJob` | `@/modules/ingestion/jobs` — recalculates stale candidates, reads interval from policy_registry |
+| Availability status RPC | `update_availability_status` | `supabase/schema.sql` — atomic state + signal update |
 
 ### If 2+ files need the same logic, extract to a shared module
 ```typescript
@@ -649,6 +656,9 @@ Every table must have a dedicated repository or module with named functions for 
 | `dedup_reviews` | `dedup-repository.ts` | Exists |
 | `dedup_decisions` | `dedup-repository.ts` | Exists |
 | `role_taxonomy` | `role-taxonomy-repository.ts` | Exists (Story 2.5a) |
+| `candidate_availability_signals` | `availability-repository.ts` | Exists (Story 2.6, append-only audit) |
+| `policy_registry` | (inline in refresh job) | Exists (Story 2.6) |
+| `policy_versions` | (inline in refresh job) | Exists (Story 2.6) |
 
 ### Shared type definitions
 If a type is used across modules, define it in `contracts/` not inline. If a mapping function is needed by multiple callers, export it from the module's public API.

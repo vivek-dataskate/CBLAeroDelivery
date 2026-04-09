@@ -78,7 +78,7 @@ development_status:
   2-4b-sync-run-summary-and-error-management: done  # 2026-04-08: sync_runs table, run tracking in all 5 jobs, summary card, error detail page, 2 adversarial reviews (19 findings fixed)
   2-5-implement-deterministic-deduplication-and-manual-review-queue: done
   2-5a-implement-deduced-role-classification: done  # 2026-04-08: role taxonomy, heuristic+LLM deduction, UI, enrichment job — adversarial review (Sonnet) passed, 22 findings fixed
-  2-6-implement-availability-state-and-manual-refresh-operations: ready-for-dev
+  2-6-implement-availability-state-and-manual-refresh-operations: done  # 2026-04-09: code review passed (Sonnet), 342 tests, Task 8.3 deferred
   2-7-implement-global-scheduler-control-plane: backlog
   epic-2-retrospective: optional
 

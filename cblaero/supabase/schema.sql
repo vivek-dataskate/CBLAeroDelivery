@@ -238,6 +238,7 @@ create table if not exists cblaero_app.candidates (
   experience jsonb not null default '[]'::jsonb,
   extra_attributes jsonb not null default '{}'::jsonb,
   availability_status text not null default 'passive' check (availability_status in ('active', 'passive', 'unavailable')),
+  availability_last_signal_at timestamptz,
   ingestion_state text not null default 'pending_dedup' check (ingestion_state in ('pending_dedup', 'pending_enrichment', 'active', 'rejected', 'pending_review', 'merged')),
   source text not null,
   source_batch_id uuid references cblaero_app.import_batch (id),
@@ -372,7 +373,7 @@ returns table (
   availability_status text, ingestion_state text, job_title text,
   skills jsonb, years_of_experience text, source text,
   source_batch_id uuid, created_at timestamptz, updated_at timestamptz,
-  deduced_roles jsonb
+  deduced_roles jsonb, availability_last_signal_at timestamptz
 )
 language plpgsql stable
 as $$
@@ -387,7 +388,8 @@ begin
   select c.id, c.tenant_id, c.first_name, c.last_name, c.email, c.phone,
     c.location, c.city, c.state, c.availability_status, c.ingestion_state,
     c.job_title, c.skills, c.years_of_experience, c.source,
-    c.source_batch_id, c.created_at, c.updated_at, c.deduced_roles
+    c.source_batch_id, c.created_at, c.updated_at, c.deduced_roles,
+    c.availability_last_signal_at
   from cblaero_app.candidates c
   where c.tenant_id = p_tenant_id and c.ingestion_state = 'active'
     and (p_cursor_created_at is null or (c.created_at, c.id) < (p_cursor_created_at, p_cursor_id))
@@ -751,7 +753,7 @@ returns table (
   shift_preference text, expected_start_date text, call_availability text,
   interview_availability text, veteran_status text, resume_url text,
   source text, source_batch_id uuid, created_at timestamptz, updated_at timestamptz,
-  deduced_roles jsonb
+  deduced_roles jsonb, availability_last_signal_at timestamptz
 )
 language sql stable
 as $$
@@ -766,7 +768,8 @@ as $$
     c.years_of_experience, c.ceipal_id, c.submitted_by, c.submitter_email,
     c.shift_preference, c.expected_start_date, c.call_availability,
     c.interview_availability, c.veteran_status, c.resume_url,
-    c.source, c.source_batch_id, c.created_at, c.updated_at, c.deduced_roles
+    c.source, c.source_batch_id, c.created_at, c.updated_at, c.deduced_roles,
+    c.availability_last_signal_at
   from cblaero_app.candidates c
   where c.id = p_candidate_id and c.tenant_id = p_tenant_id
   limit 1;
@@ -1938,3 +1941,136 @@ begin
 end; $$;
 
 grant execute on function cblaero_app.backfill_all_deduced_roles to service_role;
+
+-- -----------------------------------------------------------------------
+-- Story 2.6: Availability signal history (append-only audit trail)
+-- -----------------------------------------------------------------------
+
+create table if not exists cblaero_app.candidate_availability_signals (
+  id bigint generated always as identity primary key,
+  tenant_id text not null,
+  candidate_id uuid not null references cblaero_app.candidates(id) on delete cascade,
+  previous_state text not null check (previous_state in ('active', 'passive', 'unavailable')),
+  new_state text not null check (new_state in ('active', 'passive', 'unavailable')),
+  source text not null check (source in ('self_report', 'engagement', 'manual_refresh', 'system')),
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index idx_avail_signals_candidate
+  on cblaero_app.candidate_availability_signals (tenant_id, candidate_id, created_at desc);
+create index idx_avail_signals_tenant_time
+  on cblaero_app.candidate_availability_signals (tenant_id, created_at desc);
+
+alter table cblaero_app.candidates
+  add column if not exists availability_last_signal_at timestamptz;
+
+create index if not exists idx_candidates_availability_signal_at
+  on cblaero_app.candidates (tenant_id, availability_last_signal_at);
+
+-- Atomic state update RPC
+create or replace function cblaero_app.update_availability_status(
+  p_tenant_id text,
+  p_candidate_id uuid,
+  p_new_state text,
+  p_source text,
+  p_metadata jsonb default '{}'::jsonb
+) returns jsonb as $$
+declare
+  v_previous_state text;
+  v_signal_id bigint;
+begin
+  select availability_status into v_previous_state
+  from cblaero_app.candidates
+  where id = p_candidate_id and tenant_id = p_tenant_id;
+
+  if not found then
+    raise exception 'Candidate not found: % in tenant %', p_candidate_id, p_tenant_id;
+  end if;
+
+  -- Guard against NULL for pre-migration rows
+  if v_previous_state is null then
+    v_previous_state := 'passive';
+  end if;
+
+  update cblaero_app.candidates
+  set availability_status = p_new_state,
+      availability_last_signal_at = now(),
+      updated_at = now()
+  where id = p_candidate_id and tenant_id = p_tenant_id;
+
+  insert into cblaero_app.candidate_availability_signals
+    (tenant_id, candidate_id, previous_state, new_state, source, metadata)
+  values
+    (p_tenant_id, p_candidate_id, v_previous_state, p_new_state, p_source, p_metadata)
+  returning id into v_signal_id;
+
+  return jsonb_build_object(
+    'signal_id', v_signal_id,
+    'previous_state', v_previous_state,
+    'new_state', p_new_state,
+    'source', p_source
+  );
+end;
+$$ language plpgsql security definer;
+
+alter table cblaero_app.candidate_availability_signals enable row level security;
+create policy tenant_isolation on cblaero_app.candidate_availability_signals
+  using (tenant_id = current_setting('request.jwt.claims', true)::jsonb->>'tenant_id');
+
+grant select, insert on cblaero_app.candidate_availability_signals to authenticated;
+grant all on cblaero_app.candidate_availability_signals to service_role;
+grant execute on function cblaero_app.update_availability_status to authenticated;
+grant execute on function cblaero_app.update_availability_status to service_role;
+
+-- -----------------------------------------------------------------------
+-- Policy Registry (architecture spec — shared config for refresh cadences, etc.)
+-- -----------------------------------------------------------------------
+
+create table if not exists cblaero_app.policy_registry (
+  id bigint generated always as identity primary key,
+  family text not null,
+  key text not null,
+  description text not null default '',
+  created_at timestamptz not null default now(),
+  unique (family, key)
+);
+
+create table if not exists cblaero_app.policy_versions (
+  id bigint generated always as identity primary key,
+  policy_id bigint not null references cblaero_app.policy_registry(id) on delete cascade,
+  value jsonb not null,
+  effective_from timestamptz not null default now(),
+  effective_until timestamptz,
+  created_by_actor_id text not null default 'system',
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_policy_versions_lookup
+  on cblaero_app.policy_versions (policy_id, effective_from desc);
+
+alter table cblaero_app.policy_registry enable row level security;
+alter table cblaero_app.policy_versions enable row level security;
+
+create policy policy_registry_read on cblaero_app.policy_registry
+  for select using (true);
+create policy policy_versions_read on cblaero_app.policy_versions
+  for select using (true);
+
+grant select on cblaero_app.policy_registry to authenticated, service_role;
+grant select on cblaero_app.policy_versions to authenticated, service_role;
+grant all on cblaero_app.policy_registry to service_role;
+grant all on cblaero_app.policy_versions to service_role;
+
+-- Seed: availability refresh cadence policy
+insert into cblaero_app.policy_registry (family, key, description)
+values ('refresh_cadences', 'candidate_availability', 'Candidate availability refresh interval')
+on conflict (family, key) do nothing;
+
+insert into cblaero_app.policy_versions (policy_id, value, effective_from, created_by_actor_id)
+select id, '{"interval_hours": 4}'::jsonb, now(), 'system'
+from cblaero_app.policy_registry
+where family = 'refresh_cadences' and key = 'candidate_availability'
+  and not exists (
+    select 1 from cblaero_app.policy_versions pv where pv.policy_id = policy_registry.id
+  );

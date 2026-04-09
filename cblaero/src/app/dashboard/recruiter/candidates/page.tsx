@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState, useCallback } from "react";
+import { isStaleSignal } from "@/features/candidate-management/application/availability-scoring";
 
 type CandidateRow = {
   id: string;
@@ -11,6 +12,7 @@ type CandidateRow = {
   city: string | null;
   state: string | null;
   availabilityStatus: string;
+  availabilityLastSignalAt: string | null;
   jobTitle: string | null;
   skills: unknown[];
   deducedRoles: string[];
@@ -47,10 +49,13 @@ const FILTER_LABELS: Record<string, string> = {
   created_before: "Added Before",
 };
 
-function AvailabilityBadge({ status }: { status: string }) {
+function AvailabilityBadge({ status, lastSignalAt }: { status: string; lastSignalAt?: string | null }) {
+  const stale = isStaleSignal(lastSignalAt ?? null);
   return (
-    <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium capitalize ${AVAILABILITY_BADGE[status] ?? "bg-gray-100 text-gray-500"}`}>
+    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium capitalize ${AVAILABILITY_BADGE[status] ?? "bg-gray-100 text-gray-500"}`}>
+      {stale && <span className="inline-block h-1.5 w-1.5 rounded-full bg-yellow-500" title="Stale — last signal &gt;7 days ago" />}
       {status}
+      {stale && <span className="text-yellow-600 font-normal ml-0.5">Stale</span>}
     </span>
   );
 }
@@ -104,8 +109,43 @@ export default function CandidatesPage() {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [saveName, setSaveName] = useState("");
   const [showSavedPanel, setShowSavedPanel] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkRefreshing, setBulkRefreshing] = useState(false);
 
   const hasActiveFilters = Object.values(filters).some((v) => v.length > 0);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const handleBulkRefresh = async () => {
+    if (selectedIds.size === 0) return;
+    setBulkRefreshing(true);
+    try {
+      const res = await fetch("/api/internal/candidates/bulk-refresh-availability", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ candidateIds: Array.from(selectedIds) }),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        const d = json.data;
+        alert(`Refreshed ${d.refreshed} candidates. ${d.stateChanged} state changes. ${d.errors} errors.`);
+        setSelectedIds(new Set());
+        fetchCandidates();
+      } else {
+        alert(`Bulk refresh failed: ${json.error?.message ?? "Unknown error"}`);
+      }
+    } catch (err) {
+      alert(`Bulk refresh error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBulkRefreshing(false);
+    }
+  };
 
   const setFilter = (key: string, value: string) => setFilters((p) => ({ ...p, [key]: value }));
 
@@ -426,6 +466,12 @@ export default function CandidatesPage() {
                     {totalLoaded} candidate{totalLoaded !== 1 ? "s" : ""} loaded
                   </span>
                   {sortLabel && <span className="text-xs text-gray-400">| Sorted by: {sortLabel}</span>}
+                  {selectedIds.size > 0 && (
+                    <button type="button" onClick={handleBulkRefresh} disabled={bulkRefreshing}
+                      className="rounded-lg bg-cbl-navy px-3 py-1.5 text-xs font-medium text-white hover:bg-cbl-blue disabled:opacity-50">
+                      {bulkRefreshing ? "Refreshing..." : `Refresh Availability (${selectedIds.size})`}
+                    </button>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-gray-500">Rows per page:</span>
@@ -443,6 +489,7 @@ export default function CandidatesPage() {
                 <table className="w-full text-left">
                   <thead>
                     <tr className="border-b border-gray-100 bg-gray-50/50">
+                      <th className="w-8 px-2 py-2.5"><input type="checkbox" className="rounded" onChange={(e) => { if (e.target.checked) setSelectedIds(new Set(pageRows.map((c) => c.id))); else setSelectedIds(new Set()); }} checked={pageRows.length > 0 && pageRows.every((c) => selectedIds.has(c.id))} /></th>
                       <th className="px-5 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Name</th>
                       <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Job Title</th>
                       <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500">Roles</th>
@@ -455,9 +502,11 @@ export default function CandidatesPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {pageRows.map((c) => (
-                      <tr key={c.id} onClick={() => window.open(`/dashboard/recruiter/candidates/${c.id}`, '_blank')}
-                        className="cursor-pointer text-sm text-gray-700 transition-colors hover:bg-cbl-blue/10/40">
-                        <td className="px-5 py-2.5">
+                      <tr key={c.id} className="cursor-pointer text-sm text-gray-700 transition-colors hover:bg-cbl-blue/5">
+                        <td className="w-8 px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
+                          <input type="checkbox" className="rounded" checked={selectedIds.has(c.id)} onChange={() => toggleSelect(c.id)} />
+                        </td>
+                        <td className="px-5 py-2.5" onClick={() => window.open(`/dashboard/recruiter/candidates/${c.id}`, '_blank')}>
                           <div className="font-medium text-gray-900">{c.firstName} {c.lastName}</div>
                           <div className="text-xs text-gray-400">{c.email ?? "—"}</div>
                         </td>
@@ -468,7 +517,7 @@ export default function CandidatesPage() {
                             ? `${c.city ?? ""}${c.city && c.state ? ", " : ""}${c.state ?? ""}`
                             : "—"}
                         </td>
-                        <td className="px-4 py-2.5"><AvailabilityBadge status={c.availabilityStatus} /></td>
+                        <td className="px-4 py-2.5"><AvailabilityBadge status={c.availabilityStatus} lastSignalAt={c.availabilityLastSignalAt} /></td>
                         <td className="px-4 py-2.5 text-xs">
                           {c.yearsOfExperience ? `${c.yearsOfExperience} yr${c.yearsOfExperience === "1" ? "" : "s"}` : "—"}
                         </td>

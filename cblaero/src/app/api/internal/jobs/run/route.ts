@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { CeipalIngestionJob, EmailIngestionJob, OneDriveResumePollerJob, DedupWorkerJob, SavedSearchDigestJob, RoleDeductionEnrichmentJob } from '@/modules/ingestion/jobs';
+import { CeipalIngestionJob, EmailIngestionJob, OneDriveResumePollerJob, DedupWorkerJob, SavedSearchDigestJob, RoleDeductionEnrichmentJob, CandidateAvailabilityRefreshJob } from '@/modules/ingestion/jobs';
 import { isSupabaseConfigured } from '@/modules/persistence';
 import {
   countCandidatesBySource,
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
   };
 
   const jobName = body.job;
-  const ALLOWED_JOBS = ['ceipal-sync', 'email-sync', 'onedrive-sync', 'dedup', 'saved-search-digest', 'role-enrichment'];
+  const ALLOWED_JOBS = ['ceipal-sync', 'email-sync', 'onedrive-sync', 'dedup', 'saved-search-digest', 'role-enrichment', 'availability-refresh'];
   if (!jobName || !ALLOWED_JOBS.includes(jobName)) {
     return NextResponse.json({
       error: { code: 'UNKNOWN_JOB', message: `Unknown job name. Available: ${ALLOWED_JOBS.join(', ')}` },
@@ -56,9 +56,12 @@ export async function POST(request: NextRequest) {
     } else if (jobName === 'role-enrichment') {
       const job = new RoleDeductionEnrichmentJob();
       await job.run();
+    } else if (jobName === 'availability-refresh') {
+      const job = new CandidateAvailabilityRefreshJob();
+      await job.run();
     } else {
       return NextResponse.json({
-        error: { code: 'UNKNOWN_JOB', message: 'Unknown job name' },
+        error: { code: 'UNKNOWN_JOB', message: `Unknown job name: ${jobName}` },
       }, { status: 400 });
     }
 
