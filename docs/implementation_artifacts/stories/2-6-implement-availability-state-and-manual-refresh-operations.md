@@ -351,6 +351,7 @@ Claude Opus 4.6 (1M context) via Sonnet subagents
 
 - 2026-04-09: Story 2.6 implementation complete — availability state machine, manual refresh, scheduled job, policy registry, UI stale indicators
 - 2026-04-09: Code review (Sonnet 4.6) — 15 findings (3H/6M/6L), 11 fixed: NULL guard in RPC (H1), tenant validation in bulk route (H2), dead import removed (H3), seed SQL added (M1), RLS on policy tables (M2), parallel refresh job (M3), error logging (M4), layering fix (M5), UI imports deduplicated (L2), signals load on mount (L6), Task 8.3 unchecked (L4). 342 tests passing.
+- 2026-04-09: Wired email submission ingestion to record engagement signal (source='engagement') — candidates submitted via email are immediately marked 'active'
 
 ### File List
 
