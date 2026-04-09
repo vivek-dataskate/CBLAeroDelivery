@@ -611,6 +611,12 @@ Before writing a new helper, check if one already exists:
 | Dedup winner selection | `selectWinner()` | `@/features/candidate-management/application/dedup-merge` — picks winner by active status > field count > creation date |
 | Dedup field merging | `computeMergedFields()` | `@/features/candidate-management/application/dedup-merge` — merge two candidates preserving best data |
 | Dedup field diff | `computeFieldDiffs()` | `@/features/candidate-management/application/dedup-merge` — generate field-level diffs for review UI |
+| Role deduction orchestrator | `deduceRoles()` | `@/features/candidate-management/application/role-deduction` — heuristic-first, LLM fallback. Use `{ heuristicOnly: true }` for CSV batch |
+| Role heuristic matching | `deduceRolesHeuristic()` | `@/features/candidate-management/application/role-deduction` — free, fast matching via name/alias/word-overlap/skills |
+| Role LLM classification | `deduceRolesLlm()` | `@/features/candidate-management/application/role-deduction` — Haiku-based classification with taxonomy validation |
+| Role taxonomy CRUD | `getAllRoles()`, `getRolesByCategory()`, `findRoleByName()`, `insertRole()`, `getRolesWithAliases()` | `@/features/candidate-management/infrastructure/role-taxonomy-repository` — 10-min cached |
+| Role taxonomy test cleanup | `clearRoleTaxonomyCacheForTest()` | `@/features/candidate-management/infrastructure/role-taxonomy-repository` |
+| Role enrichment job | `RoleDeductionEnrichmentJob` | `@/modules/ingestion/jobs` — monthly LLM enrichment for unclassified candidates |
 
 ### If 2+ files need the same logic, extract to a shared module
 ```typescript
@@ -642,6 +648,7 @@ Every table must have a dedicated repository or module with named functions for 
 | `llm_usage_log` | `ai/usage-log.ts` | Exists |
 | `dedup_reviews` | `dedup-repository.ts` | Exists |
 | `dedup_decisions` | `dedup-repository.ts` | Exists |
+| `role_taxonomy` | `role-taxonomy-repository.ts` | Exists (Story 2.5a) |
 
 ### Shared type definitions
 If a type is used across modules, define it in `contracts/` not inline. If a mapping function is needed by multiple callers, export it from the module's public API.

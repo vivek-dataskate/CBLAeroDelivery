@@ -39,6 +39,7 @@ type CandidateDetail = {
   callAvailability: string | null;
   interviewAvailability: string | null;
   veteranStatus: string | null;
+  deducedRoles: string[];
   resumeUrl: string | null;
   source: string;
   ceipalId: string | null;
@@ -188,11 +189,20 @@ export default function CandidateDetailPage() {
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
 
           {/* Hero header */}
-          <div className="border-b border-gray-200 bg-gray-50 px-6 py-6">
+          <div className="border-b border-gray-200 bg-white px-6 py-6">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <h1 className="truncate text-2xl font-bold text-gray-900">{fullName}</h1>
                 {candidate.jobTitle && <p className="mt-1 text-sm text-gray-600">{candidate.jobTitle}</p>}
+                {candidate.deducedRoles && candidate.deducedRoles.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {candidate.deducedRoles.map((role) => (
+                      <span key={role} className="inline-block rounded-full border border-purple-200 bg-purple-50 px-2.5 py-1 text-xs font-medium text-purple-700">
+                        {role}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {candidate.currentCompany && <p className="text-sm text-gray-500">at {candidate.currentCompany}</p>}
                 {location && <p className="mt-1 text-sm text-gray-400">{location}</p>}
               </div>

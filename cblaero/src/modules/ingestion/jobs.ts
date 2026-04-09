@@ -1,8 +1,9 @@
 import { fetchCeipalApplicants, mapCeipalApplicantToCandidate } from '../ats';
 import { MicrosoftGraphEmailParser } from '../email';
 import { acquireGraphToken } from '../email/graph-auth';
-import { isSupabaseConfigured } from '../persistence';
+import { getSupabaseAdminClient, isSupabaseConfigured } from '../persistence';
 import { extractCandidateFromDocument } from '../../features/candidate-management/application/candidate-extraction';
+import { deduceRoles } from '../../features/candidate-management/application/role-deduction';
 import { recordSyncFailure, createSyncRun, completeSyncRun, failSyncRun, upsertCandidateFromEmailFull, batchUpsertCandidatesFromATS, DEFAULT_TENANT_ID, mapToCandidateRow } from './index';
 import { fetchWithRetry } from './fetch-with-retry';
 import {
@@ -859,12 +860,136 @@ export class DedupWorkerJob implements SchedulerJob {
   }
 }
 
+export class RoleDeductionEnrichmentJob implements SchedulerJob {
+  name = 'RoleDeductionEnrichmentJob';
+
+  async run(): Promise<void> {
+    if (!isSupabaseConfigured()) {
+      console.log('[RoleDeductionEnrichmentJob] Supabase not configured — skipping');
+      return;
+    }
+
+    const runId = await createSyncRun('role-enrichment');
+    let processed = 0;
+    let rolesAssigned = 0;
+    let errors = 0;
+
+    try {
+      const db = getSupabaseAdminClient();
+      const BATCH_SIZE = 100;
+      const MAX_CONSECUTIVE_ERRORS = 10;
+      let consecutiveErrors = 0;
+
+      // H4 fix: Exclude candidates that already failed role deduction (have metadata with error)
+      // Only pick up candidates with truly empty deduced_roles and active state
+      const { data: candidates, error: fetchError } = await db
+        .from('candidates')
+        .select('id, tenant_id, job_title, skills, certifications, aircraft_experience, deduced_roles, role_deduction_metadata')
+        .filter('deduced_roles', 'eq', '[]')
+        .eq('ingestion_state', 'active')
+        .or('role_deduction_metadata.eq.{},role_deduction_metadata->deducedAt.is.null')
+        .limit(BATCH_SIZE);
+
+      if (fetchError) {
+        throw new Error(`Failed to fetch candidates: ${fetchError.message}`);
+      }
+
+      if (!candidates || candidates.length === 0) {
+        console.log('[RoleDeductionEnrichmentJob] No candidates need role enrichment');
+        await completeSyncRun(runId, { succeeded: 0, failed: 0, total: 0 });
+        return;
+      }
+
+      console.log(`[RoleDeductionEnrichmentJob] Processing ${candidates.length} candidates`);
+
+      for (const candidate of candidates) {
+        try {
+          const result = await deduceRoles(
+            {
+              jobTitle: candidate.job_title,
+              skills: Array.isArray(candidate.skills) ? candidate.skills : [],
+              certifications: Array.isArray(candidate.certifications) ? candidate.certifications : [],
+              aircraftExperience: Array.isArray(candidate.aircraft_experience) ? candidate.aircraft_experience : [],
+            },
+            candidate.tenant_id,
+          );
+
+          // M8 fix: Use repository-style update (still direct DB for now, but with proper error handling)
+          const { error: updateError } = await db
+            .from('candidates')
+            .update({
+              deduced_roles: result.roles,
+              role_deduction_metadata: result.metadata,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', candidate.id);
+
+          if (updateError) {
+            console.error(`[RoleDeductionEnrichmentJob] Update failed for ${candidate.id}:`, updateError.message);
+            errors++;
+            consecutiveErrors++;
+            continue;
+          }
+
+          consecutiveErrors = 0;
+          processed++;
+          if (result.roles.length > 0) rolesAssigned++;
+        } catch (err) {
+          errors++;
+          consecutiveErrors++;
+          console.error(`[RoleDeductionEnrichmentJob] Error processing candidate ${candidate.id}:`, err instanceof Error ? err.message : err);
+          recordSyncFailure('role-enrichment', candidate.id, err instanceof Error ? err : new Error(String(err)), runId ?? undefined);
+
+          // H4 fix: Mark candidate with failed metadata so it's excluded from next batch
+          try {
+            await db.from('candidates').update({
+              role_deduction_metadata: {
+                source: 'llm',
+                confidence: 0,
+                rawJobTitle: candidate.job_title,
+                rawSkills: [],
+                deducedAt: new Date().toISOString(),
+                error: err instanceof Error ? err.message : String(err),
+              },
+            }).eq('id', candidate.id);
+          } catch { /* non-fatal metadata update */ }
+
+          // H4 fix: circuit breaker — stop if too many consecutive failures
+          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            console.error(`[RoleDeductionEnrichmentJob] ${MAX_CONSECUTIVE_ERRORS} consecutive errors — halting batch`);
+            break;
+          }
+        }
+      }
+
+      // M10 fix: correct alreadyClassified calculation
+      const skipped = candidates.length - processed - errors;
+      console.log(JSON.stringify({
+        level: 'info',
+        module: 'RoleDeductionEnrichmentJob',
+        action: 'batch_complete',
+        processed,
+        rolesAssigned,
+        skipped: Math.max(0, skipped),
+        errors,
+        timestamp: new Date().toISOString(),
+      }));
+
+      await completeSyncRun(runId, { succeeded: processed, failed: errors, total: candidates.length });
+    } catch (err) {
+      console.error('[RoleDeductionEnrichmentJob] Fatal error:', err);
+      await failSyncRun(runId, err instanceof Error ? err.message : String(err));
+    }
+  }
+}
+
 export function registerIngestionJobs(scheduler: { register(job: SchedulerJob): void }) {
   scheduler.register(new CeipalIngestionJob());
   scheduler.register(new EmailIngestionJob());
   scheduler.register(new OneDriveResumePollerJob());
   scheduler.register(new SavedSearchDigestJob());
   scheduler.register(new DedupWorkerJob());
+  scheduler.register(new RoleDeductionEnrichmentJob());
 }
 
 // GlobalScheduler stub removed — deferred to Story 2.7. Use registerIngestionJobs() with a real scheduler.

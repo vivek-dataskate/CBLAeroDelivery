@@ -22,6 +22,7 @@ export type CandidateListItem = {
   yearsOfExperience: string | null;
   source: string;
   sourceBatchId: string | null;
+  deducedRoles: string[];
   createdAt: string;
   updatedAt: string;
 };
@@ -84,6 +85,7 @@ export type CandidateListParams = {
   yearsOfExperience?: string;
   veteranStatus?: string;
   hasApLicense?: boolean;
+  deducedRole?: string;
   // Date range
   createdAfter?: string;
   createdBefore?: string;
