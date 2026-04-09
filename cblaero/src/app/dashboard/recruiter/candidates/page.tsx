@@ -38,6 +38,8 @@ const FILTER_LABELS: Record<string, string> = {
   search: "Name",
   job_title: "Job Title",
   skills: "Skills",
+  email: "Email",
+  phone: "Phone",
   city: "City",
   state: "State",
   availability_status: "Availability",
@@ -339,12 +341,24 @@ export default function CandidatesPage() {
             </label>
           </div>
 
-          {/* Row 1b: Role filter */}
+          {/* Row 1b: Role, Email, Phone */}
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-4">
             <label>
               <span className="text-xs font-medium text-gray-600">Role</span>
               <input type="text" value={filters.deduced_role ?? ""} onChange={(e) => setFilter("deduced_role", e.target.value)}
                 placeholder="e.g. A&P Mechanic"
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-cbl-blue focus:outline-none focus:ring-1 focus:ring-cbl-blue" />
+            </label>
+            <label>
+              <span className="text-xs font-medium text-gray-600">Email</span>
+              <input type="text" value={filters.email ?? ""} onChange={(e) => setFilter("email", e.target.value)}
+                placeholder="e.g. john@example.com"
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-cbl-blue focus:outline-none focus:ring-1 focus:ring-cbl-blue" />
+            </label>
+            <label>
+              <span className="text-xs font-medium text-gray-600">Phone</span>
+              <input type="text" value={filters.phone ?? ""} onChange={(e) => setFilter("phone", e.target.value)}
+                placeholder="e.g. 555-123-4567"
                 className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-cbl-blue focus:outline-none focus:ring-1 focus:ring-cbl-blue" />
             </label>
           </div>

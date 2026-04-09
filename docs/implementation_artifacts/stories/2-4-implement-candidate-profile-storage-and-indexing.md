@@ -680,4 +680,8 @@ claude-opus-4-6
 - cblaero/supabase/schema.sql (modified — 10 new indexes + saved_searches table)
 - docs/implementation_artifacts/sprint-status.yaml (modified — status updates)
 
+### Change Log
+
+- 2026-04-09: Added email and phone search fields to candidate filter panel (UI-only — backend already supported via search_candidates RPC p_email/p_phone params)
+
 ### File List
